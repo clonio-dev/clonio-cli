@@ -75,7 +75,7 @@ Source code
 composer install --no-dev
     │
     ▼
-php artisan app:build clonio     → builds/clonio (PHAR)
+./clonio app:build clonio        → builds/clonio (PHAR)
     │
     ▼
 spc download --with-php=8.5      → PHP sources + extensions
@@ -111,11 +111,12 @@ GitHub Release Asset
 Embedded into the binary by default. Extend per command as needed:
 
 ```
-bcmath, ctype, curl, dom, fileinfo, filter, iconv,
-mbstring, openssl, pcntl, pdo, phar, posix, readline,
-simplexml, tokenizer, xml, xmlreader, xmlwriter,
-zip, zlib, sodium
+ctype, curl, filter, iconv, mbstring, openssl, pcntl,
+pdo, pdo_mysql, pdo_pgsql, pdo_sqlite,
+phar, readline, sqlite3, tokenizer, zlib
 ```
+
+> YAML and logging (Monolog) are handled by pure-PHP Composer packages (`symfony/yaml`, Monolog) — no C extensions required.
 
 ---
 
@@ -143,7 +144,7 @@ zip, zlib, sodium
 1. Checkout repository (`fetch-depth: 0` for git version resolution)
 2. Set up PHP 8.5 via `shivammathur/setup-php`
 3. Install Composer dependencies (`--no-dev`)
-4. Build PHAR via `php artisan app:build clonio --no-interaction`
+4. Build PHAR via `./clonio app:build clonio --no-interaction`
 5. Download SPC binary from GitHub Releases
 6. Download PHP 8.5 sources + extensions (`spc download`)
 7. Compile PHP micro SAPI (`spc build --build-micro`)
