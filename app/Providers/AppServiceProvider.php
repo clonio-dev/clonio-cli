@@ -13,10 +13,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         config([
-            'logging.channels.single.path' =>
-                Phar::running()
-                    ? dirname(Phar::running(false)) . '/clonio.log'
-                    : storage_path('logs/clonio.log')
+            'logging.channels.single.path' => Phar::running() !== '' && Phar::running() !== '0'
+                    ? dirname(Phar::running(false)).'/clonio.log'
+                    : storage_path('logs/clonio.log'),
         ]);
     }
 
