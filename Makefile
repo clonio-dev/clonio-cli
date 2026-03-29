@@ -4,7 +4,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 help:
-	@CURRENT=$$(git describe --tags --abbrev=0 $$(git rev-parse origin/main) 2>/dev/null || echo "v0.0.0"); \
+	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
+	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
@@ -22,12 +23,13 @@ help:
 	echo ""
 
 current:
-	@git describe --tags --abbrev=0 $$(git rev-parse origin/main) 2>/dev/null || echo "v0.0.0"
+	@git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1 || echo "v0.0.0"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
 patch:
-	@CURRENT=$$(git describe --tags --abbrev=0 $$(git rev-parse origin/main) 2>/dev/null || echo "v0.0.0"); \
+	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
+	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
@@ -39,7 +41,8 @@ patch:
 	echo "Done — $$NEW pushed. The build pipeline will start automatically."
 
 minor:
-	@CURRENT=$$(git describe --tags --abbrev=0 $$(git rev-parse origin/main) 2>/dev/null || echo "v0.0.0"); \
+	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
+	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
@@ -50,7 +53,8 @@ minor:
 	echo "Done — $$NEW pushed. The build pipeline will start automatically."
 
 major:
-	@CURRENT=$$(git describe --tags --abbrev=0 $$(git rev-parse origin/main) 2>/dev/null || echo "v0.0.0"); \
+	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
+	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	NEW="v$$((MAJOR+1)).0.0"; \
