@@ -45,6 +45,12 @@ See [docs/development.md](docs/development.md) for setup, local builds, testing,
 
 ---
 
+## Releasing
+
+See [docs/releasing.md](docs/releasing.md) for the step-by-step release process.
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md).
