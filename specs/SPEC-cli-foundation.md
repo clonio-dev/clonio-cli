@@ -113,7 +113,7 @@ Embedded into the binary by default. Extend per command as needed:
 ```
 ctype, curl, fileinfo, filter, iconv, mbstring, openssl, pcntl,
 pdo, pdo_mysql, pdo_pgsql, pdo_sqlite,
-phar, readline, sqlite3, tokenizer, zlib
+phar, readline, session, sqlite3, tokenizer, zlib
 ```
 
 > YAML and logging (Monolog) are handled by pure-PHP Composer packages (`symfony/yaml`, Monolog) — no C extensions required.

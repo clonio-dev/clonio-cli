@@ -79,7 +79,7 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PHP_VERSION: '8.5'
-      EXTENSIONS: ctype,curl,fileinfo,filter,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,sqlite3,tokenizer,zlib
+      EXTENSIONS: ctype,curl,fileinfo,filter,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,session,sqlite3,tokenizer,zlib
 
     steps:
       - name: Checkout
@@ -128,7 +128,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./downloads
-          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-v1
+          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-v2
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
@@ -141,7 +141,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-v1
+          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-v2
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
