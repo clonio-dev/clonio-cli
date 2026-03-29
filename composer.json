@@ -1,28 +1,27 @@
 {
-    "name": "laravel-zero/laravel-zero",
-    "description": "The Laravel Zero Framework.",
-    "keywords": ["framework", "laravel", "laravel zero", "console", "cli"],
-    "homepage": "https://laravel-zero.com",
+    "name": "clonio-dev/clonio-cli",
+    "description": "The clonio application",
+    "homepage": "https://clonio.dev",
     "type": "project",
     "license": "MIT",
     "support": {
-        "issues": "https://github.com/laravel-zero/laravel-zero/issues",
-        "source": "https://github.com/laravel-zero/laravel-zero"
+        "issues": "https://github.com/clonio-dev/clonio-cli/issues",
+        "source": "https://github.com/clonio-dev/clonio-cli"
     },
     "authors": [
         {
-            "name": "Nuno Maduro",
-            "email": "enunomaduro@gmail.com"
+            "name": "Robert Kummer",
+            "email": "post@robert-kummer.de"
         }
     ],
     "require": {
-        "php": "^8.2",
+        "php": "^8.4",
         "laravel-zero/framework": "^12.0.2"
     },
     "require-dev": {
-        "laravel/pint": "^1.25.1",
+        "laravel/pint": "^1.29.0",
         "mockery/mockery": "^1.6.12",
-        "pestphp/pest": "^3.8.4|^4.1.2"
+        "pestphp/pest": "^4.4.3"
     },
     "autoload": {
         "psr-4": {
