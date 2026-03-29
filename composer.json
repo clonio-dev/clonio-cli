@@ -16,6 +16,7 @@
     ],
     "require": {
         "php": "^8.5",
+        "illuminate/http": "^12.17",
         "laravel-zero/framework": "^12.1.0"
     },
     "require-dev": {
