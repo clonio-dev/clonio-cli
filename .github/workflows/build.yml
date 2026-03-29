@@ -27,14 +27,14 @@ jobs:
           coverage: xdebug
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.composer/cache
           key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Rector cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/rector
           key: ${{ runner.os }}-rector-${{ hashFiles('composer.lock') }}
@@ -42,7 +42,7 @@ jobs:
       - run: mkdir -p /tmp/rector
 
       - name: PHPStan cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/phpstan
           key: ${{ runner.os }}-phpstan-${{ hashFiles('composer.lock') }}
@@ -113,7 +113,7 @@ jobs:
 
       - name: Cache SPC downloaded sources
         id: spc-downloads-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./downloads
           key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-v1
@@ -124,7 +124,7 @@ jobs:
 
       - name: Cache SPC build output
         id: spc-build-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./buildroot
           key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-v1
