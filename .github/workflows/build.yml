@@ -220,6 +220,27 @@ jobs:
     if: always() && needs.test.result == 'success'
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            LOG=$(git log "${PREVIOUS_TAG}..${CURRENT_TAG}" --pretty=format:"- %s (%h)" --no-merges)
+          fi
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            echo "$LOG"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
@@ -231,6 +252,12 @@ jobs:
         with:
           files: ./artifacts/*
           body: |
+            ## What's changed
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ---
+
             ## Installation
 
             | File | Platform | Requires |
