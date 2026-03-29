@@ -18,6 +18,9 @@ Download the binary for your platform from the [latest release](https://github.c
 | Linux x86_64        | `clonio-linux-x86_64`    |
 | Linux aarch64       | `clonio-linux-aarch64`   |
 | macOS Apple Silicon | `clonio-macos-aarch64`   |
+| Any (PHP 8.5+)      | `clonio.phar`            |
+
+The platform binaries are fully self-contained — no PHP required. The PHAR requires PHP 8.5 on the target machine (`php clonio.phar`) but is smaller and works on any platform.
 
 Rename it, make it executable, and optionally move it to your PATH:
 

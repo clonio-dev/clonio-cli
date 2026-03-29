@@ -66,12 +66,15 @@ jobs:
           - runner: ubuntu-latest
             spc-binary: spc-linux-x86_64
             output: clonio-linux-x86_64
+            upload_phar: true
           - runner: ubuntu-24.04-arm
             spc-binary: spc-linux-aarch64
             output: clonio-linux-aarch64
+            upload_phar: false
           - runner: macos-latest
             spc-binary: spc-macos-aarch64
             output: clonio-macos-aarch64
+            upload_phar: false
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -202,6 +205,13 @@ jobs:
         with:
           name: ${{ matrix.output }}
           path: ${{ matrix.output }}
+
+      - name: Upload PHAR as artifact
+        if: matrix.upload_phar
+        uses: actions/upload-artifact@v4
+        with:
+          name: clonio.phar
+          path: builds/clonio
 
   release:
     name: Publish Release
