@@ -17,9 +17,6 @@ class AboutCommand extends Command
      */
     protected $description = 'Shows information about Clonio';
 
-    /**
-     * Execute the console command.
-     */
     public function handle(AsciiArtService $asciiArtService): int
     {
         $asciiArtService->clonioLogoWithShadow($this->output);
@@ -31,6 +28,6 @@ class AboutCommand extends Command
         $this->newLine();
         $this->warn('See https://clonio.io for more information.');
 
-        return static::SUCCESS;
+        return Command::SUCCESS;
     }
 }
