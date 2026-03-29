@@ -14,6 +14,18 @@ composer test
 
 **2. Create and push a version tag**
 
+Use the Makefile to tag and push in one step:
+
+```bash
+make patch   # v0.1.0 → v0.1.1
+make minor   # v0.1.1 → v0.2.0
+make major   # v0.2.0 → v1.0.0
+```
+
+Run `make` with no arguments to see the current version and a preview of what each command would produce.
+
+Or tag manually if needed:
+
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
