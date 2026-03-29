@@ -1,0 +1,147 @@
+name: build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: xdebug
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Rector cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/rector
+          key: ${{ runner.os }}-rector-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-rector-
+      - run: mkdir -p /tmp/rector
+
+      - name: PHPStan cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/phpstan
+          key: ${{ runner.os }}-phpstan-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-phpstan-
+      - run: mkdir -p /tmp/phpstan
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Run tests
+        run: composer test
+
+  build:
+    name: Build — ${{ matrix.output }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            spc-binary: spc-linux-x86_64
+            output: clonio-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            spc-binary: spc-linux-aarch64
+            output: clonio-linux-aarch64
+          - runner: macos-latest
+            spc-binary: spc-macos-aarch64
+            output: clonio-macos-aarch64
+          - runner: macos-13
+            spc-binary: spc-macos-x86_64
+            output: clonio-macos-x86_64
+
+    env:
+      PHP_VERSION: '8.5'
+      EXTENSIONS: ctype,curl,filter,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,sqlite3,tokenizer,zlib
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies (production)
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+      - name: Build PHAR
+        run: ./clonio app:build clonio --no-interaction
+
+      - name: Download SPC binary
+        run: |
+          curl -fsSL "https://github.com/crazywhalecc/static-php-cli/releases/latest/download/${{ matrix.spc-binary }}.gz" \
+            | gzip -d > ./spc
+          chmod +x ./spc
+
+      - name: Cache SPC downloaded sources
+        id: spc-downloads-cache
+        uses: actions/cache@v4
+        with:
+          path: ./downloads
+          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-v1
+
+      - name: Download PHP sources & extensions
+        if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
+        run: ./spc download --with-php=${{ env.PHP_VERSION }} --for-extensions="${{ env.EXTENSIONS }}"
+
+      - name: Cache SPC build output
+        id: spc-build-cache
+        uses: actions/cache@v4
+        with:
+          path: ./buildroot
+          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-v1
+
+      - name: Compile PHP micro SAPI
+        if: steps.spc-build-cache.outputs.cache-hit != 'true'
+        run: ./spc build --build-micro "${{ env.EXTENSIONS }}"
+
+      - name: Combine PHAR + micro into standalone binary
+        run: |
+          ./spc micro:combine builds/clonio --output ${{ matrix.output }}
+          chmod +x ./${{ matrix.output }}
+
+      - name: Smoke test
+        run: ./${{ matrix.output }} --version
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.output }}

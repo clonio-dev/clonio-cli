@@ -15,7 +15,7 @@
         }
     ],
     "require": {
-        "php": "^8.4",
+        "php": "^8.5",
         "laravel-zero/framework": "^12.1.0"
     },
     "require-dev": {
@@ -39,6 +39,7 @@
         }
     },
     "scripts": {
+        "build": "./clonio app:build clonio --no-interaction",
         "update:requirements": "composer bump",
         "lint": [
             "rector",
