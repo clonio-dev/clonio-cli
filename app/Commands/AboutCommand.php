@@ -21,10 +21,10 @@ class AboutCommand extends Command
     {
         $asciiArtService->clonioLogoWithShadow($this->output);
 
-        $this->info('Clonio transfers your production database to your test and dev enironments');
+        $this->info('Clonio transfers your production database to your test and dev environments');
         $this->info('with automatic anonymization, fake data generation and full audit trails.');
         $this->newLine();
-        $this->info('It open source software. It is free for individuals and NGOs.');
+        $this->info('It is open source software. It is free for individuals and NGOs.');
         $this->newLine();
         $this->warn('See https://clonio.io for more information.');
 
