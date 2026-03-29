@@ -39,6 +39,7 @@
         }
     },
     "scripts": {
+        "build": "./clonio app:build clonio --no-interaction",
         "update:requirements": "composer bump",
         "lint": [
             "rector",

@@ -41,27 +41,7 @@ No PHP installation required — the binary is fully self-contained.
 
 ## Development
 
-**Requirements:** PHP 8.5, Composer
-
-```bash
-composer install
-php clonio <command>
-```
-
-**Run the test suite:**
-
-```bash
-composer test
-```
-
-Individual test stages:
-
-```bash
-composer test:unit        # PestPHP with coverage (min 85%)
-composer test:type-coverage  # Type coverage (min 90%)
-composer test:types       # PHPStan (level max)
-composer test:lint        # Pint + Rector dry-run
-```
+See [docs/development.md](docs/development.md) for setup, local builds, testing, and linting.
 
 ---
 
