@@ -18,6 +18,7 @@
         "php": "^8.5",
         "illuminate/database": "^12.17",
         "illuminate/http": "^12.17",
+        "illuminate/log": "^12.17",
         "laravel-zero/framework": "^12.1.0"
     },
     "require-dev": {
