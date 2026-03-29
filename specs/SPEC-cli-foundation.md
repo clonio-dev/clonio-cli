@@ -1,9 +1,8 @@
-# Clonio CLI — Technical Specification
+# Clonio CLI — Foundation Specification
 
-**Version:** 0.2
+**Version:** 0.3
 **Status:** Active
 **Date:** 2026-03-29
-**Translated from:** PRD-CLI-Tool.md (German)
 
 ---
 
@@ -45,8 +44,6 @@ PHP CLI tools traditionally require a PHP runtime on the target machine. By usin
 
 ### 5.1 Project Structure
 
-Standard Laravel Zero layout:
-
 ```
 clonio-cli/
 ├── app/
@@ -60,7 +57,7 @@ clonio-cli/
 │   ├── Feature/
 │   └── Unit/
 ├── builds/                 # Generated PHAR output (git-ignored)
-├── specs/                  # PRD and spec documents
+├── specs/                  # Specification documents
 ├── .github/
 │   └── workflows/
 │       ├── tests.yml       # CI: test on push/PR to main
@@ -97,13 +94,13 @@ GitHub Release Asset
 
 ## 6. Platform Support
 
-| Platform | Architecture            | Supported                      |
-|----------|-------------------------|--------------------------------|
-| Linux    | x86_64                  | Yes                            |
-| Linux    | aarch64                 | Yes                            |
-| macOS    | x86_64 (Intel)          | Yes                            |
-| macOS    | aarch64 (Apple Silicon) | Yes                            |
-| Windows  | x86_64                  | Desired but not in scope yet   |
+| Platform | Architecture            | Supported                    |
+|----------|-------------------------|------------------------------|
+| Linux    | x86_64                  | Yes                          |
+| Linux    | aarch64                 | Yes                          |
+| macOS    | x86_64 (Intel)          | Yes                          |
+| macOS    | aarch64 (Apple Silicon) | Yes                          |
+| Windows  | x86_64                  | Desired — out of scope for now |
 
 > Windows builds are desirable but skipped for the initial release due to SPC constraints.
 
@@ -111,7 +108,7 @@ GitHub Release Asset
 
 ## 7. PHP Extensions (Baseline)
 
-Embedded into the binary by default. Extend as needed per command requirements:
+Embedded into the binary by default. Extend per command as needed:
 
 ```
 bcmath, ctype, curl, dom, fileinfo, filter, iconv,
@@ -126,20 +123,20 @@ zip, zlib, sodium
 
 ### 8.1 Triggers
 
-| Event               | Workflow      | Action                                  |
-|---------------------|---------------|-----------------------------------------|
-| Push to `main`      | `tests.yml`   | Run full test suite                     |
-| PR to `main`        | `tests.yml`   | Run full test suite                     |
-| Push of tag `v*`    | `build.yml`   | Run tests → build binaries → publish release |
+| Event            | Workflow    | Action                                       |
+|------------------|-------------|----------------------------------------------|
+| Push to `main`   | `tests.yml` | Run full test suite                          |
+| PR to `main`     | `tests.yml` | Run full test suite                          |
+| Push of tag `v*` | `build.yml` | Run tests → build binaries → publish release |
 
 ### 8.2 Matrix Strategy (`build.yml`)
 
-| Runner               | SPC Binary            | Output Binary          |
-|----------------------|-----------------------|------------------------|
-| `ubuntu-latest`      | `spc-linux-x86_64`    | `clonio-linux-x86_64`  |
-| `ubuntu-24.04-arm`   | `spc-linux-aarch64`   | `clonio-linux-aarch64` |
-| `macos-latest`       | `spc-macos-aarch64`   | `clonio-macos-aarch64` |
-| `macos-13`           | `spc-macos-x86_64`    | `clonio-macos-x86_64`  |
+| Runner             | SPC Binary          | Output Binary          |
+|--------------------|---------------------|------------------------|
+| `ubuntu-latest`    | `spc-linux-x86_64`  | `clonio-linux-x86_64`  |
+| `ubuntu-24.04-arm` | `spc-linux-aarch64` | `clonio-linux-aarch64` |
+| `macos-latest`     | `spc-macos-aarch64` | `clonio-macos-aarch64` |
+| `macos-13`         | `spc-macos-x86_64`  | `clonio-macos-x86_64`  |
 
 ### 8.3 Workflow Steps (`build.yml`, per runner)
 
@@ -156,70 +153,51 @@ zip, zlib, sodium
 
 ### 8.4 Caching
 
-| Cache               | Key                                             |
-|---------------------|-------------------------------------------------|
-| Composer deps       | `{OS}-composer-{composer.lock hash}`            |
-| Rector              | `{OS}-rector-{composer.lock hash}`              |
-| PHPStan             | `{OS}-phpstan-{composer.lock hash}`             |
-| SPC downloaded sources | `spc-downloads-{OS}-php8.5-v1`              |
-| SPC build output    | `spc-build-{OS}-php8.5-v1`                      |
+| Cache                  | Key                                  |
+|------------------------|--------------------------------------|
+| Composer deps          | `{OS}-composer-{composer.lock hash}` |
+| Rector                 | `{OS}-rector-{composer.lock hash}`   |
+| PHPStan                | `{OS}-phpstan-{composer.lock hash}`  |
+| SPC downloaded sources | `spc-downloads-{OS}-php8.5-v1`       |
+| SPC build output       | `spc-build-{OS}-php8.5-v1`           |
 
-> Bump the `-v1` suffix in cache keys when changing the extensions list or PHP version.
+> Bump the `-v1` suffix when changing the extensions list or PHP version.
 
 ---
 
-## 9. Commands
-
-### 9.1 Implemented
-
-| Command | Description |
-|---------|-------------|
-| `about` | Displays Clonio logo (with shadow) and a short product description |
-
-### 9.2 Planned
-
-| Command    | Description |
-|------------|-------------|
-| `init`     | Initializes a local config file (JSON format) in the current directory |
-| `validate` | Validates a given config file against the expected schema |
-| `transfer` | Main command — executes the DB cloning process (anonymization, fake data, audit trail) |
-| `version`  | Checks whether the currently installed binary is up to date with GitHub Releases |
-
-### 9.3 Command Infrastructure
+## 9. Command Infrastructure
 
 - Commands are placed under `app/Commands/`
 - Auto-discovered by Laravel Zero via `AppServiceProvider`
 - Consistent error handling via Collision integration
 - Optional components installable via `php artisan app:install` (Eloquent, Logging, HTTP Client, etc.)
+- Individual commands are specified in their own SPEC files under `specs/`
 
 ---
 
 ## 10. Quality Assurance
 
-| Area             | Measure                                              | Status |
-|------------------|------------------------------------------------------|--------|
-| Tests            | PestPHP — parallel, runs in CI before every build    | Active |
-| Unit coverage    | Min 85% (`pest --coverage --min=85`)                 | Active |
-| Type coverage    | Min 90% (`pest --type-coverage --min=90`)            | Active |
-| Static analysis  | PHPStan level `max` via Larastan + bleedingEdge      | Active |
-| Code style       | Laravel Pint (parallel)                              | Active |
-| Refactoring lint | Rector (Laravel ruleset + prepared sets)             | Active |
-| Binary smoke test | `./clonio-<platform> --version` in CI after build   | Active |
+| Area              | Measure                                            | Status |
+|-------------------|----------------------------------------------------|--------|
+| Tests             | PestPHP — parallel, runs in CI before every build  | Active |
+| Unit coverage     | Min 85% (`pest --coverage --min=85`)               | Active |
+| Type coverage     | Min 90% (`pest --type-coverage --min=90`)          | Active |
+| Static analysis   | PHPStan level `max` via Larastan + bleedingEdge    | Active |
+| Code style        | Laravel Pint (parallel)                            | Active |
+| Refactoring lint  | Rector (Laravel ruleset + prepared sets)           | Active |
+| Binary smoke test | `./clonio-<platform> --version` after each build   | Active |
 
 ---
 
 ## 11. Versioning & Releases
 
 - Semantic versioning: `MAJOR.MINOR.PATCH`
-- Application version is resolved from git tags at runtime (`resolve('git.version')` in `config/app.php`)
+- Application version resolved from git tags at runtime (`resolve('git.version')` in `config/app.php`)
 - Git tags (`v1.0.0`) trigger the build/release workflow
-- GitHub Releases include all four platform binaries
+- GitHub Releases include all four platform-specific binaries
 
 ---
 
 ## 12. Open Questions
 
-- [ ] **`version` command:** Should it compare against GitHub Releases API, or a separate version endpoint?
-- [ ] **`init` command:** What fields does the JSON config contain? (connection strings, anonymization rules, target environments, etc.)
-- [ ] **`transfer` command scope:** Sync schema only, data only, or both? Incremental or full clone?
 - [ ] **Windows support:** Revisit after initial release — evaluate SPC Windows build support at that point
