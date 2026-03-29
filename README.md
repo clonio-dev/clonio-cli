@@ -51,6 +51,7 @@ No PHP installation required — the binary is fully self-contained.
 | Command | Description |
 |---------|-------------|
 | [`about`](docs/commands/about.md) | Display product information |
+| [`update`](docs/commands/update.md) | Update to the latest release |
 
 ---
 
