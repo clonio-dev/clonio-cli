@@ -16,10 +16,11 @@
     ],
     "require": {
         "php": "^8.4",
-        "driftingly/rector-laravel": "^2.2",
         "laravel-zero/framework": "^12.1.0"
     },
     "require-dev": {
+        "driftingly/rector-laravel": "^2.2",
+        "larastan/larastan": "^3.9",
         "laravel/pint": "^1.29.0",
         "mockery/mockery": "^1.6.12",
         "pestphp/pest": "^4.4.3",
@@ -45,6 +46,7 @@
         ],
         "test:type-coverage": "pest --type-coverage --min=1",
         "test:unit": "pest --parallel --coverage --min=1",
+        "test:types": "phpstan",
         "test:lint": [
             "pint --parallel --test",
             "rector --dry-run"
@@ -52,6 +54,7 @@
         "test": [
             "@test:type-coverage",
             "@test:unit",
+            "@test:types",
             "@test:lint"
         ]
     },
