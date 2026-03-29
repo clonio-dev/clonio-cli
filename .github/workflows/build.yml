@@ -128,6 +128,8 @@ jobs:
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./spc download --with-php=${{ env.PHP_VERSION }} --for-extensions="${{ env.EXTENSIONS }}"
 
       - name: Cache SPC build output
