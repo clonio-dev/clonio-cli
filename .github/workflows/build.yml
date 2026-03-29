@@ -74,6 +74,7 @@ jobs:
             output: clonio-macos-aarch64
 
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PHP_VERSION: '8.5'
       EXTENSIONS: ctype,curl,fileinfo,filter,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,sqlite3,tokenizer,zlib
 
