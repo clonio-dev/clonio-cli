@@ -230,3 +230,39 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./artifacts/*
+          body: |
+            ## Installation
+
+            | File | Platform | Requires |
+            |------|----------|----------|
+            | `clonio-linux-x86_64` | Linux — x86_64 (Intel/AMD) | nothing |
+            | `clonio-linux-aarch64` | Linux — aarch64 (ARM64) | nothing |
+            | `clonio-macos-aarch64` | macOS — Apple Silicon (M1/M2/M3/M4) | nothing |
+            | `clonio.phar` | Any platform | PHP 8.5 |
+
+            ### Linux
+
+            ```bash
+            mv clonio-linux-x86_64 clonio   # or clonio-linux-aarch64 for ARM
+            chmod +x clonio
+            sudo mv clonio /usr/local/bin/clonio
+            clonio --version
+            ```
+
+            ### macOS
+
+            > ⚠️ The binary is currently unsigned. macOS Gatekeeper will block it on first run.
+
+            ```bash
+            mv clonio-macos-aarch64 clonio
+            chmod +x clonio
+            xattr -d com.apple.quarantine clonio
+            sudo mv clonio /usr/local/bin/clonio
+            clonio --version
+            ```
+
+            ### PHAR (any platform with PHP 8.5)
+
+            ```bash
+            php clonio.phar --version
+            ```
