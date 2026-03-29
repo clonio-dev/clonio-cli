@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Update;
 
+use Phar;
 use RuntimeException;
 
 class BinaryResolver
@@ -17,11 +18,9 @@ class BinaryResolver
             return [PHP_BINARY, $this->detectBinaryFilename()];
         }
 
-        $pharPath = \Phar::running(false);
+        $pharPath = Phar::running(false);
 
-        if ($pharPath === '') {
-            throw new RuntimeException('Cannot determine the current binary path.');
-        }
+        throw_if($pharPath === '', RuntimeException::class, 'Cannot determine the current binary path.');
 
         return [$pharPath, 'clonio.phar'];
     }
@@ -40,6 +39,6 @@ class BinaryResolver
             default => throw new RuntimeException('Unsupported OS: '.PHP_OS_FAMILY),
         };
 
-        return "clonio-{$os}-{$arch}";
+        return sprintf('clonio-%s-%s', $os, $arch);
     }
 }
