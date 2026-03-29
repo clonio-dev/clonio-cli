@@ -102,15 +102,6 @@ jobs:
       - name: Build PHAR
         run: ./clonio app:build clonio --no-interaction
 
-      - name: Install build dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            pkg-config build-essential autoconf libtool bison re2c cmake \
-            libssl-dev zlib1g-dev libcurl4-openssl-dev libreadline-dev \
-            libsqlite3-dev libpq-dev default-libmysqlclient-dev
-
       - name: Download SPC binary
         run: |
           curl -fsSL "https://github.com/crazywhalecc/static-php-cli/releases/latest/download/${{ matrix.spc-binary }}.tar.gz" \
@@ -118,6 +109,14 @@ jobs:
           tar -xzf spc.tar.gz
           chmod +x ./spc
           rm spc.tar.gz
+
+      - name: Install build dependencies
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo ./spc doctor --auto-fix
+          else
+            ./spc doctor --auto-fix
+          fi
 
       - name: Cache SPC downloaded sources
         id: spc-downloads-cache
