@@ -78,7 +78,7 @@ jobs:
 
     env:
       PHP_VERSION: '8.5'
-      EXTENSIONS: bcmath,ctype,curl,dom,fileinfo,filter,iconv,mbstring,openssl,pcntl,pdo,phar,posix,readline,simplexml,tokenizer,xml,xmlreader,xmlwriter,zip,zlib,sodium
+      EXTENSIONS: ctype,curl,filter,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,sqlite3,tokenizer,zlib
 
     steps:
       - name: Checkout
