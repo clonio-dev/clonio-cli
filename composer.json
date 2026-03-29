@@ -16,12 +16,14 @@
     ],
     "require": {
         "php": "^8.4",
-        "laravel-zero/framework": "^12.0.2"
+        "driftingly/rector-laravel": "^2.2",
+        "laravel-zero/framework": "^12.1.0"
     },
     "require-dev": {
         "laravel/pint": "^1.29.0",
         "mockery/mockery": "^1.6.12",
-        "pestphp/pest": "^4.4.3"
+        "pestphp/pest": "^4.4.3",
+        "pestphp/pest-plugin-type-coverage": "^4.0"
     },
     "autoload": {
         "psr-4": {
@@ -36,8 +38,22 @@
         }
     },
     "scripts": {
-        "test": "pest",
-        "lint": "pint"
+        "update:requirements": "composer bump",
+        "lint": [
+            "rector",
+            "pint --parallel"
+        ],
+        "test:type-coverage": "pest --type-coverage --min=1",
+        "test:unit": "pest --parallel --coverage --min=1",
+        "test:lint": [
+            "pint --parallel --test",
+            "rector --dry-run"
+        ],
+        "test": [
+            "@test:type-coverage",
+            "@test:unit",
+            "@test:lint"
+        ]
     },
     "config": {
         "preferred-install": "dist",
