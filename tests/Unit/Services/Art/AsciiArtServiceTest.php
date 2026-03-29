@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 use App\Services\Art\AsciiArtService;
 use Illuminate\Console\OutputStyle;
-use Tests\TestCase;
-
-uses(TestCase::class);
 
 it('writes clonio logo lines to output', function (): void {
     $output = Mockery::mock(OutputStyle::class);
