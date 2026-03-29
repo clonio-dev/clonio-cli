@@ -103,7 +103,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
       - name: Build PHAR
-        run: php artisan app:build clonio --no-interaction
+        run: ./clonio app:build clonio --no-interaction
 
       - name: Download SPC binary
         run: |
