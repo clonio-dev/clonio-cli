@@ -114,6 +114,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             sudo ./spc doctor --auto-fix
+            sudo chown -R "$(id -u):$(id -g)" .
           else
             ./spc doctor --auto-fix
           fi
