@@ -35,6 +35,10 @@
             "Tests\\": "tests/"
         }
     },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint"
+    },
     "config": {
         "preferred-install": "dist",
         "sort-packages": true,
