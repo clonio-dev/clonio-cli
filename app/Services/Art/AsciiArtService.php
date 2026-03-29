@@ -11,6 +11,10 @@ class AsciiArtService
     public function clonioLogo(OutputStyle $output): void
     {
         $content = file_get_contents(resource_path('ascii-art/clonio-logo.txt'));
+        if ($content === false) {
+            return;
+        }
+
         $lines = explode("\n", $content);
 
         $this->paintToConsole($output, $lines);
@@ -19,6 +23,10 @@ class AsciiArtService
     public function clonioLogoWithShadow(OutputStyle $output): void
     {
         $content = file_get_contents(resource_path('ascii-art/clonio-logo-with-shadow.txt'));
+        if ($content === false) {
+            return;
+        }
+
         $lines = explode("\n", $content);
 
         $this->paintToConsole($output, $lines);
