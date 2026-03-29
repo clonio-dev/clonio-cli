@@ -111,7 +111,7 @@ GitHub Release Asset
 Embedded into the binary by default. Extend per command as needed:
 
 ```
-ctype, curl, filter, iconv, mbstring, openssl, pcntl,
+ctype, curl, fileinfo, filter, iconv, mbstring, openssl, pcntl,
 pdo, pdo_mysql, pdo_pgsql, pdo_sqlite,
 phar, readline, sqlite3, tokenizer, zlib
 ```
