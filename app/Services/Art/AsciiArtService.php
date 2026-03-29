@@ -25,12 +25,10 @@ class AsciiArtService
     }
 
     /**
-     * @param \Illuminate\Console\OutputStyle $output
-     * @param string[] $lines
-     * @return void
+     * @param  string[]  $lines
      */
     private function paintToConsole(OutputStyle $output, array $lines): void
     {
-        array_map(fn(string $line) => $output->writeln($line), $lines);
+        array_map(fn (string $line) => $output->writeln($line), $lines);
     }
 }
