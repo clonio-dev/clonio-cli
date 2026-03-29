@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Services\Update\BinaryResolver;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use LaravelZero\Framework\Commands\Command;
 use Throwable;
@@ -40,7 +39,7 @@ class UpdateCommand extends Command
                 ->withUserAgent('clonio-cli')
                 ->accept('application/vnd.github.v3+json')
                 ->get(self::RELEASES_API);
-        } catch (RequestException|Throwable) {
+        } catch (Throwable) {
             $this->error('Could not reach GitHub. Please check your internet connection.');
 
             return Command::FAILURE;
@@ -64,13 +63,13 @@ class UpdateCommand extends Command
         $latestVersion = $this->normalizeVersion($latestTag);
 
         if ($currentVersion === $latestVersion) {
-            $this->info("Already up to date ({$currentVersion}).");
+            $this->info(sprintf('Already up to date (%s).', $currentVersion));
 
             return Command::SUCCESS;
         }
 
-        $this->info("New version available: {$latestVersion} (current: {$currentVersion})");
-        $this->info("Downloading {$filename}...");
+        $this->info(sprintf('New version available: %s (current: %s)', $latestVersion, $currentVersion));
+        $this->info(sprintf('Downloading %s...', $filename));
 
         $tmpPath = $currentPath.'.update';
 
@@ -80,7 +79,7 @@ class UpdateCommand extends Command
                 ->withUserAgent('clonio-cli')
                 ->sink($tmpPath)
                 ->get(self::DOWNLOAD_BASE.'/'.$filename);
-        } catch (RequestException|Throwable) {
+        } catch (Throwable) {
             @unlink($tmpPath);
             $this->error('Download failed.');
 
@@ -105,12 +104,12 @@ class UpdateCommand extends Command
 
         if (! rename($tmpPath, $currentPath)) {
             @unlink($tmpPath);
-            $this->error("Could not replace binary at {$currentPath}. Try running with sudo.");
+            $this->error(sprintf('Could not replace binary at %s. Try running with sudo.', $currentPath));
 
             return Command::FAILURE;
         }
 
-        $this->info("Updated successfully to {$latestVersion}.");
+        $this->info(sprintf('Updated successfully to %s.', $latestVersion));
 
         return Command::SUCCESS;
     }
