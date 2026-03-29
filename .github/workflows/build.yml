@@ -208,10 +208,12 @@ jobs:
 
       - name: Upload PHAR as artifact
         if: matrix.upload_phar
-        uses: actions/upload-artifact@v4
+        run: cp builds/clonio builds/clonio.phar
+      - uses: actions/upload-artifact@v4
+        if: matrix.upload_phar
         with:
           name: clonio.phar
-          path: builds/clonio
+          path: builds/clonio.phar
 
   release:
     name: Publish Release
