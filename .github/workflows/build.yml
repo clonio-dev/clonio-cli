@@ -149,6 +149,51 @@ jobs:
           ./spc micro:combine builds/clonio --output ${{ matrix.output }}
           chmod +x ./${{ matrix.output }}
 
+      # Code signing and notarization — disabled until Apple Developer account is configured.
+      # See docs/code-signing.md for setup instructions.
+      #
+      # - name: Import code signing certificate (macOS)
+      #   if: runner.os == 'macOS' && env.APPLE_CERTIFICATE_P12 != ''
+      #   env:
+      #     APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12 }}
+      #     APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
+      #   run: |
+      #     echo "$APPLE_CERTIFICATE_P12" | base64 --decode > certificate.p12
+      #     security create-keychain -p "" build.keychain
+      #     security default-keychain -s build.keychain
+      #     security unlock-keychain -p "" build.keychain
+      #     security import certificate.p12 -k build.keychain \
+      #       -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+      #     security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+      #     rm certificate.p12
+      #
+      # - name: Sign binary (macOS)
+      #   if: runner.os == 'macOS' && env.APPLE_CERTIFICATE_P12 != ''
+      #   env:
+      #     APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12 }}
+      #     APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      #   run: |
+      #     codesign --deep --force --verify --verbose \
+      #       --sign "$APPLE_SIGNING_IDENTITY" \
+      #       --options runtime \
+      #       ./${{ matrix.output }}
+      #
+      # - name: Notarize binary (macOS)
+      #   if: runner.os == 'macOS' && env.APPLE_CERTIFICATE_P12 != ''
+      #   env:
+      #     APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12 }}
+      #     APPLE_ID: ${{ secrets.APPLE_ID }}
+      #     APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      #   run: |
+      #     zip ${{ matrix.output }}.zip ${{ matrix.output }}
+      #     xcrun notarytool submit ${{ matrix.output }}.zip \
+      #       --apple-id "$APPLE_ID" \
+      #       --password "$APPLE_ID_PASSWORD" \
+      #       --team-id "$APPLE_TEAM_ID" \
+      #       --wait
+      #     rm ${{ matrix.output }}.zip
+
       - name: Smoke test
         run: ./${{ matrix.output }} --version
 

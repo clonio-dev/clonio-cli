@@ -19,14 +19,27 @@ Download the binary for your platform from the [latest release](https://github.c
 | Linux aarch64       | `clonio-linux-aarch64`   |
 | macOS Apple Silicon | `clonio-macos-aarch64`   |
 
-Make it executable and optionally move it to your PATH:
+Rename it, make it executable, and optionally move it to your PATH:
 
 ```bash
-chmod +x clonio-linux-x86_64
-mv clonio-linux-x86_64 /usr/local/bin/clonio
+# Linux
+mv clonio-linux-x86_64 clonio
+chmod +x clonio
+mv clonio /usr/local/bin/clonio
+
+# macOS
+mv clonio-macos-aarch64 clonio
+chmod +x clonio
+mv clonio /usr/local/bin/clonio
 ```
 
 No PHP installation required — the binary is fully self-contained.
+
+> **macOS note:** The binary is currently unsigned. macOS may block it with a Gatekeeper warning. To allow it, run:
+> ```bash
+> xattr -d com.apple.quarantine clonio
+> ```
+> See [docs/code-signing.md](docs/code-signing.md) for the full signing setup once an Apple Developer account is available.
 
 ---
 
