@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Services\Update\BinaryResolver;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use LaravelZero\Framework\Commands\Command;
+use Throwable;
 
 class UpdateCommand extends Command
 {
@@ -32,11 +34,17 @@ class UpdateCommand extends Command
 
         [$currentPath, $filename] = $resolver->resolve();
 
-        $response = Http::timeout(10)
-            ->retry(3, 100)
-            ->withUserAgent('clonio-cli')
-            ->accept('application/vnd.github.v3+json')
-            ->get(self::RELEASES_API);
+        try {
+            $response = Http::timeout(10)
+                ->retry(3, 100)
+                ->withUserAgent('clonio-cli')
+                ->accept('application/vnd.github.v3+json')
+                ->get(self::RELEASES_API);
+        } catch (RequestException|Throwable) {
+            $this->error('Could not reach GitHub. Please check your internet connection.');
+
+            return Command::FAILURE;
+        }
 
         if ($response->failed()) {
             $this->error('Could not reach GitHub. Please check your internet connection.');
@@ -66,13 +74,27 @@ class UpdateCommand extends Command
 
         $tmpPath = $currentPath.'.update';
 
-        $download = Http::timeout(120)
-            ->retry(3, 100)
-            ->withUserAgent('clonio-cli')
-            ->sink($tmpPath)
-            ->get(self::DOWNLOAD_BASE.'/'.$filename);
+        try {
+            $download = Http::timeout(120)
+                ->retry(3, 100)
+                ->withUserAgent('clonio-cli')
+                ->sink($tmpPath)
+                ->get(self::DOWNLOAD_BASE.'/'.$filename);
+        } catch (RequestException|Throwable) {
+            @unlink($tmpPath);
+            $this->error('Download failed.');
+
+            return Command::FAILURE;
+        }
 
         if ($download->failed()) {
+            @unlink($tmpPath);
+            $this->error('Download failed.');
+
+            return Command::FAILURE;
+        }
+
+        if (! file_exists($tmpPath) || filesize($tmpPath) === 0) {
             @unlink($tmpPath);
             $this->error('Download failed.');
 
