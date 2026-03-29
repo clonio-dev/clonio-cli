@@ -37,14 +37,13 @@ The full run takes roughly 15–30 minutes on a cold cache (SPC compiles PHP fro
 Once the workflow completes, the release appears at:
 `https://github.com/clonio-dev/clonio-cli/releases/latest`
 
-It will contain four binaries:
+It will contain three binaries:
 
 | File | Platform |
 |------|----------|
 | `clonio-linux-x86_64` | Linux (Intel/AMD) |
 | `clonio-linux-aarch64` | Linux (ARM64) |
 | `clonio-macos-aarch64` | macOS Apple Silicon |
-| `clonio-macos-x86_64` | macOS Intel |
 
 The version embedded in each binary matches the tag name and is resolved automatically from git — no manual version bump required.
 

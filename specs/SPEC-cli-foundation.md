@@ -94,15 +94,15 @@ GitHub Release Asset
 
 ## 6. Platform Support
 
-| Platform | Architecture            | Supported                    |
-|----------|-------------------------|------------------------------|
-| Linux    | x86_64                  | Yes                          |
-| Linux    | aarch64                 | Yes                          |
-| macOS    | x86_64 (Intel)          | Yes                          |
-| macOS    | aarch64 (Apple Silicon) | Yes                          |
+| Platform | Architecture            | Supported                      |
+|----------|-------------------------|--------------------------------|
+| Linux    | x86_64                  | Yes                            |
+| Linux    | aarch64                 | Yes                            |
+| macOS    | aarch64 (Apple Silicon) | Yes                            |
+| macOS    | x86_64 (Intel)          | No — GitHub dropped free runner |
 | Windows  | x86_64                  | Desired — out of scope for now |
 
-> Windows builds are desirable but skipped for the initial release due to SPC constraints.
+> macOS Intel builds require a paid GitHub Actions runner (`macos-13`). Revisit if there is user demand. Windows is skipped for the initial release due to SPC constraints.
 
 ---
 
@@ -137,7 +137,6 @@ phar, readline, sqlite3, tokenizer, zlib
 | `ubuntu-latest`    | `spc-linux-x86_64`  | `clonio-linux-x86_64`  |
 | `ubuntu-24.04-arm` | `spc-linux-aarch64` | `clonio-linux-aarch64` |
 | `macos-latest`     | `spc-macos-aarch64` | `clonio-macos-aarch64` |
-| `macos-13`         | `spc-macos-x86_64`  | `clonio-macos-x86_64`  |
 
 ### 8.3 Workflow Steps (`build.yml`, per runner)
 

@@ -13,12 +13,11 @@ It is free and open source for individuals and NGOs. See [clonio.io](https://clo
 
 Download the binary for your platform from the [latest release](https://github.com/clonio-dev/clonio-cli/releases/latest):
 
-| Platform         | Binary                   |
-|------------------|--------------------------|
-| Linux x86_64     | `clonio-linux-x86_64`    |
-| Linux aarch64    | `clonio-linux-aarch64`   |
-| macOS Intel      | `clonio-macos-x86_64`    |
-| macOS Apple Silicon | `clonio-macos-aarch64` |
+| Platform            | Binary                   |
+|---------------------|--------------------------|
+| Linux x86_64        | `clonio-linux-x86_64`    |
+| Linux aarch64       | `clonio-linux-aarch64`   |
+| macOS Apple Silicon | `clonio-macos-aarch64`   |
 
 Make it executable and optionally move it to your PATH:
 

@@ -72,9 +72,6 @@ jobs:
           - runner: macos-latest
             spc-binary: spc-macos-aarch64
             output: clonio-macos-aarch64
-          - runner: macos-13
-            spc-binary: spc-macos-x86_64
-            output: clonio-macos-x86_64
 
     env:
       PHP_VERSION: '8.5'
