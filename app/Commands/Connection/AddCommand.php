@@ -27,7 +27,8 @@ class AddCommand extends Command
         {--schema= : Database schema (PostgreSQL only)}
         {--username= : Database username}
         {--password= : Database password}
-        {--production : Mark this as a production connection}';
+        {--production : Mark this as a production connection}
+        {--trust-server-certificate : Trust the server certificate (SQL Server with self-signed certs)}';
 
     /**
      * @var string
@@ -168,7 +169,18 @@ class AddCommand extends Command
             }
         }
 
-        // --- Step 9: Production flag ---
+        // --- Step 9: Trust server certificate (SQL Server only) ---
+        $trustServerCertificate = false;
+
+        if ($type === DatabaseConnectionType::SqlServer) {
+            $trustServerCertificate = (bool) $this->option('trust-server-certificate');
+
+            if (! $trustServerCertificate) {
+                $trustServerCertificate = $this->confirm('Trust server certificate? (required for self-signed certs)', false);
+            }
+        }
+
+        // --- Step 10: Production flag ---
         $isProduction = (bool) $this->option('production');
 
         if (! $isProduction) {
@@ -208,6 +220,10 @@ class AddCommand extends Command
             $summaryRows[] = ['Password', '••••••••'];
         }
 
+        if ($type === DatabaseConnectionType::SqlServer) {
+            $summaryRows[] = ['Trust certificate', $trustServerCertificate ? 'Yes' : 'No'];
+        }
+
         $summaryRows[] = ['Production', $isProduction ? 'Yes' : 'No'];
 
         $this->table(['Field', 'Value'], $summaryRows);
@@ -230,6 +246,7 @@ class AddCommand extends Command
             username: $username,
             password: $encryptedPassword,
             isProduction: $isProduction,
+            trustServerCertificate: $trustServerCertificate,
         );
 
         try {

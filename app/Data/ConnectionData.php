@@ -18,6 +18,7 @@ final readonly class ConnectionData
         public ?string $username,
         public string $password,
         public bool $isProduction,
+        public bool $trustServerCertificate = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -41,6 +42,7 @@ final readonly class ConnectionData
             username: is_string($username) ? $username : null,
             password: is_string($password) ? $password : '',
             isProduction: (bool) ($data['is_production'] ?? false),
+            trustServerCertificate: (bool) ($data['trust_server_certificate'] ?? false),
         );
     }
 
@@ -71,6 +73,10 @@ final readonly class ConnectionData
 
         $data['password'] = $this->password;
         $data['is_production'] = $this->isProduction;
+
+        if ($this->trustServerCertificate) {
+            $data['trust_server_certificate'] = true;
+        }
 
         return $data;
     }

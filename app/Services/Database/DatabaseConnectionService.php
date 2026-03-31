@@ -58,6 +58,10 @@ class DatabaseConnectionService
             $config['charset'] = 'UTF8';
         } elseif ($connection->type === DatabaseConnectionType::SqlServer) {
             $config['charset'] = 'utf8';
+
+            if ($connection->trustServerCertificate) {
+                $config['trust_server_certificate'] = true;
+            }
         }
 
         if ($connection->schema !== null) {

@@ -158,6 +158,14 @@ class UpdateCommand extends Command
 
         $isProduction = $this->confirm('Is this a production connection?', $current->isProduction);
 
+        $trustServerCertificate = false;
+        if ($newType === DatabaseConnectionType::SqlServer) {
+            $trustServerCertificate = $this->confirm(
+                'Trust server certificate? (required for self-signed certs)',
+                $typeChanged ? false : $current->trustServerCertificate,
+            );
+        }
+
         return new ConnectionData(
             name: $newName,
             type: $newType,
@@ -168,6 +176,7 @@ class UpdateCommand extends Command
             username: $username !== null && $username !== '' ? $username : null,
             password: $password,
             isProduction: $isProduction,
+            trustServerCertificate: $trustServerCertificate,
         );
     }
 
@@ -198,6 +207,10 @@ class UpdateCommand extends Command
             'is_production' => [
                 $old->isProduction ? 'true' : 'false',
                 $new->isProduction ? 'true' : 'false',
+            ],
+            'trust_server_certificate' => [
+                $old->trustServerCertificate ? 'true' : 'false',
+                $new->trustServerCertificate ? 'true' : 'false',
             ],
         ];
 

@@ -161,6 +161,7 @@ jobs:
           php clonio connection:add mssql-test \
             --type=sqlsrv --host=127.0.0.1 --port=1433 \
             --database=master --username=sa --password="Clonio@Strong1" \
+            --trust-server-certificate \
             --no-interaction
 
       - name: Test SQL Server connection
