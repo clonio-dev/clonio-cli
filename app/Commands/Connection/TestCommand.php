@@ -8,9 +8,10 @@ use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
 use App\Services\Config\ConfigService;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
 use LaravelZero\Framework\Commands\Command;
+use RuntimeException;
 use Throwable;
 
 class TestCommand extends Command
@@ -27,19 +28,19 @@ class TestCommand extends Command
      */
     protected $description = 'Test one or all saved database connections';
 
-    public function handle(ConfigService $config): int
+    public function handle(ConfigService $config, DatabaseConnectionService $connector): int
     {
         $name = $this->argument('name');
         $ci = (bool) $this->option('ci');
 
         if (is_string($name) && $name !== '') {
-            return $this->testSingle($config, $name, $ci);
+            return $this->testSingle($config, $connector, $name, $ci);
         }
 
-        return $this->testAll($config, $ci);
+        return $this->testAll($config, $connector, $ci);
     }
 
-    private function testSingle(ConfigService $config, string $name, bool $ci): int
+    private function testSingle(ConfigService $config, DatabaseConnectionService $connector, string $name, bool $ci): int
     {
         $connection = $config->getConnection($name);
 
@@ -49,7 +50,7 @@ class TestCommand extends Command
             return ExitCode::ConfigError->value;
         }
 
-        [$ok, $message, $elapsed, $exitCode] = $this->testConnection($connection);
+        [$ok, $message, $elapsed, $exitCode] = $this->testConnection($connection, $connector);
 
         if ($ok) {
             if (! $ci) {
@@ -64,7 +65,7 @@ class TestCommand extends Command
         return $exitCode->value;
     }
 
-    private function testAll(ConfigService $config, bool $ci): int
+    private function testAll(ConfigService $config, DatabaseConnectionService $connector, bool $ci): int
     {
         $connections = $config->getConnections();
 
@@ -79,7 +80,7 @@ class TestCommand extends Command
         $worstExitCode = ExitCode::Success;
 
         foreach ($connections as $name => $connection) {
-            [$ok, $message, $elapsed, $exitCode] = $this->testConnection($connection);
+            [$ok, $message, $elapsed, $exitCode] = $this->testConnection($connection, $connector);
 
             if (! $ok) {
                 $failCount++;
@@ -122,7 +123,7 @@ class TestCommand extends Command
      *
      * @return array{bool, string, int, ExitCode}
      */
-    private function testConnection(ConnectionData $connection): array
+    private function testConnection(ConnectionData $connection, DatabaseConnectionService $connector): array
     {
         $start = hrtime(true);
 
@@ -130,7 +131,7 @@ class TestCommand extends Command
             return $this->testSqlite($connection, $start);
         }
 
-        return $this->testNetwork($connection, $start);
+        return $this->testNetwork($connection, $start, $connector);
     }
 
     /**
@@ -158,49 +159,17 @@ class TestCommand extends Command
     /**
      * @return array{bool, string, int, ExitCode}
      */
-    private function testNetwork(ConnectionData $connection, int $start): array
+    private function testNetwork(ConnectionData $connection, int $start, DatabaseConnectionService $connector): array
     {
-        $password = $connection->password;
-
-        if (str_starts_with($password, 'encrypted:')) {
-            try {
-                $password = Crypt::decryptString(substr($password, 10));
-            } catch (Throwable) {
-                return [
-                    false,
-                    'Could not decrypt password — check APP_KEY.',
-                    $this->elapsedMs($start),
-                    ExitCode::ConfigError,
-                ];
-            }
+        try {
+            $password = $connector->resolvePassword($connection);
+        } catch (RuntimeException) {
+            return [false, 'Could not decrypt password — check APP_KEY.', $this->elapsedMs($start), ExitCode::ConfigError];
         }
 
         $dynamicName = 'clonio_test_'.uniqid();
 
-        $dbConfig = [
-            'driver' => $connection->type->value,
-            'host' => $connection->host,
-            'port' => $connection->port,
-            'database' => $connection->database,
-            'username' => $connection->username,
-            'password' => $password,
-            'prefix' => '',
-        ];
-
-        if ($connection->type === DatabaseConnectionType::Mysql || $connection->type === DatabaseConnectionType::MariaDB) {
-            $dbConfig['charset'] = 'utf8mb4';
-            $dbConfig['collation'] = 'utf8mb4_unicode_ci';
-        } elseif ($connection->type === DatabaseConnectionType::PostgreSQL) {
-            $dbConfig['charset'] = 'UTF8';
-        } elseif ($connection->type === DatabaseConnectionType::SqlServer) {
-            $dbConfig['charset'] = 'utf8';
-        }
-
-        if ($connection->schema !== null) {
-            $dbConfig['search_path'] = $connection->schema;
-        }
-
-        config(['database.connections.'.$dynamicName => $dbConfig]);
+        config(['database.connections.'.$dynamicName => $connector->buildConfig($connection, $password)]);
 
         try {
             DB::connection($dynamicName)->getPdo();
