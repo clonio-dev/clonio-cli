@@ -184,10 +184,17 @@ class TestCommand extends Command
             'database' => $connection->database,
             'username' => $connection->username,
             'password' => $password,
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
             'prefix' => '',
         ];
+
+        if ($connection->type === DatabaseConnectionType::Mysql || $connection->type === DatabaseConnectionType::MariaDB) {
+            $dbConfig['charset'] = 'utf8mb4';
+            $dbConfig['collation'] = 'utf8mb4_unicode_ci';
+        } elseif ($connection->type === DatabaseConnectionType::PostgreSQL) {
+            $dbConfig['charset'] = 'UTF8';
+        } elseif ($connection->type === DatabaseConnectionType::SqlServer) {
+            $dbConfig['charset'] = 'utf8';
+        }
 
         if ($connection->schema !== null) {
             $dbConfig['search_path'] = $connection->schema;
