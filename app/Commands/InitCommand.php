@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Enums\ExitCode;
+use App\Services\Art\AsciiArtService;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
@@ -22,11 +23,10 @@ class InitCommand extends Command
      */
     protected $description = 'Bootstrap Clonio in the current directory by ensuring APP_KEY is available';
 
-    public function handle(): int
+    public function handle(AsciiArtService $asciiArtService): int
     {
-        $this->line('');
+        $asciiArtService->clonioLogoWithShadow($this->output, '  ');
         $this->line('  Checking for APP_KEY ...');
-        $this->line('');
 
         $keyInEnv = $this->keyInSystemEnv();
         $keyInDotenv = $this->keyInDotenvFile();
@@ -37,8 +37,6 @@ class InitCommand extends Command
             } else {
                 $this->info('  ✓  APP_KEY found in .env — ready.');
             }
-
-            $this->line('');
 
             return ExitCode::Success->value;
         }
