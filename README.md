@@ -50,8 +50,13 @@ No PHP installation required — the binary is fully self-contained.
 
 | Command | Description |
 |---------|-------------|
-| [`about`](docs/commands/about.md) | Display product information |
+| [`init`](docs/commands/init.md) | Bootstrap Clonio in the current directory |
 | [`update`](docs/commands/update.md) | Update to the latest release |
+| [`connection:add`](docs/commands/connection-add.md) | Add a new database connection |
+| [`connection:update`](docs/commands/connection-update.md) | Update an existing database connection |
+| [`connection:delete`](docs/commands/connection-delete.md) | Delete a saved database connection |
+| [`connection:test`](docs/commands/connection-test.md) | Test one or all saved database connections |
+| [`about`](docs/commands/about.md) | Display product information |
 
 ---
 
