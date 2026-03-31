@@ -128,6 +128,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install Microsoft ODBC Driver 18
+        run: |
+          curl -sSL -O https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
+
       - name: Setup PHP with sqlsrv extension
         uses: shivammathur/setup-php@v2
         with:
