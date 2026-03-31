@@ -64,7 +64,7 @@ it('does nothing when logo file does not exist', function (): void {
     // Temporarily swap the resource path by mocking file_get_contents via a subclass
     $service = new class extends AsciiArtService
     {
-        public function clonioLogo(OutputStyle $output): void
+        public function clonioLogo(OutputStyle $output, string $indent = ''): void
         {
             // Simulate file_get_contents returning false
             $lines = false;
