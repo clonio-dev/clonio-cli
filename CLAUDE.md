@@ -35,6 +35,21 @@ make current               # Show current version
 make patch / minor / major # Bump version and push git tag
 ```
 
+## Companion Repository
+
+The actual business logic (database transfer, anonymization, etc.) lives in the companion Laravel web app repository:
+
+- **GitHub**: https://github.com/clonio-dev/clonio
+- **Local path**: `/Users/rok/workspace/clonio-dev/clonio`
+
+When implementing new CLI commands, look there first for:
+- **Services** (`app/Services/`) — reusable business logic to port or call
+- **Actions** (`app/Actions/`) — discrete operations (create, transfer, anonymize, etc.)
+- **Models & Data** (`app/Models/`, `app/Data/`) — data structures and Eloquent models
+- **Tests** (`tests/Feature/`, `tests/Unit/`) — existing test patterns and coverage to mirror in this CLI
+
+The CLI repo is the command-line surface; the companion repo is the implementation source of truth.
+
 ## Architecture
 
 ### Framework & Entry Point
