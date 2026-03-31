@@ -5,45 +5,40 @@ declare(strict_types=1);
 namespace App\Services\Config;
 
 use App\Data\ConnectionData;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 class ConfigService
 {
     private const string FILENAME = 'clonio.json';
 
-    private readonly string $configPath;
-
-    public function __construct(?string $workingDirectory = null)
-    {
-        $dir = $workingDirectory ?? (string) getcwd();
-        $this->configPath = $dir.DIRECTORY_SEPARATOR.self::FILENAME;
-    }
-
     public function getConfigPath(): string
     {
-        return $this->configPath;
+        return Storage::path(self::FILENAME);
     }
 
     public function exists(): bool
     {
-        return file_exists($this->configPath);
+        return Storage::exists(self::FILENAME);
     }
 
     /** @return array<string, mixed> */
     public function load(): array
     {
-        if (! file_exists($this->configPath)) {
+        if (! Storage::exists(self::FILENAME)) {
             return ['connections' => []];
         }
 
-        $content = file_get_contents($this->configPath);
-        if ($content === false) {
-            throw new RuntimeException(sprintf('Cannot read %s: permission denied', $this->configPath));
+        $content = Storage::get(self::FILENAME);
+
+        if ($content === null) {
+            throw new RuntimeException(sprintf('Cannot read %s: permission denied', $this->getConfigPath()));
         }
 
         $decoded = json_decode($content, true);
+
         if (! is_array($decoded)) {
-            throw new RuntimeException('Invalid JSON in '.$this->configPath);
+            throw new RuntimeException(sprintf('Invalid JSON in %s', $this->getConfigPath()));
         }
 
         /** @var array<string, mixed> $decoded */
@@ -56,12 +51,13 @@ class ConfigService
         $content = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         throw_if($content === false, RuntimeException::class, 'Failed to encode configuration as JSON');
 
-        $result = file_put_contents($this->configPath, $content);
-        if ($result === false) {
-            throw new RuntimeException(sprintf('Cannot write to %s: permission denied', $this->configPath));
+        $result = Storage::put(self::FILENAME, $content);
+
+        if (! $result) {
+            throw new RuntimeException(sprintf('Cannot write %s: permission denied', $this->getConfigPath()));
         }
 
-        chmod($this->configPath, 0600);
+        chmod($this->getConfigPath(), 0600);
     }
 
     /** @return array<string, ConnectionData> */
@@ -102,6 +98,7 @@ class ConfigService
         }
 
         $connectionData = $raw[$name];
+
         if (! is_array($connectionData)) {
             return null;
         }

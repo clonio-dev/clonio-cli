@@ -5,37 +5,21 @@ declare(strict_types=1);
 use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Config\ConfigService;
+use Illuminate\Support\Facades\Storage;
 
-function makeTempDir(): string
-{
-    $dir = sys_get_temp_dir().'/clonio_test_'.uniqid();
-    mkdir($dir, 0700, true);
-
-    return $dir;
-}
-
-function removeTempDir(string $dir): void
-{
-    $file = $dir.'/clonio.json';
-    if (file_exists($file)) {
-        unlink($file);
-    }
-    rmdir($dir);
-}
+beforeEach(function (): void {
+    Storage::fake('local');
+});
 
 it('returns empty connections when clonio.json does not exist', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     expect($config->exists())->toBeFalse()
         ->and($config->getConnections())->toBeEmpty();
-
-    removeTempDir($dir);
 });
 
 it('saves and loads a connection', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     $connection = new ConnectionData(
         name: 'staging',
@@ -53,6 +37,8 @@ it('saves and loads a connection', function (): void {
 
     expect($config->exists())->toBeTrue();
 
+    Storage::assertExists('clonio.json');
+
     $loaded = $config->getConnection('staging');
     expect($loaded)->not->toBeNull()
         ->and($loaded->name)->toBe('staging')
@@ -63,23 +49,17 @@ it('saves and loads a connection', function (): void {
         ->and($loaded->username)->toBe('root')
         ->and($loaded->password)->toBe('encrypted:abc')
         ->and($loaded->isProduction)->toBeFalse();
-
-    removeTempDir($dir);
 });
 
 it('returns null for a missing connection name', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     expect($config->getConnection('nonexistent'))->toBeNull()
         ->and($config->hasConnection('nonexistent'))->toBeFalse();
-
-    removeTempDir($dir);
 });
 
 it('deletes a connection', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     $connection = new ConnectionData(
         name: 'staging',
@@ -98,13 +78,10 @@ it('deletes a connection', function (): void {
 
     $config->deleteConnection('staging');
     expect($config->hasConnection('staging'))->toBeFalse();
-
-    removeTempDir($dir);
 });
 
 it('renames a connection', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     $connection = new ConnectionData(
         name: 'staging',
@@ -136,13 +113,10 @@ it('renames a connection', function (): void {
     expect($config->hasConnection('staging'))->toBeFalse()
         ->and($config->hasConnection('dev'))->toBeTrue()
         ->and($config->getConnection('dev')->name)->toBe('dev');
-
-    removeTempDir($dir);
 });
 
 it('returns all connections', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     foreach (['alpha', 'beta', 'gamma'] as $name) {
         $config->setConnection($name, new ConnectionData(
@@ -161,24 +135,18 @@ it('returns all connections', function (): void {
     $connections = $config->getConnections();
     expect($connections)->toHaveCount(3)
         ->and(array_keys($connections))->toBe(['alpha', 'beta', 'gamma']);
-
-    removeTempDir($dir);
 });
 
 it('throws on invalid JSON', function (): void {
-    $dir = makeTempDir();
-    file_put_contents($dir.'/clonio.json', 'not-valid-json');
+    Storage::put('clonio.json', 'not-valid-json');
 
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     expect(fn () => $config->load())->toThrow(RuntimeException::class, 'Invalid JSON');
-
-    removeTempDir($dir);
 });
 
 it('sets file permissions to 0600 on save', function (): void {
-    $dir = makeTempDir();
-    $config = new ConfigService($dir);
+    $config = new ConfigService;
 
     $config->setConnection('test', new ConnectionData(
         name: 'test',
@@ -192,8 +160,6 @@ it('sets file permissions to 0600 on save', function (): void {
         isProduction: false,
     ));
 
-    $perms = fileperms($dir.'/clonio.json') & 0777;
+    $perms = fileperms($config->getConfigPath()) & 0777;
     expect($perms)->toBe(0600);
-
-    removeTempDir($dir);
 });
