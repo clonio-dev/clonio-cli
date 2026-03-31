@@ -90,3 +90,9 @@ The app runs in two modes and must handle both:
 - Unit tests: `tests/Unit/` — test services with Mockery for dependencies
 - Coverage minimum: 75% (unit), 90% (type coverage)
 - All tests extend `Tests\TestCase`
+
+## Specs and Docs
+
+- Use markdown for documentation and specs
+- Specifications can be found in the `specs/` directory
+- Documentation is in the `docs/` directory
