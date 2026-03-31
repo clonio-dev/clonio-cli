@@ -5,4 +5,5 @@
 /.vagrant
 .phpunit.result.cache
 .env
+/storage/framework/testing/*
 /storage/logs/*.log
