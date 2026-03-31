@@ -8,7 +8,7 @@ use Illuminate\Console\OutputStyle;
 
 class AsciiArtService
 {
-    public function clonioLogo(OutputStyle $output): void
+    public function clonioLogo(OutputStyle $output, string $indent = ''): void
     {
         $content = file_get_contents(resource_path('ascii-art/clonio-logo.txt'));
         if ($content === false) {
@@ -17,10 +17,10 @@ class AsciiArtService
 
         $lines = explode("\n", $content);
 
-        $this->paintToConsole($output, $lines);
+        $this->paintToConsole($output, $lines, $indent);
     }
 
-    public function clonioLogoWithShadow(OutputStyle $output): void
+    public function clonioLogoWithShadow(OutputStyle $output, string $indent = ''): void
     {
         $content = file_get_contents(resource_path('ascii-art/clonio-logo-with-shadow.txt'));
         if ($content === false) {
@@ -29,14 +29,14 @@ class AsciiArtService
 
         $lines = explode("\n", $content);
 
-        $this->paintToConsole($output, $lines);
+        $this->paintToConsole($output, $lines, $indent);
     }
 
     /**
      * @param  string[]  $lines
      */
-    private function paintToConsole(OutputStyle $output, array $lines): void
+    private function paintToConsole(OutputStyle $output, array $lines, string $indent = ''): void
     {
-        array_map(fn (string $line) => $output->writeln($line), $lines);
+        array_map(fn (string $line) => $output->writeln($indent.$line), $lines);
     }
 }

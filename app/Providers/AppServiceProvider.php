@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use Dotenv\Dotenv;
+use Illuminate\Support\Env;
 use Illuminate\Support\ServiceProvider;
 use Phar;
 
@@ -24,6 +26,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $cwd = getcwd();
+
+        if (is_string($cwd)) {
+            Dotenv::createImmutable($cwd)->safeLoad();
+
+            $key = Env::get('APP_KEY');
+
+            if (is_string($key) && $key !== '') {
+                config(['app.key' => $key]);
+            }
+        }
     }
 }
