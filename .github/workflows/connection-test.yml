@@ -1,0 +1,163 @@
+name: connection tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── MySQL · MariaDB · PostgreSQL · SQLite ────────────────────────────────
+  connection-test:
+    name: connection:add + connection:test
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: clonio_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: secret
+          MARIADB_DATABASE: clonio_test
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: clonio_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          tools: composer:v2
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Generate APP_KEY
+        run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
+
+      - name: Prepare SQLite database
+        run: touch /tmp/clonio_test.sqlite
+
+      - name: Register connections via connection:add
+        run: |
+          php clonio connection:add mysql-test \
+            --type=mysql --host=127.0.0.1 --port=3306 \
+            --database=clonio_test --username=root --password=secret \
+            --no-interaction
+
+          php clonio connection:add mariadb-test \
+            --type=mariadb --host=127.0.0.1 --port=3307 \
+            --database=clonio_test --username=root --password=secret \
+            --no-interaction
+
+          php clonio connection:add postgres-test \
+            --type=pgsql --host=127.0.0.1 --port=5432 \
+            --database=clonio_test --username=postgres --password=secret \
+            --schema=public --no-interaction
+
+          php clonio connection:add sqlite-test \
+            --type=sqlite --database=/tmp/clonio_test.sqlite \
+            --no-interaction
+
+      - name: Test all connections
+        run: php clonio connection:test --ci
+
+      - name: Show clonio.json on failure
+        if: failure()
+        run: cat clonio.json 2>/dev/null || echo "clonio.json not found"
+
+  # ─── SQL Server (optional — large image, non-blocking) ───────────────────
+  connection-test-mssql:
+    name: connection:test (SQL Server)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          SA_PASSWORD: "Clonio@Strong1"
+          MSSQL_PID: Express
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S 127.0.0.1 -U sa -P 'Clonio@Strong1' -Q 'SELECT 1' -b -o /dev/null -C"
+          --health-interval=15s
+          --health-timeout=10s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup PHP with sqlsrv extension
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          tools: composer:v2
+          extensions: pdo_sqlite, sqlsrv, pdo_sqlsrv
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-mssql-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-mssql-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Generate APP_KEY
+        run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
+
+      - name: Register SQL Server connection
+        run: |
+          php clonio connection:add mssql-test \
+            --type=sqlsrv --host=127.0.0.1 --port=1433 \
+            --database=master --username=sa --password="Clonio@Strong1" \
+            --no-interaction
+
+      - name: Test SQL Server connection
+        run: php clonio connection:test mssql-test --ci
+
+      - name: Show clonio.json on failure
+        if: failure()
+        run: cat clonio.json 2>/dev/null || echo "clonio.json not found"
