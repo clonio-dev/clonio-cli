@@ -78,6 +78,17 @@ The app runs in two modes and must handle both:
 - **Standalone binary** (PHP micro SAPI): `\Phar::running()` returns empty; use `$_SERVER['SCRIPT_FILENAME']`
 - **PHAR**: `\Phar::running()` returns the phar path
 
+### Filesystem / Storage
+Never use raw `file_get_contents` / `file_put_contents` for application files. Use the **`Storage` facade** (`Illuminate\Support\Facades\Storage`) instead.
+
+`config/filesystems.php` sets the `local` disk root to `getcwd()`:
+```php
+'local' => ['driver' => 'local', 'root' => getcwd()],
+```
+This is intentional: PHAR and SPC binaries are read-only archives. Any file that must be written at runtime (e.g. `clonio.json`) must go to the user's working directory, not inside the binary. `Storage::put('clonio.json', $content)` writes to `cwd/clonio.json` regardless of how the binary was packaged.
+
+In tests, isolate filesystem operations with `Storage::fake('local')` (no temp directory management needed). `Storage::path('file')` still returns a real path on disk so `chmod()` works normally.
+
 ### Static Analysis & Code Style
 - **PHPStan** via Larastan at level max (`phpstan.neon`)
 - **Rector** for code modernization with Laravel rulesets (`rector.php`); cache at `/tmp/rector`
