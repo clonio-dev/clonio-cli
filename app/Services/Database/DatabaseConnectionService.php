@@ -42,9 +42,9 @@ class DatabaseConnectionService
     {
         if ($connection->type === DatabaseConnectionType::Sqlite) {
             return [
-                'driver'   => 'sqlite',
+                'driver' => 'sqlite',
                 'database' => $connection->database,
-                'prefix'   => '',
+                'prefix' => '',
             ];
         }
 
