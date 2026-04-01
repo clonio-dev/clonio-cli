@@ -40,6 +40,14 @@ class DatabaseConnectionService
      */
     public function buildConfig(ConnectionData $connection, string $password): array
     {
+        if ($connection->type === DatabaseConnectionType::Sqlite) {
+            return [
+                'driver' => 'sqlite',
+                'database' => $connection->database,
+                'prefix' => '',
+            ];
+        }
+
         /** @var array<string, mixed> $config */
         $config = [
             'driver' => $connection->type->value,

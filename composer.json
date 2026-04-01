@@ -16,15 +16,16 @@
     ],
     "require": {
         "php": "^8.5",
+        "fakerphp/faker": "^1.24",
         "illuminate/database": "^12.17",
         "illuminate/encryption": "^12.56",
         "illuminate/http": "^12.17",
         "illuminate/log": "^12.17",
-        "laravel-zero/framework": "^12.1.0"
+        "laravel-zero/framework": "^12.1.0",
+        "symfony/yaml": "^8.0"
     },
     "require-dev": {
         "driftingly/rector-laravel": "^2.2",
-        "fakerphp/faker": "^1.23",
         "larastan/larastan": "^3.9",
         "laravel/pint": "^1.29.0",
         "mockery/mockery": "^1.6.12",

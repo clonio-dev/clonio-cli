@@ -56,6 +56,13 @@ No PHP installation required — the binary is fully self-contained.
 | [`connection:update`](docs/commands/connection-update.md) | Update an existing database connection |
 | [`connection:delete`](docs/commands/connection-delete.md) | Delete a saved database connection |
 | [`connection:test`](docs/commands/connection-test.md) | Test one or all saved database connections |
+| [`cloning:matchers:init`](docs/commands/cloning-matchers.md) | Write PII matcher baseline to pii-matchers.yaml |
+| [`cloning:matchers:update`](docs/commands/cloning-matchers.md) | Add new baseline matchers to pii-matchers.yaml |
+| [`cloning:matchers:list`](docs/commands/cloning-matchers.md) | Show effective PII matcher set |
+| [`cloning:matchers:check`](docs/commands/cloning-matchers.md) | Test a column name against the matcher set |
+| [`cloning:dump`](docs/commands/cloning-dump.md) | Inspect a database and generate a .cloning.yaml file |
+| [`cloning:run`](docs/commands/cloning-run.md) | Transfer a database using a .cloning.yaml configuration |
+| [`cloning:verify-audit`](docs/commands/cloning-verify-audit.md) | Verify the integrity of a Clonio audit log |
 | [`about`](docs/commands/about.md) | Display product information |
 
 ---
