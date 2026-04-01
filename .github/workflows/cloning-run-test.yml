@@ -1,0 +1,256 @@
+name: cloning:run tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cloning-run-test:
+    name: ${{ matrix.source }} → ${{ matrix.target }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - source: mysql
+            target: mysql
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: mysql
+            target: pgsql
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: pgsql
+            target: mysql
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: pgsql
+            target: pgsql
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: mariadb
+            target: mysql
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: mysql
+            target: mariadb
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: sqlite
+            target: sqlite
+            source_db: /tmp/clonio_source.sqlite
+            target_db: /tmp/clonio_target.sqlite
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: clonio_source
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: secret
+          MARIADB_DATABASE: clonio_source
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: clonio_source
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          tools: composer:v2
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Generate APP_KEY
+        run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
+
+      # ── SQLite ────────────────────────────────────────────────────────────────
+
+      - name: Prepare SQLite databases
+        if: matrix.source == 'sqlite' || matrix.target == 'sqlite'
+        run: |
+          touch /tmp/clonio_source.sqlite
+          touch /tmp/clonio_target.sqlite
+
+      # ── Target database creation ──────────────────────────────────────────────
+
+      - name: Create MySQL target database
+        if: matrix.target == 'mysql'
+        run: mysql -h 127.0.0.1 -P 3306 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_target;"
+
+      - name: Create MariaDB target database
+        if: matrix.target == 'mariadb'
+        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_target;"
+
+      - name: Create PostgreSQL target database
+        if: matrix.target == 'pgsql'
+        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_target;" || true
+
+      # ── Source database creation (services pre-create clonio_source, but ensure it exists) ──
+
+      - name: Ensure MariaDB source database exists
+        if: matrix.source == 'mariadb'
+        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_source;" || true
+
+      - name: Ensure PostgreSQL source database exists
+        if: matrix.source == 'pgsql'
+        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_source;" || true
+
+      # ── Seed source database ──────────────────────────────────────────────────
+
+      - name: Seed source database (MySQL)
+        if: matrix.source == 'mysql'
+        run: mysql -h 127.0.0.1 -P 3306 -u root -psecret ${{ matrix.source_db }} < .github/cloning-test/schema-mysql.sql
+
+      - name: Seed source database (MariaDB)
+        if: matrix.source == 'mariadb'
+        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret ${{ matrix.source_db }} < .github/cloning-test/schema-mysql.sql
+
+      - name: Seed source database (PostgreSQL)
+        if: matrix.source == 'pgsql'
+        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -d ${{ matrix.source_db }} -f .github/cloning-test/schema-pgsql.sql
+
+      - name: Seed source database (SQLite)
+        if: matrix.source == 'sqlite'
+        run: sqlite3 ${{ matrix.source_db }} < .github/cloning-test/schema-sqlite.sql
+
+      # ── Register connections ──────────────────────────────────────────────────
+
+      - name: Register source connection
+        run: |
+          if [ "${{ matrix.source }}" = "mysql" ]; then
+            php clonio connection:add source \
+              --type=mysql --host=127.0.0.1 --port=3306 \
+              --database=${{ matrix.source_db }} --username=root --password=secret \
+              --no-interaction
+          elif [ "${{ matrix.source }}" = "mariadb" ]; then
+            php clonio connection:add source \
+              --type=mariadb --host=127.0.0.1 --port=3307 \
+              --database=${{ matrix.source_db }} --username=root --password=secret \
+              --no-interaction
+          elif [ "${{ matrix.source }}" = "pgsql" ]; then
+            php clonio connection:add source \
+              --type=pgsql --host=127.0.0.1 --port=5432 \
+              --database=${{ matrix.source_db }} --username=postgres --password=secret \
+              --schema=public --no-interaction
+          elif [ "${{ matrix.source }}" = "sqlite" ]; then
+            php clonio connection:add source \
+              --type=sqlite --database=${{ matrix.source_db }} \
+              --no-interaction
+          fi
+
+      - name: Register target connection
+        run: |
+          if [ "${{ matrix.target }}" = "mysql" ]; then
+            php clonio connection:add target \
+              --type=mysql --host=127.0.0.1 --port=3306 \
+              --database=${{ matrix.target_db }} --username=root --password=secret \
+              --no-interaction
+          elif [ "${{ matrix.target }}" = "mariadb" ]; then
+            php clonio connection:add target \
+              --type=mariadb --host=127.0.0.1 --port=3307 \
+              --database=${{ matrix.target_db }} --username=root --password=secret \
+              --no-interaction
+          elif [ "${{ matrix.target }}" = "pgsql" ]; then
+            php clonio connection:add target \
+              --type=pgsql --host=127.0.0.1 --port=5432 \
+              --database=${{ matrix.target_db }} --username=postgres --password=secret \
+              --schema=public --no-interaction
+          elif [ "${{ matrix.target }}" = "sqlite" ]; then
+            php clonio connection:add target \
+              --type=sqlite --database=${{ matrix.target_db }} \
+              --no-interaction
+          fi
+
+      # ── Verify connectivity ───────────────────────────────────────────────────
+
+      - name: Test source connection
+        run: php clonio connection:test source --ci
+
+      - name: Test target connection
+        run: php clonio connection:test target --ci
+
+      # ── Run cloning:dump to generate YAML from source schema ──────────────────
+
+      - name: Run cloning:dump
+        run: |
+          php clonio cloning:dump --connection=source --output=test.cloning.yaml --ci --force
+          echo "--- Generated cloning YAML ---"
+          cat test.cloning.yaml
+
+      # ── Run cloning:run ───────────────────────────────────────────────────────
+
+      - name: Run cloning:run (dry-run)
+        run: php clonio cloning:run test.cloning.yaml --target=target --dry-run --ci
+
+      - name: Run cloning:run
+        run: php clonio cloning:run test.cloning.yaml --target=target --ci
+
+      # ── Verify transfer results ───────────────────────────────────────────────
+
+      - name: Verify transfer (MySQL target)
+        if: matrix.target == 'mysql'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3306 ${{ matrix.target_db }} root secret
+
+      - name: Verify transfer (MariaDB target)
+        if: matrix.target == 'mariadb'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3307 ${{ matrix.target_db }} root secret
+
+      - name: Verify transfer (PostgreSQL target)
+        if: matrix.target == 'pgsql'
+        run: php .github/cloning-test/verify-transfer.php pgsql 127.0.0.1 5432 ${{ matrix.target_db }} postgres secret
+
+      - name: Verify transfer (SQLite target)
+        if: matrix.target == 'sqlite'
+        run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 ${{ matrix.target_db }} '' ''
+
+      # ── Diagnostics on failure ────────────────────────────────────────────────
+
+      - name: Show clonio.json on failure
+        if: failure()
+        run: cat clonio.json 2>/dev/null || echo "clonio.json not found"
+
+      - name: Show generated YAML on failure
+        if: failure()
+        run: cat test.cloning.yaml 2>/dev/null || echo "test.cloning.yaml not found"

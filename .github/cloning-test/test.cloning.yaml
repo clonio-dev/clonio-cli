@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://clonio.dev/schema/cloning-v1.json
+version: "1"
+connection: source
+
+options:
+  chunk_size: 100
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      # PII: Email Address
+      email:
+        strategy: fake
+        faker_method: safeEmail
+        faker_arguments: []
+      # PII: First Name
+      first_name:
+        strategy: fake
+        faker_method: firstName
+        faker_arguments: []
+      # PII: Last Name
+      last_name:
+        strategy: fake
+        faker_method: lastName
+        faker_arguments: []
+      # PII: Password / Secret
+      password:
+        strategy: hash
+        algorithm: sha256
+        salt: ""
+      # PII: Phone Number
+      phone:
+        strategy: fake
+        faker_method: phoneNumber
+        faker_arguments: []
+      # PII: City
+      city:
+        strategy: fake
+        faker_method: city
+        faker_arguments: []
+
+  orders:
+    rows:
+      strategy: full
+    columns:
+      # PII: Street Address
+      shipping_address:
+        strategy: fake
+        faker_method: streetAddress
+        faker_arguments: []
