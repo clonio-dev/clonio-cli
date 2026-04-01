@@ -6,6 +6,7 @@ namespace App\Services\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
@@ -191,7 +192,7 @@ class CloningRunOrchestrator
                     foreach ($rowArray as $col => $val) {
                         $colConfig = $tableConfig->getColumn($col);
 
-                        $transformedRow[$col] = $colConfig !== null ? $engine->transform($val, $colConfig) : $val;
+                        $transformedRow[$col] = $colConfig instanceof ColumnCloningConfigData ? $engine->transform($val, $colConfig) : $val;
                     }
 
                     $transformed[] = $transformedRow;
@@ -254,7 +255,6 @@ class CloningRunOrchestrator
 
         $sortCol = $rows->sortBy ?? 'id';
         $direction = $rows->strategy === 'last' ? 'DESC' : 'ASC';
-        $this->quoteIdentifier($sortCol, $source->type);
 
         return match ($driver) {
             'pgsql', 'sqlite' => sprintf('SELECT * FROM "%s" ORDER BY "%s" %s LIMIT %d OFFSET %d', $table, $sortCol, $direction, $actualLimit, $offset),
@@ -264,15 +264,6 @@ class CloningRunOrchestrator
     }
 
     private function quoteTable(string $name, DatabaseConnectionType $driver): string
-    {
-        return match ($driver) {
-            DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => '`'.$name.'`',
-            DatabaseConnectionType::SqlServer => '['.$name.']',
-            default => '"'.$name.'"',
-        };
-    }
-
-    private function quoteIdentifier(string $name, DatabaseConnectionType $driver): string
     {
         return match ($driver) {
             DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => '`'.$name.'`',
