@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Data\Audit\AuditRecordData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Services\Audit\AuditLogSigner;
-use DateTimeImmutable;
-use DateTimeZone;
 
 function makeAuditRecord(): AuditRecordData
 {
