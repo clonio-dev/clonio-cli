@@ -11,6 +11,7 @@
         "composer.json"
     ],
     "exclude-composer-files": false,
+    "exclude-dev-files": true,
     "check-requirements": false,
     "compression": "GZ",
     "compactors": [

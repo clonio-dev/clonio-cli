@@ -10,10 +10,12 @@ use App\Services\Cloning\RunLogWriter;
 use App\Services\Cloning\SchemaReplicator;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
+use Composer\InstalledVersions;
 use Dotenv\Dotenv;
 use Illuminate\Support\Env;
 use Illuminate\Support\ServiceProvider;
 use Phar;
+use Symfony\Component\Process\Process;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -45,6 +47,24 @@ class AppServiceProvider extends ServiceProvider
                 config(['app.key' => $key]);
             }
         }
+
+        // Override git.version to fall back to Composer InstalledVersions when
+        // running as a vendor/bin package (no .git directory available).
+        $this->app->bind('git.version', function () {
+            $process = Process::fromShellCommandline(
+                'git describe --tags --abbrev=0',
+                base_path()
+            );
+            $process->run();
+
+            $version = trim($process->getOutput());
+
+            if ($version === '') {
+                return InstalledVersions::getPrettyVersion('clonio-dev/clonio-cli') ?? 'unreleased';
+            }
+
+            return $version;
+        });
 
         // Bind RunLogWriter as a singleton per-request so the same instance is shared
         // between CloningRunOrchestrator and AuditDeliveryService during a single run.
