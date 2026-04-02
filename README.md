@@ -66,6 +66,7 @@ This makes `vendor/bin/clonio` available with the exact release version. See [do
 | [`update`](docs/commands/update.md) | Update to the latest release |
 | [`connection:add`](docs/commands/connection-add.md) | Add a new database connection |
 | [`connection:update`](docs/commands/connection-update.md) | Update an existing database connection |
+| [`connection:list`](docs/commands/connection-list.md) | List all configured database connections |
 | [`connection:delete`](docs/commands/connection-delete.md) | Delete a saved database connection |
 | [`connection:test`](docs/commands/connection-test.md) | Test one or all saved database connections |
 | [`cloning:matchers:init`](docs/commands/cloning-matchers.md) | Write PII matcher baseline to pii-matchers.yaml |
