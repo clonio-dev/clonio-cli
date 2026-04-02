@@ -8,6 +8,8 @@ use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
+use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
@@ -20,6 +22,7 @@ use App\Services\Audit\LocalDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
+use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\RunLogWriter;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
@@ -47,7 +50,8 @@ class RunCommand extends Command
         {--skip-schema         : Skip schema replication}
         {--skip-tables=        : Comma-separated list of table names to exclude}
         {--only-tables=        : Comma-separated list of table names to include}
-        {--audit-channel=      : Comma-separated list of channel names}';
+        {--audit-channel=      : Comma-separated list of channel names}
+        {--skip-remapping-keys : Skip key mapping generation and FK rewriting}';
 
     /**
      * @var string
@@ -240,6 +244,30 @@ class RunCommand extends Command
             $this->line('  <info>✓</info>  Resolving table order ...');
         }
 
+        // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
+        $keyRemappingService = null;
+        $skipRemapping = (bool) $this->option('skip-remapping-keys');
+        $keyRemappingConfig = $config->keyRemapping;
+
+        if ($keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive() && ! $skipRemapping) {
+            if ($verbose) {
+                $this->line('  <info>✓</info>  Generating key mappings ...');
+            }
+
+            $keyRemappingService = new KeyRemappingService($connector);
+            $sortedForMapping = array_map(
+                static fn (TableCloningConfigData $t): string => $t->tableName,
+                $config->tables
+            );
+            $counts = $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sortedForMapping);
+
+            if ($verbose) {
+                foreach ($counts as $tbl => $cnt) {
+                    $this->line(sprintf('  <info>✓</info>  Key mapping: %s (%s rows)', $tbl, number_format($cnt)));
+                }
+            }
+        }
+
         $skipSchema = (bool) $this->option('skip-schema');
 
         if ($verbose && ! $skipSchema) {
@@ -277,10 +305,17 @@ class RunCommand extends Command
                     $notFoundTables[] = $tableName;
                 }
             },
+            keyRemapping: $keyRemappingService,
         );
 
         $finishedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $runLog->log('info', 'run_finished', ['success' => $result->success, 'rows' => $result->totalRows]);
+
+        // ─── Phase 6b: Key Mapping Cleanup ────────────────────────────────────
+        if ($keyRemappingService instanceof KeyRemappingService) {
+            $keyRemappingService->cleanup();
+            $runLog->log('info', 'key_mapping_cleanup_completed', []);
+        }
 
         // ─── Phase 7: Audit ────────────────────────────────────────────────────
         $cloningConfig = $configService->load();

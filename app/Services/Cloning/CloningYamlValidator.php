@@ -83,6 +83,17 @@ class CloningYamlValidator
             $errors = array_merge($errors, $this->validateTables($typedTables));
         }
 
+        // 6. key_remapping validation (optional section)
+        $keyRemapping = $data['key_remapping'] ?? null;
+        if ($keyRemapping !== null) {
+            if (! is_array($keyRemapping)) {
+                $errors[] = "Field 'key_remapping' must be an object";
+            } else {
+                /** @var array<string, mixed> $keyRemapping */
+                $errors = array_merge($errors, $this->validateKeyRemapping($keyRemapping, is_array($data['tables']) ? array_keys($data['tables']) : []));
+            }
+        }
+
         return $errors;
     }
 
@@ -216,6 +227,112 @@ class CloningYamlValidator
             }
 
             $errors = array_merge($errors, $this->validateColumnStrategy($prefix, $strategy, $typedColumnConfig));
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param  array<string, mixed>  $keyRemapping
+     * @param  list<string>  $knownTableNames
+     * @return list<string>
+     */
+    private function validateKeyRemapping(array $keyRemapping, array $knownTableNames): array
+    {
+        $errors = [];
+        $tablesRaw = $keyRemapping['tables'] ?? null;
+
+        if ($tablesRaw === null || (is_array($tablesRaw) && $tablesRaw === [])) {
+            // Empty or absent tables — treated as if section is absent, no error
+            return $errors;
+        }
+
+        if (! is_array($tablesRaw)) {
+            $errors[] = "Field 'key_remapping.tables' must be a list";
+
+            return $errors;
+        }
+
+        $seenTables = [];
+
+        foreach ($tablesRaw as $index => $entry) {
+            $prefix = sprintf('key_remapping.tables[%d]', $index);
+
+            if (! is_array($entry)) {
+                $errors[] = sprintf('%s: must be an object', $prefix);
+
+                continue;
+            }
+
+            /** @var array<string, mixed> $entry */
+            $table = $entry['table'] ?? null;
+            if (! is_string($table) || $table === '') {
+                $errors[] = sprintf("%s: 'table' is required", $prefix);
+
+                continue;
+            }
+
+            if (in_array($table, $seenTables, true)) {
+                $errors[] = sprintf("%s: duplicate table '%s' in key_remapping.tables", $prefix, $table);
+
+                continue;
+            }
+
+            $seenTables[] = $table;
+
+            if (! in_array($table, $knownTableNames, true)) {
+                $errors[] = sprintf("%s: table '%s' is not defined in the 'tables' section", $prefix, $table);
+            }
+
+            $primaryKey = $entry['primary_key'] ?? null;
+            if (! is_string($primaryKey) || $primaryKey === '') {
+                $errors[] = sprintf("%s: 'primary_key' is required", $prefix);
+            }
+
+            $strategy = $entry['strategy'] ?? null;
+            $validStrategies = ['random_integer', 'new_uuid'];
+            if (! is_string($strategy) || ! in_array($strategy, $validStrategies, true)) {
+                $errors[] = sprintf("%s: 'strategy' must be one of: %s", $prefix, implode(', ', $validStrategies));
+            }
+
+            if (($strategy ?? '') === 'random_integer') {
+                $rangeMin = $entry['range_min'] ?? 100000;
+                $rangeMax = $entry['range_max'] ?? 9999999;
+                if (! is_int($rangeMin) || $rangeMin < 1) {
+                    $errors[] = sprintf("%s: 'range_min' must be an integer >= 1", $prefix);
+                }
+
+                if (! is_int($rangeMax) || $rangeMax < 1) {
+                    $errors[] = sprintf("%s: 'range_max' must be an integer >= 1", $prefix);
+                }
+
+                if (is_int($rangeMin) && is_int($rangeMax) && $rangeMin >= $rangeMax) {
+                    $errors[] = sprintf("%s: 'range_min' must be less than 'range_max'", $prefix);
+                }
+            }
+
+            $fksRaw = $entry['foreign_keys'] ?? null;
+            if ($fksRaw !== null && ! is_array($fksRaw)) {
+                $errors[] = sprintf("%s: 'foreign_keys' must be a list", $prefix);
+            } elseif (is_array($fksRaw)) {
+                foreach ($fksRaw as $fkIndex => $fk) {
+                    $fkPrefix = sprintf('%s.foreign_keys[%d]', $prefix, $fkIndex);
+                    if (! is_array($fk)) {
+                        $errors[] = sprintf('%s: must be an object', $fkPrefix);
+
+                        continue;
+                    }
+
+                    /** @var array<string, mixed> $fk */
+                    if (! is_string($fk['table'] ?? null) || $fk['table'] === '') {
+                        $errors[] = sprintf("%s: 'table' is required", $fkPrefix);
+                    }
+
+                    if (! is_string($fk['column'] ?? null) || $fk['column'] === '') {
+                        $errors[] = sprintf("%s: 'column' is required", $fkPrefix);
+                    }
+                }
+            }
         }
 
         return $errors;
