@@ -54,3 +54,15 @@ tables:
         strategy: fake
         faker_method: streetAddress
         faker_arguments: []
+
+key_remapping:
+  tables:
+    - table: users
+      primary_key: id
+      strategy: new_uuid
+      range_min: 1
+      range_max: 999999
+      foreign_keys:
+        - table: orders
+          column: user_id
+          self_referential: false

@@ -211,21 +211,21 @@ jobs:
       - name: Test target connection
         run: php clonio connection:test target --ci
 
-      # ── Run cloning:dump to generate YAML from source schema ──────────────────
+      # ── Run cloning:dump (diagnostic — shows what auto-detection produces) ──────
 
       - name: Run cloning:dump
         run: |
-          php clonio cloning:dump --connection=source --output=test.cloning.yaml --ci --force
-          echo "--- Generated cloning YAML ---"
-          cat test.cloning.yaml
+          php clonio cloning:dump --connection=source --output=dump.cloning.yaml --ci --force
+          echo "--- Auto-generated cloning YAML (for reference) ---"
+          cat dump.cloning.yaml
 
-      # ── Run cloning:run ───────────────────────────────────────────────────────
+      # ── Run cloning:run using the committed test YAML (includes key_remapping) ─
 
       - name: Run cloning:run (dry-run)
-        run: php clonio cloning:run test.cloning.yaml --target=target --dry-run --ci
+        run: php clonio cloning:run .github/cloning-test/test.cloning.yaml --target=target --dry-run --ci
 
       - name: Run cloning:run
-        run: php clonio cloning:run test.cloning.yaml --target=target --ci
+        run: php clonio cloning:run .github/cloning-test/test.cloning.yaml --target=target --ci
 
       # ── Verify transfer results ───────────────────────────────────────────────
 
@@ -253,4 +253,4 @@ jobs:
 
       - name: Show generated YAML on failure
         if: failure()
-        run: cat test.cloning.yaml 2>/dev/null || echo "test.cloning.yaml not found"
+        run: cat dump.cloning.yaml 2>/dev/null || echo "dump.cloning.yaml not found"
