@@ -42,6 +42,9 @@ try {
     } elseif ($driver === 'pgsql') {
         $dsn = "pgsql:host=$host;port=$port;dbname=$database";
         $pdo = new PDO($dsn, $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    } elseif ($driver === 'sqlsrv') {
+        $dsn = "sqlsrv:Server=$host,$port;Database=$database;TrustServerCertificate=1";
+        $pdo = new PDO($dsn, $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } else {
         $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=utf8mb4";
         $pdo = new PDO($dsn, $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);

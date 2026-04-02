@@ -23,6 +23,14 @@ jobs:
             target: pgsql
             source_db: clonio_source
             target_db: clonio_target
+          - source: mysql
+            target: mariadb
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: mysql
+            target: sqlite
+            source_db: clonio_source
+            target_db: /tmp/clonio_target.sqlite
           - source: pgsql
             target: mysql
             source_db: clonio_source
@@ -31,17 +39,29 @@ jobs:
             target: pgsql
             source_db: clonio_source
             target_db: clonio_target
+          - source: pgsql
+            target: sqlite
+            source_db: clonio_source
+            target_db: /tmp/clonio_target.sqlite
           - source: mariadb
             target: mysql
             source_db: clonio_source
             target_db: clonio_target
-          - source: mysql
-            target: mariadb
+          - source: mariadb
+            target: sqlite
             source_db: clonio_source
-            target_db: clonio_target
+            target_db: /tmp/clonio_target.sqlite
           - source: sqlite
             target: sqlite
             source_db: /tmp/clonio_source.sqlite
+            target_db: /tmp/clonio_target.sqlite
+          - source: sqlsrv
+            target: sqlsrv
+            source_db: clonio_source
+            target_db: clonio_target
+          - source: sqlsrv
+            target: sqlite
+            source_db: clonio_source
             target_db: /tmp/clonio_target.sqlite
 
     services:
@@ -81,6 +101,18 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: Clonio123!
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'Clonio123!' -Q 'SELECT 1' -No"
+          --health-interval=10s
+          --health-timeout=10s
+          --health-retries=10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -90,7 +122,7 @@ jobs:
         with:
           php-version: "8.5"
           tools: composer:v2
-          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite, pdo_sqlsrv
 
       - name: Cache Composer dependencies
         uses: actions/cache@v5
@@ -105,6 +137,17 @@ jobs:
       - name: Generate APP_KEY
         run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
 
+      - name: Install sqlcmd (SQL Server only)
+        if: matrix.source == 'sqlsrv' || matrix.target == 'sqlsrv'
+        run: |
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          curl -fsSL "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list" \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update -qq
+          sudo ACCEPT_EULA=Y apt-get install -y -qq mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
+
       # ── SQLite ────────────────────────────────────────────────────────────────
 
       - name: Prepare SQLite databases
@@ -112,6 +155,20 @@ jobs:
         run: |
           touch /tmp/clonio_source.sqlite
           touch /tmp/clonio_target.sqlite
+
+      # ── Source database creation ──────────────────────────────────────────────
+
+      - name: Ensure MariaDB source database exists
+        if: matrix.source == 'mariadb'
+        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_source;" || true
+
+      - name: Ensure PostgreSQL source database exists
+        if: matrix.source == 'pgsql'
+        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_source;" || true
+
+      - name: Create SQL Server source database
+        if: matrix.source == 'sqlsrv'
+        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "CREATE DATABASE clonio_source" -No
 
       # ── Target database creation ──────────────────────────────────────────────
 
@@ -127,15 +184,9 @@ jobs:
         if: matrix.target == 'pgsql'
         run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_target;" || true
 
-      # ── Source database creation (services pre-create clonio_source, but ensure it exists) ──
-
-      - name: Ensure MariaDB source database exists
-        if: matrix.source == 'mariadb'
-        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_source;" || true
-
-      - name: Ensure PostgreSQL source database exists
-        if: matrix.source == 'pgsql'
-        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_source;" || true
+      - name: Create SQL Server target database
+        if: matrix.target == 'sqlsrv'
+        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "CREATE DATABASE clonio_target" -No
 
       # ── Seed source database ──────────────────────────────────────────────────
 
@@ -154,6 +205,10 @@ jobs:
       - name: Seed source database (SQLite)
         if: matrix.source == 'sqlite'
         run: sqlite3 ${{ matrix.source_db }} < .github/cloning-test/schema-sqlite.sql
+
+      - name: Seed source database (SQL Server)
+        if: matrix.source == 'sqlsrv'
+        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d ${{ matrix.source_db }} -i .github/cloning-test/schema-mssql.sql -No
 
       # ── Register connections ──────────────────────────────────────────────────
 
@@ -178,6 +233,11 @@ jobs:
             php clonio connection:add source \
               --type=sqlite --database=${{ matrix.source_db }} \
               --no-interaction
+          elif [ "${{ matrix.source }}" = "sqlsrv" ]; then
+            php clonio connection:add source \
+              --type=sqlsrv --host=127.0.0.1 --port=1433 \
+              --database=${{ matrix.source_db }} --username=SA --password='Clonio123!' \
+              --trust-server-certificate --no-interaction
           fi
 
       - name: Register target connection
@@ -201,6 +261,11 @@ jobs:
             php clonio connection:add target \
               --type=sqlite --database=${{ matrix.target_db }} \
               --no-interaction
+          elif [ "${{ matrix.target }}" = "sqlsrv" ]; then
+            php clonio connection:add target \
+              --type=sqlsrv --host=127.0.0.1 --port=1433 \
+              --database=${{ matrix.target_db }} --username=SA --password='Clonio123!' \
+              --trust-server-certificate --no-interaction
           fi
 
       # ── Verify connectivity ───────────────────────────────────────────────────
@@ -244,6 +309,10 @@ jobs:
       - name: Verify transfer (SQLite target)
         if: matrix.target == 'sqlite'
         run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 ${{ matrix.target_db }} '' ''
+
+      - name: Verify transfer (SQL Server target)
+        if: matrix.target == 'sqlsrv'
+        run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 ${{ matrix.target_db }} SA 'Clonio123!'
 
       # ── Diagnostics on failure ────────────────────────────────────────────────
 
