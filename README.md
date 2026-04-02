@@ -44,6 +44,16 @@ No PHP installation required — the binary is fully self-contained.
 > ```
 > See [docs/code-signing.md](docs/code-signing.md) for the full signing setup once an Apple Developer account is available.
 
+### Composer (dev dependency)
+
+Clonio can also be required as a dev dependency in any PHP project:
+
+```bash
+composer require --dev clonio-dev/clonio-cli
+```
+
+This makes `vendor/bin/clonio` available with the exact release version. See [docs/composer-distribution.md](docs/composer-distribution.md) for details, CI examples, and PHP version requirements.
+
 ---
 
 ## Commands
@@ -62,6 +72,10 @@ No PHP installation required — the binary is fully self-contained.
 | [`cloning:matchers:check`](docs/commands/cloning-matchers.md) | Test a column name against the matcher set |
 | [`cloning:dump`](docs/commands/cloning-dump.md) | Inspect a database and generate a .cloning.yaml file |
 | [`cloning:run`](docs/commands/cloning-run.md) | Transfer a database using a .cloning.yaml configuration |
+| [`audit:add`](docs/commands/audit-channel.md) | Add an audit delivery channel |
+| [`audit:update`](docs/commands/audit-channel.md) | Update an existing audit delivery channel |
+| [`audit:delete`](docs/commands/audit-channel.md) | Delete an audit delivery channel |
+| [`audit:list`](docs/commands/audit-channel.md) | List all configured audit delivery channels |
 | [`cloning:verify-audit`](docs/commands/cloning-verify-audit.md) | Verify the integrity of a Clonio audit log |
 | [`about`](docs/commands/about.md) | Display product information |
 

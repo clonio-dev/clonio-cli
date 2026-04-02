@@ -8,6 +8,8 @@
 //   2. Email addresses in target are different from source (anonymized)
 //   3. Passwords in target are sha256 hashes (64 hex chars), not originals
 //   4. Target DB has 3 orders
+//   5. users.id values are valid UUIDs (key remapping applied)
+//   6. orders.user_id values all reference a valid users.id (referential integrity)
 
 $driver   = $argv[1] ?? 'mysql';
 $host     = $argv[2] ?? '127.0.0.1';
@@ -39,6 +41,9 @@ try {
         $pdo = new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } elseif ($driver === 'pgsql') {
         $dsn = "pgsql:host=$host;port=$port;dbname=$database";
+        $pdo = new PDO($dsn, $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    } elseif ($driver === 'sqlsrv') {
+        $dsn = "sqlsrv:Server=$host,$port;Database=$database;TrustServerCertificate=1";
         $pdo = new PDO($dsn, $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } else {
         $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=utf8mb4";
@@ -88,6 +93,37 @@ try {
         fail("Expected 3 orders, got $orderCount");
     } else {
         pass('Order count is 3');
+    }
+
+    // 5. users.id values are valid UUIDs (key remapping applied)
+    $userIds = $pdo->query('SELECT id FROM users')->fetchAll(PDO::FETCH_COLUMN);
+    $uuidPattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+    $allUuids = true;
+    foreach ($userIds as $id) {
+        if (in_array((string) $id, ['1', '2', '3'], true)) {
+            fail("users.id '$id' was not remapped (still original integer value)");
+            $allUuids = false;
+        } elseif (! preg_match($uuidPattern, (string) $id)) {
+            fail("users.id '$id' is not a valid UUID");
+            $allUuids = false;
+        }
+    }
+    if ($allUuids) {
+        pass('All users.id values are valid UUIDs (key remapping applied)');
+    }
+
+    // 6. orders.user_id references a valid users.id (referential integrity)
+    $orderUserIds = $pdo->query('SELECT DISTINCT user_id FROM orders')->fetchAll(PDO::FETCH_COLUMN);
+    $userIdSet = array_flip(array_map('strval', $userIds));
+    $allReferenced = true;
+    foreach ($orderUserIds as $fk) {
+        if (! isset($userIdSet[(string) $fk])) {
+            fail("orders.user_id '$fk' does not reference a valid users.id");
+            $allReferenced = false;
+        }
+    }
+    if ($allReferenced) {
+        pass('All orders.user_id values reference a valid remapped users.id (referential integrity)');
     }
 
 } catch (Exception $e) {

@@ -7,6 +7,7 @@ namespace App\Services\Cloning;
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\ColumnCloningConfigData;
+use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
@@ -40,6 +41,7 @@ class CloningRunOrchestrator
         array $skipTables,
         array $onlyTables,
         callable $onProgress,
+        ?KeyRemappingService $keyRemapping = null,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -117,7 +119,7 @@ class CloningRunOrchestrator
             }
 
             $tableStart = microtime(true);
-            [$rows, $skipped, $failed, $reason] = $this->transferTable($config->options, $tableConfig, $source, $target);
+            [$rows, $skipped, $failed, $reason] = $this->transferTable($config->options, $tableConfig, $source, $target, $keyRemapping, $config->keyRemapping);
             $tableDuration = microtime(true) - $tableStart;
 
             $status = $failed ? TableRunStatus::Failed : TableRunStatus::Transferred;
@@ -157,6 +159,8 @@ class CloningRunOrchestrator
         TableCloningConfigData $tableConfig,
         ConnectionData $source,
         ConnectionData $target,
+        ?KeyRemappingService $keyRemapping = null,
+        ?KeyRemappingConfigData $keyRemappingConfig = null,
     ): array {
         $engine = new AnonymizationEngine($options->fakerLocale);
         $sourceConn = $this->connector->open($source);
@@ -190,9 +194,16 @@ class CloningRunOrchestrator
                     $transformedRow = [];
 
                     foreach ($rowArray as $col => $val) {
-                        $colConfig = $tableConfig->getColumn($col);
+                        if (! is_string($col)) {
+                            continue;
+                        }
 
+                        $colConfig = $tableConfig->getColumn($col);
                         $transformedRow[$col] = $colConfig instanceof ColumnCloningConfigData ? $engine->transform($val, $colConfig) : $val;
+                    }
+
+                    if ($keyRemapping instanceof KeyRemappingService && $keyRemappingConfig instanceof KeyRemappingConfigData) {
+                        $transformedRow = $keyRemapping->applyToRow($transformedRow, $tableConfig->tableName, $keyRemappingConfig);
                     }
 
                     $transformed[] = $transformedRow;

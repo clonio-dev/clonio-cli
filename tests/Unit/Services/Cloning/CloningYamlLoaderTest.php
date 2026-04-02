@@ -205,3 +205,110 @@ YAML;
 
     expect($config->getTable('nonexistent'))->toBeNull();
 });
+
+it('loads key_remapping section with new_uuid strategy', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+key_remapping:
+  tables:
+    - table: users
+      primary_key: id
+      strategy: new_uuid
+      foreign_keys:
+        - table: orders
+          column: user_id
+YAML;
+
+    Storage::disk('local')->put('remapping.yaml', $yaml);
+
+    $loader = new CloningYamlLoader;
+    $config = $loader->load('remapping.yaml');
+
+    expect($config->keyRemapping)->not->toBeNull();
+    expect($config->keyRemapping?->isActive())->toBeTrue();
+    expect($config->keyRemapping?->tables)->toHaveCount(1);
+
+    $table = $config->keyRemapping?->getTable('users');
+    expect($table)->not->toBeNull();
+    expect($table?->primaryKey)->toBe('id');
+    expect($table?->strategy->value)->toBe('new_uuid');
+    expect($table?->foreignKeys)->toHaveCount(1);
+    expect($table?->foreignKeys[0]->table)->toBe('orders');
+    expect($table?->foreignKeys[0]->column)->toBe('user_id');
+});
+
+it('loads key_remapping section with random_integer strategy', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  orders:
+    rows:
+      strategy: full
+key_remapping:
+  tables:
+    - table: orders
+      primary_key: id
+      strategy: random_integer
+      range_min: 100000
+      range_max: 9999999
+YAML;
+
+    Storage::disk('local')->put('int-remapping.yaml', $yaml);
+
+    $loader = new CloningYamlLoader;
+    $config = $loader->load('int-remapping.yaml');
+
+    $table = $config->keyRemapping?->getTable('orders');
+    expect($table)->not->toBeNull();
+    expect($table?->strategy->value)->toBe('random_integer');
+    expect($table?->rangeMin)->toBe(100000);
+    expect($table?->rangeMax)->toBe(9999999);
+});
+
+it('sets keyRemapping to null when section is absent', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('no-remapping.yaml', $yaml);
+
+    $loader = new CloningYamlLoader;
+    $config = $loader->load('no-remapping.yaml');
+
+    expect($config->keyRemapping)->toBeNull();
+});

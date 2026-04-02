@@ -268,3 +268,171 @@ it('passes a valid static column', function (): void {
 
     expect($errors)->toBe([]);
 });
+
+// ─── key_remapping validation ─────────────────────────────────────────────────
+
+it('passes validation for a valid key_remapping section with new_uuid strategy', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            [
+                'table' => 'users',
+                'primary_key' => 'id',
+                'strategy' => 'new_uuid',
+            ],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->toBe([]);
+});
+
+it('passes validation for a valid key_remapping section with random_integer strategy', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            [
+                'table' => 'users',
+                'primary_key' => 'id',
+                'strategy' => 'random_integer',
+                'range_min' => 100000,
+                'range_max' => 9999999,
+            ],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->toBe([]);
+});
+
+it('passes when key_remapping tables is empty', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = ['tables' => []];
+
+    $errors = $validator->validate($config);
+    expect($errors)->toBe([]);
+});
+
+it('returns error when key_remapping tables is not an array', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = ['tables' => 'not-an-array'];
+
+    $errors = $validator->validate($config);
+    expect($errors)->toContain("Field 'key_remapping.tables' must be a list");
+});
+
+it('returns error for missing table name in key_remapping entry', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            ['primary_key' => 'id', 'strategy' => 'new_uuid'],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain("'table' is required");
+});
+
+it('returns error when table is not in the tables section', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            ['table' => 'unknown_table', 'primary_key' => 'id', 'strategy' => 'new_uuid'],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain("not defined in the 'tables' section");
+});
+
+it('returns error for duplicate table in key_remapping', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            ['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid'],
+            ['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid'],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain('duplicate table');
+});
+
+it('returns error for invalid strategy in key_remapping', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            ['table' => 'users', 'primary_key' => 'id', 'strategy' => 'invalid_strategy'],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain("'strategy' must be one of");
+});
+
+it('returns error when range_min >= range_max for random_integer strategy', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            [
+                'table' => 'users',
+                'primary_key' => 'id',
+                'strategy' => 'random_integer',
+                'range_min' => 9999999,
+                'range_max' => 100000,
+            ],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain("'range_min' must be less than 'range_max'");
+});
+
+it('passes with valid foreign_keys in key_remapping', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            [
+                'table' => 'users',
+                'primary_key' => 'id',
+                'strategy' => 'new_uuid',
+                'foreign_keys' => [
+                    ['table' => 'orders', 'column' => 'user_id'],
+                ],
+            ],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->toBe([]);
+});
+
+it('returns error when foreign_key is missing table', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['key_remapping'] = [
+        'tables' => [
+            [
+                'table' => 'users',
+                'primary_key' => 'id',
+                'strategy' => 'new_uuid',
+                'foreign_keys' => [
+                    ['column' => 'user_id'],
+                ],
+            ],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain("'table' is required");
+});

@@ -7,8 +7,12 @@ namespace App\Services\Cloning;
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\ColumnCloningConfigData;
+use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingForeignKeyData;
+use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
+use App\Enums\KeyRemappingStrategy;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\Yaml\Exception\ParseException;
@@ -78,11 +82,20 @@ class CloningYamlLoader
             $tables[] = $this->mapTableConfig((string) $tableName, $tableConfig);
         }
 
+        // Parse key_remapping section (optional)
+        $keyRemapping = null;
+        $keyRemappingRaw = $data['key_remapping'] ?? null;
+        if (is_array($keyRemappingRaw)) {
+            /** @var array<string, mixed> $keyRemappingRaw */
+            $keyRemapping = $this->mapKeyRemappingConfig($keyRemappingRaw);
+        }
+
         return new CloningConfigData(
             version: $version,
             connectionName: $connectionName,
             options: $options,
             tables: $tables,
+            keyRemapping: $keyRemapping,
         );
     }
 
@@ -123,6 +136,72 @@ class CloningYamlLoader
             rows: $rows,
             columns: $columns,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function mapKeyRemappingConfig(array $data): ?KeyRemappingConfigData
+    {
+        $tablesRaw = $data['tables'] ?? null;
+        if (! is_array($tablesRaw) || $tablesRaw === []) {
+            return null;
+        }
+
+        $tables = [];
+        foreach ($tablesRaw as $tableEntry) {
+            if (! is_array($tableEntry)) {
+                continue;
+            }
+
+            /** @var array<string, mixed> $tableEntry */
+            $table = is_string($tableEntry['table'] ?? null) ? $tableEntry['table'] : '';
+            $primaryKey = is_string($tableEntry['primary_key'] ?? null) ? $tableEntry['primary_key'] : '';
+            $strategyRaw = is_string($tableEntry['strategy'] ?? null) ? $tableEntry['strategy'] : 'random_integer';
+            $strategy = KeyRemappingStrategy::tryFrom($strategyRaw) ?? KeyRemappingStrategy::RandomInteger;
+            $rangeMin = is_int($tableEntry['range_min'] ?? null) ? $tableEntry['range_min'] : 100000;
+            $rangeMax = is_int($tableEntry['range_max'] ?? null) ? $tableEntry['range_max'] : 9999999;
+
+            $fks = [];
+            $fksRaw = $tableEntry['foreign_keys'] ?? [];
+            if (is_array($fksRaw)) {
+                foreach ($fksRaw as $fkEntry) {
+                    if (! is_array($fkEntry)) {
+                        continue;
+                    }
+
+                    /** @var array<string, mixed> $fkEntry */
+                    $fks[] = new KeyRemappingForeignKeyData(
+                        table: is_string($fkEntry['table'] ?? null) ? $fkEntry['table'] : '',
+                        column: is_string($fkEntry['column'] ?? null) ? $fkEntry['column'] : '',
+                        selfReferential: (bool) ($fkEntry['self_referential'] ?? false),
+                    );
+                }
+            }
+
+            if ($table === '') {
+                continue;
+            }
+
+            if ($primaryKey === '') {
+                continue;
+            }
+
+            $tables[] = new KeyRemappingTableData(
+                table: $table,
+                primaryKey: $primaryKey,
+                strategy: $strategy,
+                rangeMin: $rangeMin,
+                rangeMax: $rangeMax,
+                foreignKeys: $fks,
+            );
+        }
+
+        if ($tables === []) {
+            return null;
+        }
+
+        return new KeyRemappingConfigData(tables: $tables);
     }
 
     /**

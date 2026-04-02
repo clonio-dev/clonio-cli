@@ -6,12 +6,15 @@ namespace App\Data\Cloning;
 
 final readonly class CloningConfigData
 {
-    /** @param list<TableCloningConfigData> $tables */
+    /**
+     * @param  list<TableCloningConfigData>  $tables
+     */
     public function __construct(
         public string $version,
         public string $connectionName,
         public CloningOptionsData $options,
         public array $tables,
+        public ?KeyRemappingConfigData $keyRemapping = null,
     ) {}
 
     public function getTable(string $name): ?TableCloningConfigData
