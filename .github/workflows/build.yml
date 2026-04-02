@@ -101,6 +101,7 @@ jobs:
             sudo ./spc doctor --auto-fix
             sudo chown -R "$(id -u):$(id -g)" .
           else
+            brew install pkg-config
             ./spc doctor --auto-fix
           fi
 
