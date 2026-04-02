@@ -163,3 +163,71 @@ it('sets file permissions to 0600 on save', function (): void {
     $perms = fileperms($config->getConfigPath()) & 0777;
     expect($perms)->toBe(0600);
 });
+
+// ─── Audit channel methods ────────────────────────────────────────────────────
+
+it('returns empty audit channels when none are configured', function (): void {
+    $config = new ConfigService;
+
+    expect($config->getAuditChannels())->toBeEmpty()
+        ->and($config->getAuditChannel('missing'))->toBeNull()
+        ->and($config->hasAuditChannel('missing'))->toBeFalse();
+});
+
+it('saves and retrieves an audit channel', function (): void {
+    $config = new ConfigService;
+    $channelConfig = ['type' => 'local', 'audit_log' => ['path' => './logs']];
+
+    $config->setAuditChannel('my-local', $channelConfig);
+
+    expect($config->hasAuditChannel('my-local'))->toBeTrue()
+        ->and($config->getAuditChannel('my-local'))->toBe($channelConfig);
+});
+
+it('saves multiple audit channels independently', function (): void {
+    $config = new ConfigService;
+
+    $config->setAuditChannel('ch1', ['type' => 'local']);
+    $config->setAuditChannel('ch2', ['type' => 's3', 'bucket' => 'my-bucket']);
+
+    $channels = $config->getAuditChannels();
+    expect($channels)->toHaveCount(2)
+        ->and(array_keys($channels))->toBe(['ch1', 'ch2']);
+});
+
+it('deletes an audit channel and removes it from deliver_to lists', function (): void {
+    $config = new ConfigService;
+
+    $config->setAuditChannel('ch1', ['type' => 'local']);
+    $config->setAuditDeliverTo('audit_log', ['ch1']);
+    $config->setAuditDeliverTo('run_log', ['ch1']);
+
+    $config->deleteAuditChannel('ch1');
+
+    expect($config->hasAuditChannel('ch1'))->toBeFalse()
+        ->and($config->getAuditDeliverTo('audit_log'))->toBeEmpty()
+        ->and($config->getAuditDeliverTo('run_log'))->toBeEmpty();
+});
+
+it('deleteAuditChannel is a no-op when audit section is missing', function (): void {
+    $config = new ConfigService;
+    // Should not throw
+    $config->deleteAuditChannel('nonexistent');
+    expect($config->getAuditChannels())->toBeEmpty();
+});
+
+it('saves and retrieves audit deliver_to lists', function (): void {
+    $config = new ConfigService;
+
+    $config->setAuditChannel('ch1', ['type' => 'local']);
+    $config->setAuditDeliverTo('audit_log', ['ch1']);
+    $config->setAuditDeliverTo('run_log', []);
+
+    expect($config->getAuditDeliverTo('audit_log'))->toBe(['ch1'])
+        ->and($config->getAuditDeliverTo('run_log'))->toBeEmpty();
+});
+
+it('getAuditDeliverTo returns empty array when audit section is absent', function (): void {
+    $config = new ConfigService;
+    expect($config->getAuditDeliverTo('audit_log'))->toBeEmpty();
+});
