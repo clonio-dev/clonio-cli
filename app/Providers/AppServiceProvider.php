@@ -48,9 +48,19 @@ class AppServiceProvider extends ServiceProvider
             }
         }
 
-        // Override git.version to fall back to Composer InstalledVersions when
-        // running as a vendor/bin package (no .git directory available).
+        // Override git.version: prefer the VERSION file baked into the PHAR,
+        // fall back to git describe in dev, then Composer InstalledVersions.
         $this->app->bind('git.version', function () {
+            $versionFile = base_path('VERSION');
+
+            if (is_file($versionFile)) {
+                $pinned = trim((string) file_get_contents($versionFile));
+
+                if ($pinned !== '' && $pinned !== 'unreleased') {
+                    return $pinned;
+                }
+            }
+
             $process = Process::fromShellCommandline(
                 'git describe --tags --abbrev=0',
                 base_path()
@@ -59,11 +69,11 @@ class AppServiceProvider extends ServiceProvider
 
             $version = trim($process->getOutput());
 
-            if ($version === '') {
-                return InstalledVersions::getPrettyVersion('clonio-dev/clonio-cli') ?? 'unreleased';
+            if ($version !== '') {
+                return $version;
             }
 
-            return $version;
+            return InstalledVersions::getPrettyVersion('clonio-dev/clonio-cli') ?? 'unreleased';
         });
 
         // Bind RunLogWriter as a singleton per-request so the same instance is shared
