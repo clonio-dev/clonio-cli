@@ -18,34 +18,34 @@ class AddCommand extends Command
      * @var string
      */
     protected $signature = 'audit:add
-        {name?                  : Unique name for this channel}
-        {--type=                : Channel type — local|s3|email|ms_teams|slack|ntfy}
-        {--audit-log-path=      : (local) Audit log path template}
-        {--run-log-path=        : (local) Run log path template}
-        {--endpoint=            : (s3) S3-compatible endpoint URL}
-        {--bucket=              : (s3) Bucket name}
-        {--access-key=          : (s3) Access key ID}
-        {--secret-key=          : (s3) Secret access key — stored encrypted}
-        {--region=              : (s3) Region string}
-        {--path-prefix=         : (s3) Key prefix template}
-        {--host=                : (email) SMTP host}
-        {--port=                : (email) SMTP port}
-        {--encryption=          : (email) SMTP encryption — tls|ssl|none}
-        {--username=            : (email) SMTP username}
-        {--password=            : (email) SMTP password — stored encrypted}
-        {--from-address=        : (email) Sender address}
-        {--from-name=           : (email) Sender display name}
-        {--to=                  : (email) Comma-separated recipient addresses}
-        {--webhook-url=         : (ms_teams|slack) Incoming webhook URL — stored encrypted}
-        {--url=                 : (ntfy) ntfy server base URL}
-        {--topic=               : (ntfy) ntfy topic}
-        {--token=               : (ntfy) ntfy bearer token — stored encrypted}
-        {--priority=            : (ntfy) Notification priority — min|low|default|high|max}
-        {--tags=                : (ntfy) Comma-separated tag strings}
-        {--deliver-audit-log    : Add channel to audit_log.deliver_to}
-        {--no-deliver-audit-log : Do not add channel to audit_log.deliver_to}
-        {--deliver-run-log      : Add channel to run_log.deliver_to}
-        {--no-deliver-run-log   : Do not add channel to run_log.deliver_to}';
+        {name?                      : Unique name for this channel}
+        {--type=                    : Channel type — local|s3|email|ms_teams|slack|ntfy}
+        {--local-audit-log-path=    : (local) Audit log path template}
+        {--local-run-log-path=      : (local) Run log path template}
+        {--s3-endpoint=             : (s3) S3-compatible endpoint URL}
+        {--s3-bucket=               : (s3) Bucket name}
+        {--s3-access-key=           : (s3) Access key ID}
+        {--s3-secret-key=           : (s3) Secret access key — stored encrypted}
+        {--s3-region=               : (s3) Region string}
+        {--s3-path-prefix=          : (s3) Key prefix template}
+        {--mail-host=               : (email) SMTP host}
+        {--mail-port=               : (email) SMTP port}
+        {--mail-encryption=         : (email) SMTP encryption — tls|ssl|none}
+        {--mail-username=           : (email) SMTP username}
+        {--mail-password=           : (email) SMTP password — stored encrypted}
+        {--mail-from-address=       : (email) Sender address}
+        {--mail-from-name=          : (email) Sender display name}
+        {--mail-to=                 : (email) Comma-separated recipient addresses}
+        {--webhook-url=             : (ms_teams|slack) Incoming webhook URL — stored encrypted}
+        {--ntfy-url=                : (ntfy) ntfy server base URL}
+        {--ntfy-topic=              : (ntfy) ntfy topic}
+        {--ntfy-token=              : (ntfy) ntfy bearer token — stored encrypted}
+        {--ntfy-priority=           : (ntfy) Notification priority — min|low|default|high|max}
+        {--ntfy-tags=               : (ntfy) Comma-separated tag strings}
+        {--deliver-audit-log        : Add channel to audit_log.deliver_to}
+        {--no-deliver-audit-log     : Do not add channel to audit_log.deliver_to}
+        {--deliver-run-log          : Add channel to run_log.deliver_to}
+        {--no-deliver-run-log       : Do not add channel to run_log.deliver_to}';
 
     /**
      * @var string
@@ -180,8 +180,8 @@ class AddCommand extends Command
      */
     private function promptLocalFields(): array
     {
-        $auditLogPath = $this->optionOrAsk('audit-log-path', 'Audit log path ('.self::TEMPLATE_HINT.')', './audit-logs/{year}/{month}');
-        $runLogPath = $this->optionOrAsk('run-log-path', 'Run log path ('.self::TEMPLATE_HINT.')', './run-logs/{year}/{month}');
+        $auditLogPath = $this->optionOrAsk('local-audit-log-path', 'Audit log path ('.self::TEMPLATE_HINT.')', './audit-logs/{year}/{month}');
+        $runLogPath = $this->optionOrAsk('local-run-log-path', 'Run log path ('.self::TEMPLATE_HINT.')', './run-logs/{year}/{month}');
 
         return [
             'audit_log' => ['path' => $auditLogPath],
@@ -194,12 +194,12 @@ class AddCommand extends Command
      */
     private function promptS3Fields(): array
     {
-        $endpoint = $this->optionOrAsk('endpoint', 'Endpoint URL', '');
-        $bucket = $this->optionOrAsk('bucket', 'Bucket name', '');
-        $region = $this->optionOrAsk('region', 'Region', '');
-        $accessKey = $this->optionOrAsk('access-key', 'Access key', '');
-        $secretKey = $this->secretOrOption('secret-key', 'Secret key');
-        $pathPrefix = $this->optionOrAsk('path-prefix', 'Path prefix ('.self::TEMPLATE_HINT.')', 'clonio/{year}/{month}/{source}/');
+        $endpoint = $this->optionOrAsk('s3-endpoint', 'Endpoint URL', '');
+        $bucket = $this->optionOrAsk('s3-bucket', 'Bucket name', '');
+        $region = $this->optionOrAsk('s3-region', 'Region', '');
+        $accessKey = $this->optionOrAsk('s3-access-key', 'Access key', '');
+        $secretKey = $this->secretOrOption('s3-secret-key', 'Secret key');
+        $pathPrefix = $this->optionOrAsk('s3-path-prefix', 'Path prefix ('.self::TEMPLATE_HINT.')', 'clonio/{year}/{month}/{source}/');
 
         $config = [
             'endpoint' => $endpoint,
@@ -222,18 +222,18 @@ class AddCommand extends Command
      */
     private function promptEmailFields(): array
     {
-        $host = $this->optionOrAsk('host', 'SMTP host', '');
-        $portRaw = $this->optionOrAsk('port', 'SMTP port', '587');
+        $host = $this->optionOrAsk('mail-host', 'SMTP host', '');
+        $portRaw = $this->optionOrAsk('mail-port', 'SMTP port', '587');
         $port = (int) $portRaw;
         $encOptions = ['tls', 'ssl', 'none'];
-        $encOpt = $this->option('encryption');
+        $encOpt = $this->option('mail-encryption');
         $encryption = is_string($encOpt) && in_array($encOpt, $encOptions, true) ? $encOpt
             : $this->choice('Encryption', $encOptions, 0);
-        $username = $this->optionOrAsk('username', 'SMTP username', '');
-        $password = $this->secretOrOption('password', 'SMTP password');
-        $fromAddress = $this->optionOrAsk('from-address', 'From address', '');
-        $fromName = $this->optionOrAsk('from-name', 'From name', '');
-        $toRaw = $this->optionOrAsk('to', 'Recipients (comma-separated emails)', '');
+        $username = $this->optionOrAsk('mail-username', 'SMTP username', '');
+        $password = $this->secretOrOption('mail-password', 'SMTP password');
+        $fromAddress = $this->optionOrAsk('mail-from-address', 'From address', '');
+        $fromName = $this->optionOrAsk('mail-from-name', 'From name', '');
+        $toRaw = $this->optionOrAsk('mail-to', 'Recipients (comma-separated emails)', '');
         $to = array_values(array_filter(array_map(trim(...), explode(',', $toRaw))));
 
         $config = [
@@ -286,16 +286,16 @@ class AddCommand extends Command
     private function promptNtfyFields(): array
     {
         $this->line('  <comment>Topics are public by default on ntfy.sh. Use a hard-to-guess topic or self-hosted server for sensitive environments.</comment>');
-        $url = $this->optionOrAsk('url', 'ntfy server URL', 'https://ntfy.sh');
-        $topic = $this->optionOrAsk('topic', 'Topic', '');
+        $url = $this->optionOrAsk('ntfy-url', 'ntfy server URL', 'https://ntfy.sh');
+        $topic = $this->optionOrAsk('ntfy-topic', 'Topic', '');
         $priorityOpts = ['min', 'low', 'default', 'high', 'max'];
-        $priorityOpt = $this->option('priority');
+        $priorityOpt = $this->option('ntfy-priority');
         $priority = is_string($priorityOpt) && in_array($priorityOpt, $priorityOpts, true) ? $priorityOpt
             : $this->choice('Priority', $priorityOpts, 2);
-        $tagsRaw = $this->optionOrAsk('tags', 'Tags (comma-separated, optional — press Enter to skip)', '');
+        $tagsRaw = $this->optionOrAsk('ntfy-tags', 'Tags (comma-separated, optional — press Enter to skip)', '');
         $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : [];
 
-        $tokenOpt = $this->option('token');
+        $tokenOpt = $this->option('ntfy-token');
         $token = null;
         if (is_string($tokenOpt) && $tokenOpt !== '') {
             $this->components->warn('Passing token via CLI flag may expose it in shell history.');
