@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Tests
@@ -77,7 +80,6 @@ jobs:
             upload_phar: false
 
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PHP_VERSION: '8.5'
       EXTENSIONS: ctype,curl,fileinfo,filter,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,session,sqlite3,tokenizer,zlib
 
