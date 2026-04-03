@@ -8,6 +8,7 @@ use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Pii\PiiMatcherData;
 use App\Data\Pii\PiiMatcherGroupData;
 use App\Data\Pii\PiiMatcherSetData;
+use App\Enums\PiiSensitivity;
 
 class PiiMatcherBaselineProvider
 {
@@ -17,12 +18,16 @@ class PiiMatcherBaselineProvider
     public function getGroups(): array
     {
         return [
+            $this->governmentIdsGroup(),
             $this->personalIdentityGroup(),
             $this->contactGroup(),
             $this->locationGroup(),
             $this->financialGroup(),
+            $this->medicalGroup(),
+            $this->biometricGroup(),
+            $this->professionalGroup(),
+            $this->digitalIdentityGroup(),
             $this->authenticationGroup(),
-            $this->networkGroup(),
         ];
     }
 
@@ -39,116 +44,105 @@ class PiiMatcherBaselineProvider
         return new PiiMatcherSetData($matchers);
     }
 
+    // -------------------------------------------------------------------------
+    // Groups
+    // -------------------------------------------------------------------------
+
+    private function governmentIdsGroup(): PiiMatcherGroupData
+    {
+        return new PiiMatcherGroupData(
+            key: 'government_ids',
+            name: 'Government-Issued Identifiers',
+            matchers: [
+                $this->make(
+                    'national_id', 'government_ids', 'National ID / SSN', PiiSensitivity::Critical,
+                    ['/^(ssn|social[-_]?security|national[-_]?id|personal[-_]?id)$/i'],
+                    $this->hash(),
+                    '123-45-6789',
+                ),
+                $this->make(
+                    'passport_number', 'government_ids', 'Passport Number', PiiSensitivity::Critical,
+                    ['/^(passport|passport[-_]?number|passport[-_]?no)$/i'],
+                    $this->hash(),
+                    'A12345678',
+                ),
+                $this->make(
+                    'drivers_license', 'government_ids', "Driver's License", PiiSensitivity::Critical,
+                    ['/^(drivers?[-_]?licen[sc]e|dl[-_]?number|license[-_]?number|driving[-_]?licen[sc]e)$/i'],
+                    $this->hash(),
+                    'DL-123456789',
+                ),
+                $this->make(
+                    'tax_id', 'government_ids', 'Tax ID / VAT Number', PiiSensitivity::Critical,
+                    ['/^(tax[-_]?id|tax[-_]?number|tin|vat[-_]?number|vat[-_]?id|fiscal[-_]?id)$/i'],
+                    $this->hash(),
+                    '12-3456789',
+                ),
+            ],
+        );
+    }
+
     private function personalIdentityGroup(): PiiMatcherGroupData
     {
         return new PiiMatcherGroupData(
             key: 'personal_identity',
             name: 'Personal Identity',
             matchers: [
-                new PiiMatcherData(
-                    key: 'first_name',
-                    group: 'personal_identity',
-                    name: 'First Name',
-                    enabled: true,
-                    patterns: ['/^(first[-_]?name|given[-_]?name|vorname|prenom)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'first_name',
-                        strategy: 'fake',
-                        fakerMethod: 'firstName',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'John',
+                $this->make(
+                    'first_name', 'personal_identity', 'First Name', PiiSensitivity::High,
+                    ['/^(first[-_]?name|given[-_]?name|vorname|prenom)$/i'],
+                    $this->fake('firstName'),
+                    'John',
                 ),
-                new PiiMatcherData(
-                    key: 'last_name',
-                    group: 'personal_identity',
-                    name: 'Last Name',
-                    enabled: true,
-                    patterns: ['/^(last[-_]?name|sur[-_]?name|family[-_]?name|nachname|nom)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'last_name',
-                        strategy: 'fake',
-                        fakerMethod: 'lastName',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'Doe',
+                $this->make(
+                    'last_name', 'personal_identity', 'Last Name', PiiSensitivity::High,
+                    ['/^(last[-_]?name|sur[-_]?name|family[-_]?name|nachname|nom)$/i'],
+                    $this->fake('lastName'),
+                    'Doe',
                 ),
-                new PiiMatcherData(
-                    key: 'full_name',
-                    group: 'personal_identity',
-                    name: 'Person Name',
-                    enabled: true,
-                    patterns: ['/^(full[-_]?name|display[-_]?name|name|user[-_]?name|nick[-_]?name)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'full_name',
-                        strategy: 'fake',
-                        fakerMethod: 'name',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'John Doe',
+                $this->make(
+                    'full_name', 'personal_identity', 'Person Name', PiiSensitivity::High,
+                    ['/^(full[-_]?name|display[-_]?name|name|nick[-_]?name)$/i'],
+                    $this->fake('name'),
+                    'John Doe',
                 ),
-                new PiiMatcherData(
-                    key: 'date_of_birth',
-                    group: 'personal_identity',
-                    name: 'Date of Birth',
-                    enabled: true,
-                    patterns: ['/^(birth[-_]?date|date[-_]?of[-_]?birth|dob|birthday|geburtsdatum)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'date_of_birth',
-                        strategy: 'fake',
-                        fakerMethod: 'date',
-                        fakerArguments: ['Y-m-d'],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '1990-05-15',
+                $this->make(
+                    'date_of_birth', 'personal_identity', 'Date of Birth', PiiSensitivity::High,
+                    ['/^(birth[-_]?date|date[-_]?of[-_]?birth|dob|birthday|geburtsdatum)$/i'],
+                    $this->fake('date', ['Y-m-d']),
+                    '1990-05-15',
                 ),
-                new PiiMatcherData(
-                    key: 'national_id',
-                    group: 'personal_identity',
-                    name: 'National ID / SSN',
-                    enabled: true,
-                    patterns: ['/^(ssn|social[-_]?security|national[-_]?id|tax[-_]?id|personal[-_]?id)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'national_id',
-                        strategy: 'hash',
-                        fakerMethod: null,
-                        fakerArguments: [],
-                        hashAlgorithm: 'sha256',
-                        hashSalt: '',
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '123-45-6789',
+                $this->make(
+                    'gender', 'personal_identity', 'Gender', PiiSensitivity::Medium,
+                    ['/^(gender|sex|geschlecht)$/i'],
+                    $this->nullify(),
+                    'female',
+                ),
+                $this->make(
+                    'place_of_birth', 'personal_identity', 'Place of Birth', PiiSensitivity::Medium,
+                    ['/^(birth[-_]?place|place[-_]?of[-_]?birth|birthplace|birth[-_]?city|hometown)$/i'],
+                    $this->fake('city'),
+                    'Chicago',
+                ),
+                $this->make(
+                    'nationality', 'personal_identity', 'Nationality / Citizenship', PiiSensitivity::Medium,
+                    ['/^(nationality|citizenship|national[-_]?origin|staatsangehoerigkeit)$/i'],
+                    $this->fake('countryCode'),
+                    'US',
+                ),
+                $this->make(
+                    'race_ethnicity', 'personal_identity', 'Race / Ethnicity', PiiSensitivity::High,
+                    ['/^(race|ethnicity|ethnic[-_]?group|ethnic[-_]?origin)$/i'],
+                    $this->nullify(),
+                    'Asian',
+                    enabled: false,
+                ),
+                $this->make(
+                    'religion', 'personal_identity', 'Religion / Faith', PiiSensitivity::High,
+                    ['/^(religion|faith|religious[-_]?affiliation|creed)$/i'],
+                    $this->nullify(),
+                    'Christian',
+                    enabled: false,
                 ),
             ],
         );
@@ -160,72 +154,27 @@ class PiiMatcherBaselineProvider
             key: 'contact',
             name: 'Contact Information',
             matchers: [
-                new PiiMatcherData(
-                    key: 'email_address',
-                    group: 'contact',
-                    name: 'Email Address',
-                    enabled: true,
-                    patterns: [
+                $this->make(
+                    'email_address', 'contact', 'Email Address', PiiSensitivity::High,
+                    [
                         '/^(e[-_]?mail|email[-_]?addr(ess)?|user[-_]?email|contact[-_]?email)$/i',
                         'reply_to',
                         '*_email',
                     ],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'email_address',
-                        strategy: 'fake',
-                        fakerMethod: 'safeEmail',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'john.doe@example.com',
+                    $this->fake('safeEmail'),
+                    'john.doe@example.com',
                 ),
-                new PiiMatcherData(
-                    key: 'phone_number',
-                    group: 'contact',
-                    name: 'Phone Number',
-                    enabled: true,
-                    patterns: ['/^(phone|phone[-_]?number|tel(ephone)?|mobile|cell|fax)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'phone_number',
-                        strategy: 'fake',
-                        fakerMethod: 'phoneNumber',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '+1-555-123-4567',
+                $this->make(
+                    'phone_number', 'contact', 'Phone Number', PiiSensitivity::High,
+                    ['/^(phone|phone[-_]?number|tel(ephone)?|mobile|cell|fax)$/i'],
+                    $this->fake('phoneNumber'),
+                    '+1-555-123-4567',
                 ),
-                new PiiMatcherData(
-                    key: 'username',
-                    group: 'contact',
-                    name: 'Username / Login',
-                    enabled: true,
-                    patterns: ['/^(username|user[-_]?name|login|benutzername|handle)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'username',
-                        strategy: 'fake',
-                        fakerMethod: 'userName',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'john_doe_42',
+                $this->make(
+                    'username', 'contact', 'Username / Login', PiiSensitivity::Medium,
+                    ['/^(username|user[-_]?name|login|benutzername|handle)$/i'],
+                    $this->fake('userName'),
+                    'john_doe_42',
                 ),
             ],
         );
@@ -237,131 +186,47 @@ class PiiMatcherBaselineProvider
             key: 'location',
             name: 'Location',
             matchers: [
-                new PiiMatcherData(
-                    key: 'street_address',
-                    group: 'location',
-                    name: 'Street Address',
-                    enabled: true,
-                    patterns: ['/^(address|street|street[-_]?address|addr(ess)?[-_]?line[-_]?\d?)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'street_address',
-                        strategy: 'fake',
-                        fakerMethod: 'address',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '123 Main Street',
+                $this->make(
+                    'street_address', 'location', 'Street Address', PiiSensitivity::High,
+                    ['/^(address|street|street[-_]?address|addr(ess)?[-_]?line[-_]?\d?)$/i'],
+                    $this->fake('address'),
+                    '123 Main Street',
                 ),
-                new PiiMatcherData(
-                    key: 'city',
-                    group: 'location',
-                    name: 'City',
-                    enabled: true,
-                    patterns: ['/^(city|town|ort|stadt|ville)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'city',
-                        strategy: 'fake',
-                        fakerMethod: 'city',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'Springfield',
+                $this->make(
+                    'city', 'location', 'City', PiiSensitivity::Low,
+                    ['/^(city|town|ort|stadt|ville)$/i'],
+                    $this->fake('city'),
+                    'Springfield',
                 ),
-                new PiiMatcherData(
-                    key: 'postal_code',
-                    group: 'location',
-                    name: 'Postal Code',
-                    enabled: true,
-                    patterns: ['/^(zip|zip[-_]?code|postal[-_]?code|postcode|plz)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'postal_code',
-                        strategy: 'fake',
-                        fakerMethod: 'postcode',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '12345',
+                $this->make(
+                    'postal_code', 'location', 'Postal Code', PiiSensitivity::Medium,
+                    ['/^(zip|zip[-_]?code|postal[-_]?code|postcode|plz)$/i'],
+                    $this->fake('postcode'),
+                    '12345',
                 ),
-                new PiiMatcherData(
-                    key: 'country',
-                    group: 'location',
-                    name: 'Country',
-                    enabled: true,
-                    patterns: ['/^(country|land|country[-_]?code|pays)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'country',
-                        strategy: 'fake',
-                        fakerMethod: 'countryCode',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'US',
+                $this->make(
+                    'country', 'location', 'Country', PiiSensitivity::Low,
+                    ['/^(country|land|country[-_]?code|pays)$/i'],
+                    $this->fake('countryCode'),
+                    'US',
                 ),
-                new PiiMatcherData(
-                    key: 'latitude',
-                    group: 'location',
-                    name: 'Latitude',
-                    enabled: true,
-                    patterns: ['/^(lat|latitude|geo[-_]?lat)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'latitude',
-                        strategy: 'fake',
-                        fakerMethod: 'latitude',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '40.712776',
+                $this->make(
+                    'latitude', 'location', 'Latitude', PiiSensitivity::Medium,
+                    ['/^(lat|latitude|geo[-_]?lat)$/i'],
+                    $this->fake('latitude'),
+                    '40.712776',
                 ),
-                new PiiMatcherData(
-                    key: 'longitude',
-                    group: 'location',
-                    name: 'Longitude',
-                    enabled: true,
-                    patterns: ['/^(lon|lng|longitude|geo[-_]?lon|geo[-_]?lng)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'longitude',
-                        strategy: 'fake',
-                        fakerMethod: 'longitude',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '-74.005974',
+                $this->make(
+                    'longitude', 'location', 'Longitude', PiiSensitivity::Medium,
+                    ['/^(lon|lng|longitude|geo[-_]?lon|geo[-_]?lng)$/i'],
+                    $this->fake('longitude'),
+                    '-74.005974',
+                ),
+                $this->make(
+                    'building_number', 'location', 'Building / Apartment Number', PiiSensitivity::Low,
+                    ['/^(building[-_]?number|house[-_]?number|flat|apartment[-_]?number|unit[-_]?number)$/i'],
+                    $this->fake('buildingNumber'),
+                    '42B',
                 ),
             ],
         );
@@ -373,68 +238,172 @@ class PiiMatcherBaselineProvider
             key: 'financial',
             name: 'Financial Data',
             matchers: [
-                new PiiMatcherData(
-                    key: 'credit_card',
-                    group: 'financial',
-                    name: 'Credit Card Number',
-                    enabled: true,
-                    patterns: ['/^(credit[-_]?card|card[-_]?number|cc[-_]?number|payment[-_]?card|pan)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'credit_card',
-                        strategy: 'mask',
-                        fakerMethod: null,
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: '*',
-                        visibleChars: 4,
-                        preserveFormat: false,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '4242424242424242',
+                $this->make(
+                    'credit_card', 'financial', 'Credit Card Number', PiiSensitivity::Critical,
+                    ['/^(credit[-_]?card|card[-_]?number|cc[-_]?number|payment[-_]?card|pan)$/i'],
+                    $this->mask(4, '*', false),
+                    '4242424242424242',
                 ),
-                new PiiMatcherData(
-                    key: 'iban',
-                    group: 'financial',
-                    name: 'IBAN / Bank Account',
-                    enabled: true,
-                    patterns: ['/^(iban|bank[-_]?account|kontonummer|bic|swift)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'iban',
-                        strategy: 'mask',
-                        fakerMethod: null,
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: '*',
-                        visibleChars: 4,
-                        preserveFormat: false,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'DE89370400440532013000',
+                $this->make(
+                    'iban', 'financial', 'IBAN / Bank Account', PiiSensitivity::Critical,
+                    ['/^(iban|bank[-_]?account|kontonummer)$/i'],
+                    $this->mask(4, '*', false),
+                    'DE89370400440532013000',
                 ),
-                new PiiMatcherData(
-                    key: 'company_name',
-                    group: 'financial',
-                    name: 'Company Name',
-                    enabled: true,
-                    patterns: ['/^(company|company[-_]?name|organization|org[-_]?name|firma)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'company_name',
-                        strategy: 'fake',
-                        fakerMethod: 'company',
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'Acme Corporation',
+                $this->make(
+                    'bank_routing_number', 'financial', 'Bank Routing / Sort Code', PiiSensitivity::Critical,
+                    ['/^(routing[-_]?number|sort[-_]?code|aba[-_]?number|bank[-_]?code|bic|swift[-_]?code)$/i'],
+                    $this->hash(),
+                    '021000021',
+                ),
+                $this->make(
+                    'crypto_wallet', 'financial', 'Crypto Wallet Address', PiiSensitivity::High,
+                    ['/^(wallet[-_]?address|crypto[-_]?wallet|bitcoin[-_]?address|eth[-_]?address|blockchain[-_]?address)$/i'],
+                    $this->hash(),
+                    '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
+                    enabled: false,
+                ),
+                $this->make(
+                    'salary', 'financial', 'Salary / Wage', PiiSensitivity::High,
+                    ['/^(salary|wage|income|compensation|annual[-_]?pay|hourly[-_]?rate)$/i'],
+                    $this->nullify(),
+                    '75000',
+                    enabled: false,
+                ),
+            ],
+        );
+    }
+
+    private function medicalGroup(): PiiMatcherGroupData
+    {
+        return new PiiMatcherGroupData(
+            key: 'medical',
+            name: 'Medical & Health',
+            matchers: [
+                $this->make(
+                    'medical_record_id', 'medical', 'Medical Record Number', PiiSensitivity::Critical,
+                    ['/^(medical[-_]?record|mrn|medical[-_]?record[-_]?number|chart[-_]?number)$/i'],
+                    $this->hash(),
+                    'MRN-789456',
+                ),
+                $this->make(
+                    'health_insurance_id', 'medical', 'Health Insurance ID', PiiSensitivity::Critical,
+                    ['/^(insurance[-_]?id|insurance[-_]?number|health[-_]?plan|policy[-_]?number|member[-_]?id)$/i'],
+                    $this->hash(),
+                    'INS-123456789',
+                ),
+                $this->make(
+                    'patient_id', 'medical', 'Patient ID', PiiSensitivity::Critical,
+                    ['/^(patient[-_]?id|patient[-_]?number|patient[-_]?reference)$/i'],
+                    $this->hash(),
+                    'PAT-001234',
+                    enabled: false,
+                ),
+                $this->make(
+                    'diagnosis', 'medical', 'Diagnosis / Medical Condition', PiiSensitivity::Critical,
+                    ['/^(diagnosis|diagnose|condition|icd[-_]?code|medical[-_]?condition|symptom)$/i'],
+                    $this->nullify(),
+                    'Type 2 Diabetes',
+                    enabled: false,
+                ),
+                $this->make(
+                    'blood_type', 'medical', 'Blood Type', PiiSensitivity::High,
+                    ['/^(blood[-_]?type|blood[-_]?group|blutgruppe)$/i'],
+                    $this->nullify(),
+                    'A+',
+                    enabled: false,
+                ),
+            ],
+        );
+    }
+
+    private function biometricGroup(): PiiMatcherGroupData
+    {
+        return new PiiMatcherGroupData(
+            key: 'biometric',
+            name: 'Biometric Data',
+            matchers: [
+                $this->make(
+                    'biometric_data', 'biometric', 'Biometric Identifier', PiiSensitivity::Critical,
+                    ['/^(fingerprint|face[-_]?(id|encoding|hash|vector)|voice[-_]?print|biometric|retina[-_]?scan)$/i'],
+                    $this->hash(),
+                    'base64-biometric-hash',
+                ),
+                $this->make(
+                    'dna_profile', 'biometric', 'DNA / Genetic Data', PiiSensitivity::Critical,
+                    ['/^(dna|dna[-_]?profile|genetic[-_]?data|genome)$/i'],
+                    $this->hash(),
+                    'ATCGATCGATCG',
+                    enabled: false,
+                ),
+            ],
+        );
+    }
+
+    private function professionalGroup(): PiiMatcherGroupData
+    {
+        return new PiiMatcherGroupData(
+            key: 'professional',
+            name: 'Professional & Employment',
+            matchers: [
+                $this->make(
+                    'company_name', 'professional', 'Company Name', PiiSensitivity::Low,
+                    ['/^(company|company[-_]?name|organization|organisation|org[-_]?name|firma)$/i'],
+                    $this->fake('company'),
+                    'Acme Corporation',
+                ),
+                $this->make(
+                    'job_title', 'professional', 'Job Title', PiiSensitivity::Low,
+                    ['/^(job[-_]?title|title|position|role|occupation|beruf|fonction)$/i'],
+                    $this->fake('jobTitle'),
+                    'Software Engineer',
+                ),
+                $this->make(
+                    'employee_id', 'professional', 'Employee ID', PiiSensitivity::Medium,
+                    ['/^(employee[-_]?id|emp[-_]?id|staff[-_]?id|personnel[-_]?id|worker[-_]?id)$/i'],
+                    $this->hash(),
+                    'EMP-001234',
+                ),
+            ],
+        );
+    }
+
+    private function digitalIdentityGroup(): PiiMatcherGroupData
+    {
+        return new PiiMatcherGroupData(
+            key: 'digital_identity',
+            name: 'Digital Identity',
+            matchers: [
+                $this->make(
+                    'ip_address', 'digital_identity', 'IP Address', PiiSensitivity::Medium,
+                    ['/^(ip|ip[-_]?addr(ess)?|client[-_]?ip|remote[-_]?ip|user[-_]?ip)$/i'],
+                    $this->mask(0, '*', true),
+                    '192.168.1.100',
+                ),
+                $this->make(
+                    'device_id', 'digital_identity', 'Device ID / UDID', PiiSensitivity::Medium,
+                    ['/^(device[-_]?id|device[-_]?identifier|udid|imei|device[-_]?token)$/i'],
+                    $this->hash(),
+                    '550e8400-e29b-41d4-a716-446655440000',
+                ),
+                $this->make(
+                    'session_id', 'digital_identity', 'Session ID', PiiSensitivity::High,
+                    ['/^(session[-_]?id|session[-_]?token|session[-_]?key)$/i'],
+                    $this->hash(),
+                    'sess_abc123xyz789',
+                ),
+                $this->make(
+                    'mac_address', 'digital_identity', 'MAC Address', PiiSensitivity::Medium,
+                    ['/^(mac[-_]?address|mac[-_]?addr|hardware[-_]?address|physical[-_]?address)$/i'],
+                    $this->hash(),
+                    '00:1A:2B:3C:4D:5E',
+                ),
+                $this->make(
+                    'user_agent', 'digital_identity', 'User Agent / Browser', PiiSensitivity::Low,
+                    ['/^(user[-_]?agent|browser|client[-_]?info|http[-_]?user[-_]?agent)$/i'],
+                    $this->nullify(),
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                    enabled: false,
                 ),
             ],
         );
@@ -446,80 +415,130 @@ class PiiMatcherBaselineProvider
             key: 'authentication',
             name: 'Authentication & Secrets',
             matchers: [
-                new PiiMatcherData(
-                    key: 'password',
-                    group: 'authentication',
-                    name: 'Password / Secret',
-                    enabled: true,
-                    patterns: ['/^(password|passwd|pwd|secret|passwort)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'password',
-                        strategy: 'hash',
-                        fakerMethod: null,
-                        fakerArguments: [],
-                        hashAlgorithm: 'sha256',
-                        hashSalt: '',
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'mysecretpassword',
+                $this->make(
+                    'password', 'authentication', 'Password / Secret', PiiSensitivity::Critical,
+                    ['/^(password|passwd|pwd|secret|passwort)$/i'],
+                    $this->hash(),
+                    'mysecretpassword',
                 ),
-                new PiiMatcherData(
-                    key: 'api_token',
-                    group: 'authentication',
-                    name: 'API Token / Key',
+                $this->make(
+                    'oauth_token', 'authentication', 'OAuth / Access Token', PiiSensitivity::Critical,
+                    ['/^(oauth[-_]?token|access[-_]?token|refresh[-_]?token|bearer[-_]?token|auth[-_]?token)$/i'],
+                    $this->hash(),
+                    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+                ),
+                $this->make(
+                    'api_token', 'authentication', 'API Token / Key', PiiSensitivity::Critical,
+                    ['/^(token|api[-_]?key)$/i'],
+                    $this->hash(),
+                    'sk_live_abc123xyz789',
                     enabled: false,
-                    patterns: ['/^(token|api[-_]?key|access[-_]?token|refresh[-_]?token|auth[-_]?token)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'api_token',
-                        strategy: 'hash',
-                        fakerMethod: null,
-                        fakerArguments: [],
-                        hashAlgorithm: 'sha256',
-                        hashSalt: '',
-                        maskChar: null,
-                        visibleChars: null,
-                        preserveFormat: null,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: 'sk_live_abc123xyz789',
+                ),
+                $this->make(
+                    'private_key', 'authentication', 'Private / Encryption Key', PiiSensitivity::Critical,
+                    ['/^(private[-_]?key|secret[-_]?key|signing[-_]?key|encryption[-_]?key)$/i'],
+                    $this->hash(),
+                    '-----BEGIN RSA PRIVATE KEY-----',
+                    enabled: false,
                 ),
             ],
         );
     }
 
-    private function networkGroup(): PiiMatcherGroupData
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * @param  list<string>  $patterns
+     */
+    private function make(
+        string $key,
+        string $group,
+        string $name,
+        PiiSensitivity $sensitivity,
+        array $patterns,
+        ColumnCloningConfigData $transformation,
+        ?string $exampleValue = null,
+        bool $enabled = true,
+    ): PiiMatcherData {
+        return new PiiMatcherData(
+            key: $key,
+            group: $group,
+            name: $name,
+            enabled: $enabled,
+            patterns: $patterns,
+            transformation: $transformation,
+            isBaseline: true,
+            exampleValue: $exampleValue,
+            sensitivity: $sensitivity,
+        );
+    }
+
+    /**
+     * @param  list<scalar>  $args
+     */
+    private function fake(string $method, array $args = []): ColumnCloningConfigData
     {
-        return new PiiMatcherGroupData(
-            key: 'network',
-            name: 'Network & Technical',
-            matchers: [
-                new PiiMatcherData(
-                    key: 'ip_address',
-                    group: 'network',
-                    name: 'IP Address',
-                    enabled: true,
-                    patterns: ['/^(ip|ip[-_]?addr(ess)?|client[-_]?ip|remote[-_]?ip|user[-_]?ip)$/i'],
-                    transformation: new ColumnCloningConfigData(
-                        columnName: 'ip_address',
-                        strategy: 'mask',
-                        fakerMethod: null,
-                        fakerArguments: [],
-                        hashAlgorithm: null,
-                        hashSalt: null,
-                        maskChar: '*',
-                        visibleChars: 0,
-                        preserveFormat: true,
-                        staticValue: null,
-                    ),
-                    isBaseline: true,
-                    exampleValue: '192.168.1.100',
-                ),
-            ],
+        return new ColumnCloningConfigData(
+            columnName: '',
+            strategy: 'fake',
+            fakerMethod: $method,
+            fakerArguments: $args,
+            hashAlgorithm: null,
+            hashSalt: null,
+            maskChar: null,
+            visibleChars: null,
+            preserveFormat: null,
+            staticValue: null,
+        );
+    }
+
+    private function hash(string $algorithm = 'sha256', string $salt = ''): ColumnCloningConfigData
+    {
+        return new ColumnCloningConfigData(
+            columnName: '',
+            strategy: 'hash',
+            fakerMethod: null,
+            fakerArguments: [],
+            hashAlgorithm: $algorithm,
+            hashSalt: $salt,
+            maskChar: null,
+            visibleChars: null,
+            preserveFormat: null,
+            staticValue: null,
+        );
+    }
+
+    private function mask(int $visibleChars = 0, string $maskChar = '*', bool $preserveFormat = false): ColumnCloningConfigData
+    {
+        return new ColumnCloningConfigData(
+            columnName: '',
+            strategy: 'mask',
+            fakerMethod: null,
+            fakerArguments: [],
+            hashAlgorithm: null,
+            hashSalt: null,
+            maskChar: $maskChar,
+            visibleChars: $visibleChars,
+            preserveFormat: $preserveFormat,
+            staticValue: null,
+        );
+    }
+
+    private function nullify(): ColumnCloningConfigData
+    {
+        return new ColumnCloningConfigData(
+            columnName: '',
+            strategy: 'null',
+            fakerMethod: null,
+            fakerArguments: [],
+            hashAlgorithm: null,
+            hashSalt: null,
+            maskChar: null,
+            visibleChars: null,
+            preserveFormat: null,
+            staticValue: null,
         );
     }
 }

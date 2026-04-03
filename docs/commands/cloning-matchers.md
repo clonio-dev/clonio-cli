@@ -141,34 +141,42 @@ php clonio matchers list
 
 ### Example output
 
+The table includes a **Sensitivity** column indicating the risk level of each matcher:
+
 ```
-  Effective PII matchers  (source: clonio.pii-matchers.yaml)
+  Effective PII matchers  (source: binary baseline)
 
-  Personal Identity
-    ✓  first_name            "First Name"                    fake → firstName         [file]
-    ✓  last_name             "Last Name"                     fake → lastName          [file]
-    ✓  full_name             "Person Name"                   fake → name              [file]
-    ✓  date_of_birth         "Date of Birth"                 fake → date              [file]
-    ✓  national_id           "National ID / SSN"             hash → sha256            [file]
+  +---+-----------------------------+----------------+---------------------------------+-----------+----------------------+----------+
+  |   | Group                       | Key            | Name                            | Sensitivity | Transformation     | Source   |
+  +---+-----------------------------+----------------+---------------------------------+-----------+----------------------+----------+
+  | ✓ | Government-Issued Identif…  | national_id    | National ID / SSN               | critical  | hash → sha256        | baseline |
+  | ✓ | Government-Issued Identif…  | passport_number| Passport Number                 | critical  | hash → sha256        | baseline |
+  | ✓ | Personal Identity           | first_name     | First Name                      | high      | fake → firstName     | baseline |
+  | ✓ | Contact Information         | email_address  | Email Address                   | high      | fake → safeEmail     | baseline |
+  | ✓ | Financial Data              | credit_card    | Credit Card Number              | critical  | mask                 | baseline |
+  | ✓ | Medical & Health            | medical_record_id | Medical Record Number        | critical  | hash → sha256        | baseline |
+  | — | Authentication & Secrets    | api_token      | API Token / Key                 | critical  |                      | baseline, disabled |
+  +---+-----------------------------+----------------+---------------------------------+-----------+----------------------+----------+
 
-  Contact Information
-    ✓  email_address         "Email Address"                 fake → safeEmail         [file]
-    ✓  phone_number          "Phone Number"                  fake → phoneNumber       [file]
-    ✓  username              "Username / Login"              fake → userName          [file]
-
-  Authentication & Secrets
-    —  api_token             "API Token / Key"               [file, disabled]
-
-  Total: 19 active matchers across 6 groups  (1 disabled)
-  Source: clonio.pii-matchers.yaml
+  Total: 34 active matchers across 10 groups  (13 disabled)
+  Source: binary baseline — run matchers:init to customise
 ```
 
 ### Source annotation
 
 Each row is annotated with its source:
-- `[file]` — defined in `clonio.pii-matchers.yaml`
-- `[baseline]` — from the binary baseline (when no file exists)
-- `[file, disabled]` — in the file but `enabled: false`
+- `baseline` — from the binary baseline (when no file exists)
+- `file` — defined in `clonio.pii-matchers.yaml`
+- `baseline, disabled` / `file, disabled` — matcher is present but `enabled: false`
+
+### Sensitivity levels
+
+| Level | Meaning |
+|-------|---------|
+| `critical` | Direct disclosure causes substantial harm — identity theft, financial fraud, privacy violation (SSN, credit card, password, medical record, biometrics) |
+| `high` | Direct personal identifiers — name, email, phone, DOB, street address, session token |
+| `medium` | Indirect identifiers — IP address, postal code, device ID, gender, nationality |
+| `low` | Contextual data with limited direct harm alone — city, country, job title, employer |
 
 ---
 
@@ -205,6 +213,7 @@ php clonio matchers check credit_card
     Matcher:        credit_card
     Group:          financial
     PII category:   "Credit Card Number"
+    Sensitivity:    critical
     Source:         binary baseline
     Matched by:     /^(credit[-_]?card|card[-_]?number|cc[-_]?number|payment[-_]?card|pan)$/i  (regex)
 
@@ -330,11 +339,33 @@ groups:
 php clonio matchers init
 
 # 2. Review and edit clonio.pii-matchers.yaml
+#    Enable any disabled matchers relevant to your data
+#    (e.g. medical, biometric, salary — disabled by default)
 # 3. Commit clonio.pii-matchers.yaml to version control
 
 # 4. Test that a column is classified correctly
 php clonio matchers check user_email
+php clonio matchers check ssn 123-45-6789   # test with a real value
 
 # 5. After upgrading Clonio, sync new baseline matchers
 php clonio matchers update
 ```
+
+### Built-in matcher groups
+
+The binary ships **10 matcher groups** covering all major PII categories:
+
+| Group | Description | Sensitivity |
+|-------|-------------|-------------|
+| `government_ids` | SSN, passport, driver's license, tax ID | critical |
+| `personal_identity` | Name, DOB, gender, nationality, religion¹ | high / medium |
+| `contact` | Email, phone, username | high / medium |
+| `location` | Address, city, postal code, lat/lon | high–low |
+| `financial` | Credit card, IBAN, routing number, salary¹ | critical / high |
+| `medical` | Medical record ID, insurance ID, diagnosis¹ | critical / high |
+| `biometric` | Fingerprint, face encoding, DNA¹ | critical |
+| `professional` | Company name, job title, employee ID | low / medium |
+| `digital_identity` | IP address, device ID, session ID, MAC address | high / medium |
+| `authentication` | Password, OAuth token, API key¹, private key¹ | critical |
+
+¹ Disabled by default — enable in `clonio.pii-matchers.yaml` when relevant to your schema.

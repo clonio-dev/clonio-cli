@@ -7,6 +7,7 @@ namespace App\Services\Pii;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Pii\PiiMatcherData;
 use App\Data\Pii\PiiMatcherGroupData;
+use App\Enums\PiiSensitivity;
 use RuntimeException;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -102,6 +103,10 @@ class PiiMatcherYamlReader
 
         $transformation = $this->parseTransformation($groupKey, $matcherKey, $data['transformation'] ?? null, $matcherKey);
 
+        $sensitivity = isset($data['sensitivity']) && is_string($data['sensitivity'])
+            ? PiiSensitivity::tryFrom($data['sensitivity']) ?? PiiSensitivity::Medium
+            : PiiSensitivity::Medium;
+
         return new PiiMatcherData(
             key: $matcherKey,
             group: $groupKey,
@@ -110,6 +115,7 @@ class PiiMatcherYamlReader
             patterns: $patterns,
             transformation: $transformation,
             isBaseline: false,
+            sensitivity: $sensitivity,
         );
     }
 

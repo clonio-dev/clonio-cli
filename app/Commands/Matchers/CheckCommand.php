@@ -73,6 +73,7 @@ class CheckCommand extends Command
         $this->line(sprintf('    Matcher:        %s', $matched->key));
         $this->line(sprintf('    Group:          %s', $matched->group));
         $this->line(sprintf('    PII category:   "%s"', $matched->name));
+        $this->line(sprintf('    Sensitivity:    %s', $matched->sensitivity->label()));
         $this->line(sprintf('    Source:         %s', $matched->isBaseline ? 'binary baseline' : 'clonio.pii-matchers.yaml'));
 
         // Determine which pattern matched and its type

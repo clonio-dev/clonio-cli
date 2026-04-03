@@ -57,6 +57,22 @@ it('shows source as binary baseline when no file present', function (): void {
         ->assertExitCode(ExitCode::Success->value);
 });
 
+it('shows critical sensitivity for credit card column', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'credit_card'])
+        ->expectsOutputToContain('Sensitivity:    critical')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows high sensitivity for email column', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'email'])
+        ->expectsOutputToContain('Sensitivity:    high')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
 it('shows built-in example for credit card column', function (): void {
     Storage::fake('local');
 

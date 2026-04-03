@@ -106,6 +106,7 @@ class ListCommand extends Command
                         $groupDisplayName,
                         $matcher->key,
                         $matcher->name,
+                        $matcher->sensitivity->label(),
                         $transformLabel,
                         $matcher->isBaseline ? 'baseline' : 'file',
                     ];
@@ -117,6 +118,7 @@ class ListCommand extends Command
                         $groupDisplayName,
                         $matcher->key,
                         $matcher->name,
+                        $matcher->sensitivity->label(),
                         '',
                         ($matcher->isBaseline ? 'baseline' : 'file').', disabled',
                     ];
@@ -124,7 +126,7 @@ class ListCommand extends Command
             }
         }
 
-        $this->table(['', 'Group', 'Key', 'Name', 'Transformation', 'Source'], $rows);
+        $this->table(['', 'Group', 'Key', 'Name', 'Sensitivity', 'Transformation', 'Source'], $rows);
         $this->line('');
 
         $disabledSuffix = $totalDisabled > 0 ? sprintf(' (%d disabled)', $totalDisabled) : '';
