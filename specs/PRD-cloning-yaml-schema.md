@@ -92,7 +92,7 @@ Controls whether the target table is emptied **before** data is transferred. Exe
 | `truncate` | Issues `TRUNCATE TABLE` on the target (SQLite fallback: `DELETE FROM`) |
 | `delete` | Issues `DELETE FROM` on the target (no `WHERE` clause) |
 
-`cloning:dump` always writes `clear: false` for every table. When `clear` is absent from a hand-written config it defaults to `false`.
+`cloning:dump` always writes `clear: delete` for every table. When `clear` is absent from a hand-written config it defaults to `false` (no clearing).
 
 **Column listing rule — the only implicit default:**
 Columns that are **not listed** under `columns` are implicitly treated as `keep`. This is the single exception to the explicit-over-implicit principle: requiring every column of every table to be written out would make the file unreadable for schemas with hundreds of columns. All other values — `options`, `rows.strategy`, and every strategy option on a listed column — must be explicit.
