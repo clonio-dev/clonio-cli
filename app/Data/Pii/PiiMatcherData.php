@@ -17,5 +17,6 @@ final readonly class PiiMatcherData
         public array $patterns,
         public ColumnCloningConfigData $transformation,
         public bool $isBaseline,
+        public ?string $exampleValue = null,
     ) {}
 }
