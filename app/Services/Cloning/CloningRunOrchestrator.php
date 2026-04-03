@@ -233,6 +233,10 @@ class CloningRunOrchestrator
                 $offset += count($chunk);
             } while (count($chunk) === $chunkSize);
 
+            if ($rows === 0 && $skipped > 0) {
+                return [0, $skipped, true, sprintf('All %d rows failed to insert', $skipped)];
+            }
+
             return [$rows, $skipped, false, null];
         } catch (Throwable $throwable) {
             return [0, 0, true, $throwable->getMessage()];

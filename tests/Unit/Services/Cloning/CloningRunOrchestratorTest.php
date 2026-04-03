@@ -305,7 +305,7 @@ it('transfers rows and counts correctly', function (): void {
     expect($result->success)->toBeTrue();
 });
 
-it('skips rows when row-by-row insert throws', function (): void {
+it('marks run as failed when all rows are skipped during insert', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -317,7 +317,7 @@ it('skips rows when row-by-row insert throws', function (): void {
     // Return rows once, then empty to stop the loop
     DB::shouldReceive('select')->andReturn($rows, []);
     DB::shouldReceive('table')->andReturnSelf();
-    // Both bulk and per-row inserts throw — rows get skipped
+    // Both bulk and per-row inserts throw — all rows get skipped
     DB::shouldReceive('insert')->andThrow(new RuntimeException('Disk full'));
     DB::shouldReceive('purge')->andReturnNull();
 
@@ -326,7 +326,9 @@ it('skips rows when row-by-row insert throws', function (): void {
 
     expect($result->tables[0]->rowsSkipped)->toBe(2);
     expect($result->tables[0]->rowsTransferred)->toBe(0);
-    expect($result->success)->toBeTrue();
+    expect($result->tables[0]->status->value)->toBe('failed');
+    expect($result->success)->toBeFalse();
+    expect($result->failureReason)->not->toBeNull();
 });
 
 it('reports table failure when SELECT throws', function (): void {
