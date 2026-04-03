@@ -327,6 +327,7 @@ it('marks run as failed when all rows are skipped during insert', function (): v
     expect($result->tables[0]->rowsSkipped)->toBe(2);
     expect($result->tables[0]->rowsTransferred)->toBe(0);
     expect($result->tables[0]->status->value)->toBe('failed');
+    expect($result->tables[0]->failureReason)->toContain('Disk full');
     expect($result->success)->toBeFalse();
     expect($result->failureReason)->not->toBeNull();
 });

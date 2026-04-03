@@ -180,6 +180,7 @@ class CloningRunOrchestrator
             $skipped = 0;
             $offset = 0;
             $chunkSize = $options->chunkSize;
+            $firstInsertError = null;
 
             do {
                 /** @var list<object> $chunk */
@@ -218,13 +219,15 @@ class CloningRunOrchestrator
                 try {
                     DB::connection($targetConn)->table($tableConfig->tableName)->insert($transformed);
                     $rows += count($transformed);
-                } catch (Throwable) {
+                } catch (Throwable $bulkError) {
+                    $firstInsertError ??= $bulkError->getMessage();
                     // Fall back to row-by-row
                     foreach ($transformed as $row) {
                         try {
                             DB::connection($targetConn)->table($tableConfig->tableName)->insert($row);
                             $rows++;
-                        } catch (Throwable) {
+                        } catch (Throwable $rowError) {
+                            $firstInsertError ??= $rowError->getMessage();
                             $skipped++;
                         }
                     }
@@ -234,7 +237,12 @@ class CloningRunOrchestrator
             } while (count($chunk) === $chunkSize);
 
             if ($rows === 0 && $skipped > 0) {
-                return [0, $skipped, true, sprintf('All %d rows failed to insert', $skipped)];
+                $reason = sprintf('All %d rows failed to insert', $skipped);
+                if ($firstInsertError !== null) {
+                    $reason .= sprintf(': %s', $firstInsertError);
+                }
+
+                return [0, $skipped, true, $reason];
             }
 
             return [$rows, $skipped, false, null];
