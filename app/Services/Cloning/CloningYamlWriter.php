@@ -6,7 +6,7 @@ namespace App\Services\Cloning;
 
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
-use App\Data\Cloning\KeyRemappingTableData;
+use App\Data\Cloning\KeyRemappingConfigData;
 use Illuminate\Support\Facades\Storage;
 
 class CloningYamlWriter
@@ -87,7 +87,7 @@ class CloningYamlWriter
             $lines[] = '';
         }
 
-        if ($result->keyRemapping !== null && $result->keyRemapping->isActive()) {
+        if ($result->keyRemapping instanceof KeyRemappingConfigData && $result->keyRemapping->isActive()) {
             $lines[] = 'key_remapping:';
             $lines[] = '  tables:';
 
