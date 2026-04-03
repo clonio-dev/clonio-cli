@@ -10,6 +10,8 @@ use Faker\Generator;
 /**
  * Thin wrapper around Faker, providing typed helpers used by FakeDataSeeder.
  * Kept in its own class so the seeder stays readable and the generator is easy to swap.
+ *
+ * @codeCoverageIgnore
  */
 final class FakeDataGenerator
 {

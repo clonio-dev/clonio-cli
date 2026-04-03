@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Schema;
  * Two domain groups:
  *   - Task management : users, user_login_history, projects, issues, comments
  *   - Product catalog : categories, tags, products, product_tags
+ *
+ * @codeCoverageIgnore
  */
 final class FakeSchemaBuilder
 {

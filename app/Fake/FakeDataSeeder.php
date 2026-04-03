@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  *  • UUID primary keys are generated in PHP and passed as strings so every
  *    supported engine (MySQL, MariaDB, PostgreSQL, SQL Server, SQLite) receives
  *    a value it can store without special driver magic.
+ *
+ * @codeCoverageIgnore
  */
 final class FakeDataSeeder
 {

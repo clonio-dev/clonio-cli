@@ -24,6 +24,8 @@ use Throwable;
  *   UUID   — users, projects, products
  *   bigint — user_login_history, issues, comments, categories, tags
  *   composite (UUID + bigint) — product_tags
+ *
+ * @codeCoverageIgnore
  */
 class DataCommand extends Command
 {
