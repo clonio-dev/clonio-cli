@@ -1,4 +1,4 @@
-# cloning:matchers
+# matchers
 
 Manage PII column-detection rules stored in `pii-matchers.yaml`.
 
@@ -10,19 +10,19 @@ The binary ships a **baseline** set of matchers. You can customise detection by 
 
 ## Sub-commands
 
-- [`cloning:matchers init`](#cloningmatchers-init) — write the baseline to disk
-- [`cloning:matchers update`](#cloningmatchers-update) — add new baseline matchers to an existing file
-- [`cloning:matchers list`](#cloningmatchers-list) — show the effective matcher set
-- [`cloning:matchers check`](#cloningmatchers-check) — test a column name against the active matcher set
+- [`matchers init`](#matchers-init) — write the baseline to disk
+- [`matchers update`](#matchers-update) — add new baseline matchers to an existing file
+- [`matchers list`](#matchers-list) — show the effective matcher set
+- [`matchers check`](#matchers-check) — test a column name against the active matcher set
 
 ---
 
-## cloning:matchers init
+## matchers init
 
 Write the full baseline PII matcher configuration to `pii-matchers.yaml`.
 
 ```bash
-php clonio cloning:matchers init
+php clonio matchers init
 ```
 
 ### Options
@@ -54,7 +54,7 @@ php clonio cloning:matchers init
   Total: 20 matchers across 6 groups
 
   Edit pii-matchers.yaml to customise detection, then commit it to your repository.
-  Run cloning:matchers update after upgrading Clonio to add new baseline matchers.
+  Run matchers update after upgrading Clonio to add new baseline matchers.
 
   Tip: pii-matchers.yaml contains no credentials and is safe to commit.
        Make sure clonio.json is in your .gitignore.
@@ -64,16 +64,16 @@ php clonio cloning:matchers init
 
 - Run this once per project to get started.
 - After editing `pii-matchers.yaml`, the file is the sole source of truth. The baseline is only used when the file is absent.
-- After upgrading Clonio, run `cloning:matchers update` to pick up any new baseline matchers.
+- After upgrading Clonio, run `matchers update` to pick up any new baseline matchers.
 
 ---
 
-## cloning:matchers update
+## matchers update
 
 Sync an existing `pii-matchers.yaml` with the current binary baseline by adding any new matchers that are in the baseline but not in your file.
 
 ```bash
-php clonio cloning:matchers update
+php clonio matchers update
 ```
 
 ### Options
@@ -121,16 +121,16 @@ php clonio cloning:matchers update
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `5` | `pii-matchers.yaml` not found — run `cloning:matchers init` first |
+| `5` | `pii-matchers.yaml` not found — run `matchers init` first |
 
 ---
 
-## cloning:matchers list
+## matchers list
 
 Show the full effective matcher set — from `pii-matchers.yaml` if it exists, otherwise from the binary baseline.
 
 ```bash
-php clonio cloning:matchers list
+php clonio matchers list
 ```
 
 ### Options
@@ -172,12 +172,12 @@ Each row is annotated with its source:
 
 ---
 
-## cloning:matchers check
+## matchers check
 
 Test a column name against the active matcher set and show the result.
 
 ```bash
-php clonio cloning:matchers check <column>
+php clonio matchers check <column>
 ```
 
 ### Arguments
@@ -195,7 +195,7 @@ php clonio cloning:matchers check <column>
 ### Example — match found
 
 ```bash
-php clonio cloning:matchers check email
+php clonio matchers check email
 ```
 
 ```
@@ -216,7 +216,7 @@ php clonio cloning:matchers check email
 ### Example — no match
 
 ```bash
-php clonio cloning:matchers check created_at
+php clonio matchers check created_at
 ```
 
 ```
@@ -279,14 +279,14 @@ groups:
 
 ```bash
 # 1. Initialise the matcher file in your project
-php clonio cloning:matchers init
+php clonio matchers init
 
 # 2. Review and edit pii-matchers.yaml
 # 3. Commit pii-matchers.yaml to version control
 
 # 4. Test that a column is classified correctly
-php clonio cloning:matchers check user_email
+php clonio matchers check user_email
 
 # 5. After upgrading Clonio, sync new baseline matchers
-php clonio cloning:matchers update
+php clonio matchers update
 ```

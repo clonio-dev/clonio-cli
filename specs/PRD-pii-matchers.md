@@ -45,7 +45,7 @@ The binary ships a **baseline** set of matchers organised into baseline groups. 
 
 When `pii-matchers.yaml` is present, it is the **sole source of truth**. The baseline is only consulted when no file exists. There is no silent merging at runtime; what is in the file is exactly what runs.
 
-Users manage the file explicitly via `cloning:matchers init` (write the full baseline) and `cloning:matchers update` (add new matchers from a newer binary). See **PRD-cloning-matchers.md**.
+Users manage the file explicitly via `matchers init` (write the full baseline) and `matchers update` (add new matchers from a newer binary). See **PRD-cloning-matchers.md**.
 
 ---
 
@@ -182,7 +182,7 @@ transformation:
 
 ## 8. Baseline Groups and Matchers
 
-The binary baseline is organised into six groups. When `cloning:matchers init` writes the file, this is the structure it produces.
+The binary baseline is organised into six groups. When `matchers init` writes the file, this is the structure it produces.
 
 ### Group: `personal_identity` — Personal Identity
 
@@ -539,6 +539,6 @@ When matching a column name, matchers are evaluated in the order they appear in 
 
 ## 15. Decisions
 
-- **`cloning:matchers list` exists** and shows the full effective set (file if present, baseline otherwise), annotated per row with source and enabled state. See **PRD-cloning-matchers.md §5**.
-- **`cloning:matchers check <column-name>` exists** as a diagnostic command showing which matcher fires, which pattern matched, and the resolved transformation. Also reports if a disabled matcher would have matched. See **PRD-cloning-matchers.md §6**.
-- **Group identity is stable across updates — no special group.** When `cloning:matchers update` adds a new baseline matcher, it goes into its original baseline group. If that group does not yet exist in the user's file, the group is created and appended at the end of the file. There is no synthetic grouping (no `_new`, no `_baseline`).
+- **`matchers list` exists** and shows the full effective set (file if present, baseline otherwise), annotated per row with source and enabled state. See **PRD-cloning-matchers.md §5**.
+- **`matchers check <column-name>` exists** as a diagnostic command showing which matcher fires, which pattern matched, and the resolved transformation. Also reports if a disabled matcher would have matched. See **PRD-cloning-matchers.md §6**.
+- **Group identity is stable across updates — no special group.** When `matchers update` adds a new baseline matcher, it goes into its original baseline group. If that group does not yet exist in the user's file, the group is created and appended at the end of the file. There is no synthetic grouping (no `_new`, no `_baseline`).

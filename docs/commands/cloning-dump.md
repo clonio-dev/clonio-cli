@@ -33,7 +33,7 @@ The generated file is meant to be reviewed, adjusted, and committed to your repo
 
 1. Run `clonio init` in your working directory to create a `.env` file with `APP_KEY`
 2. Add a connection with `clonio connection:add`
-3. (Optional) Customise PII detection with `clonio cloning:matchers:init`
+3. (Optional) Customise PII detection with `clonio matchers:init`
 
 ## Usage
 
@@ -184,9 +184,9 @@ Clonio ships with a built-in set of PII matchers covering common column names fo
 To customise which columns are detected and what transformations are applied, use:
 
 ```bash
-clonio cloning:matchers:init   # export the baseline matchers to pii-matchers.yaml
-clonio cloning:matchers:list   # view all active matchers
-clonio cloning:matchers:check <column>  # test a column name against matchers
+clonio matchers:init   # export the baseline matchers to pii-matchers.yaml
+clonio matchers:list   # view all active matchers
+clonio matchers:check <column>  # test a column name against matchers
 ```
 
 ## Workflow
@@ -219,7 +219,7 @@ clonio cloning:matchers:check <column>  # test a column name against matchers
 ## Related commands
 
 - `cloning:run` — apply a cloning config to transfer and anonymize a database
-- `cloning:matchers:init` — export baseline PII matchers to a customisable file
-- `cloning:matchers:list` — list all active matchers and their patterns
-- `cloning:matchers:check <column>` — test a column name against the active matchers
+- `matchers:init` — export baseline PII matchers to a customisable file
+- `matchers:list` — list all active matchers and their patterns
+- `matchers:check <column>` — test a column name against the active matchers
 - `connection:add` — add a database connection

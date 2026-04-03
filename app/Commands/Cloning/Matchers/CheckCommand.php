@@ -15,7 +15,7 @@ class CheckCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:check
+    protected $signature = 'matchers:check
         {column  : Column name to test against the active matcher set}
         {--path= : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}';
 

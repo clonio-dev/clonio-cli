@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Storage;
 it('shows baseline source when no file exists', function (): void {
     Storage::fake('local');
 
-    $this->artisan('cloning:matchers:list')
+    $this->artisan('matchers:list')
         ->expectsOutputToContain('binary baseline')
         ->assertExitCode(ExitCode::Success->value);
 });
@@ -22,7 +22,7 @@ it('shows file source when pii-matchers.yaml exists', function (): void {
     $writer = new PiiMatcherYamlWriter;
     $writer->write($provider->getGroups(), 'pii-matchers.yaml');
 
-    $this->artisan('cloning:matchers:list')
+    $this->artisan('matchers:list')
         ->expectsOutputToContain('pii-matchers.yaml')
         ->assertExitCode(ExitCode::Success->value);
 });
@@ -30,7 +30,7 @@ it('shows file source when pii-matchers.yaml exists', function (): void {
 it('lists all groups and matchers from baseline', function (): void {
     Storage::fake('local');
 
-    $this->artisan('cloning:matchers:list')
+    $this->artisan('matchers:list')
         ->expectsOutputToContain('email_address')
         ->expectsOutputToContain('password')
         ->assertExitCode(ExitCode::Success->value);
@@ -39,7 +39,7 @@ it('lists all groups and matchers from baseline', function (): void {
 it('shows disabled status for disabled matchers', function (): void {
     Storage::fake('local');
 
-    $this->artisan('cloning:matchers:list')
+    $this->artisan('matchers:list')
         ->expectsOutputToContain('api_token')
         ->expectsOutputToContain('disabled')
         ->assertExitCode(ExitCode::Success->value);
@@ -48,7 +48,7 @@ it('shows disabled status for disabled matchers', function (): void {
 it('shows total count', function (): void {
     Storage::fake('local');
 
-    $this->artisan('cloning:matchers:list')
+    $this->artisan('matchers:list')
         ->expectsOutputToContain('Total:')
         ->assertExitCode(ExitCode::Success->value);
 });

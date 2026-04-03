@@ -274,5 +274,5 @@ Verify the integrity of a stored audit log with `clonio cloning:verify-audit`.
 
 - `cloning:dump` — inspect a database and generate the `.cloning.yaml` file
 - `cloning:verify-audit` — verify the integrity of a Clonio audit log
-- `cloning:matchers:init` — export the baseline PII matchers for customisation
+- `matchers:init` — export the baseline PII matchers for customisation
 - `connection:add` — add a database connection

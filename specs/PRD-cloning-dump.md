@@ -25,8 +25,8 @@ The PII detection logic used during dump is driven by the **active PII matcher s
 In short:
 - If `pii-matchers.yaml` is **absent**, the binary baseline matchers are used silently.
 - If `pii-matchers.yaml` is **present**, it is the sole source of truth — no merging with the baseline occurs.
-- Run `cloning:matchers init` to write the full baseline to `pii-matchers.yaml` for inspection and editing.
-- Run `cloning:matchers update` after upgrading Clonio to add new baseline matchers to an existing file.
+- Run `matchers init` to write the full baseline to `pii-matchers.yaml` for inspection and editing.
+- Run `matchers update` after upgrading Clonio to add new baseline matchers to an existing file.
 
 `pii-matchers.yaml` contains no credentials and is safe to commit to version control. A committed file means every developer on the team gets identical, project-specific PII detection. See **PRD-cloning-matchers.md** for the command specifications.
 

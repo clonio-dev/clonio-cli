@@ -16,7 +16,7 @@ class ListCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:list
+    protected $signature = 'matchers:list
         {--path=  : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}';
 
     /**
@@ -35,7 +35,7 @@ class ListCommand extends Command
 
         $fileExists = Storage::disk('local')->exists($filePath);
 
-        $sourceLabel = $fileExists ? $filePath : 'binary baseline — run cloning:matchers init to customise';
+        $sourceLabel = $fileExists ? $filePath : 'binary baseline — run matchers:init to customise';
 
         $this->line('');
         $this->line(sprintf('  Effective PII matchers  (source: %s)', $sourceLabel));

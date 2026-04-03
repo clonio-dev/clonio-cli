@@ -1,4 +1,4 @@
-# PRD — `cloning:matchers` Commands
+# PRD — `matchers` Commands
 
 **Version:** 0.1
 **Status:** Draft
@@ -10,10 +10,10 @@
 
 Provide four commands for managing and inspecting the `pii-matchers.yaml` file:
 
-- **`cloning:matchers init`** — write the full binary baseline to `pii-matchers.yaml` so the team can inspect, customise, and commit it.
-- **`cloning:matchers update`** — after upgrading the Clonio binary, add any new baseline matchers to an existing `pii-matchers.yaml` without touching entries the user has already customised.
-- **`cloning:matchers list`** — display the effective matcher set (file if present, baseline otherwise) annotated with source.
-- **`cloning:matchers check <column-name>`** — test which matcher fires for a given column name.
+- **`matchers init`** — write the full binary baseline to `pii-matchers.yaml` so the team can inspect, customise, and commit it.
+- **`matchers update`** — after upgrading the Clonio binary, add any new baseline matchers to an existing `pii-matchers.yaml` without touching entries the user has already customised.
+- **`matchers list`** — display the effective matcher set (file if present, baseline otherwise) annotated with source.
+- **`matchers check <column-name>`** — test which matcher fires for a given column name.
 
 See **PRD-pii-matchers.md** for the full `pii-matchers.yaml` schema and matcher semantics.
 
@@ -21,18 +21,18 @@ See **PRD-pii-matchers.md** for the full `pii-matchers.yaml` schema and matcher 
 
 ## 2. Background
 
-When `pii-matchers.yaml` is absent, Clonio uses hidden binary defaults. Teams who want control over PII detection — either to add project-specific matchers, to disable false positives, or to review exactly what rules are active — must materialise those defaults into an editable file. `cloning:matchers init` is the entry point for that.
+When `pii-matchers.yaml` is absent, Clonio uses hidden binary defaults. Teams who want control over PII detection — either to add project-specific matchers, to disable false positives, or to review exactly what rules are active — must materialise those defaults into an editable file. `matchers init` is the entry point for that.
 
-When the Clonio binary is upgraded, the baseline may contain new matchers for newly recognised PII categories. `cloning:matchers update` merges those additions into the existing file without overwriting the team's customisations.
+When the Clonio binary is upgraded, the baseline may contain new matchers for newly recognised PII categories. `matchers update` merges those additions into the existing file without overwriting the team's customisations.
 
 ---
 
-## 3. `cloning:matchers init`
+## 3. `matchers init`
 
 ### 3.1 Command Signature
 
 ```
-cloning:matchers init
+matchers init
     {--force  : Overwrite an existing pii-matchers.yaml without confirmation}
     {--path=  : Output path (default: pii-matchers.yaml in cwd)}
 ```
@@ -64,21 +64,21 @@ cloning:matchers init
   Total: 20 matchers across 6 groups
 
   Edit pii-matchers.yaml to customise detection, then commit it to your repository.
-  Run cloning:matchers update after upgrading Clonio to add new baseline matchers.
+  Run matchers update after upgrading Clonio to add new baseline matchers.
 ```
 
 ### 3.4 Effect on `cloning:dump`
 
-After `cloning:matchers init` runs, `cloning:dump` uses the file instead of the binary defaults. Any edit the user makes — changing a transformation, adding patterns, disabling a matcher, adding a custom group — is immediately reflected on the next `cloning:dump` run.
+After `matchers init` runs, `cloning:dump` uses the file instead of the binary defaults. Any edit the user makes — changing a transformation, adding patterns, disabling a matcher, adding a custom group — is immediately reflected on the next `cloning:dump` run.
 
 ---
 
-## 4. `cloning:matchers update`
+## 4. `matchers update`
 
 ### 4.1 Command Signature
 
 ```
-cloning:matchers update
+matchers update
     {--dry-run  : Show what would be added without writing anything}
     {--path=    : Path to the pii-matchers.yaml file (default: pii-matchers.yaml in cwd)}
 ```
@@ -86,7 +86,7 @@ cloning:matchers update
 ### 4.2 Behaviour
 
 1. Resolve the file path.
-2. If the file does not exist → exit `IOError (5)` and suggest `cloning:matchers init`.
+2. If the file does not exist → exit `IOError (5)` and suggest `matchers init`.
 3. Parse the existing `pii-matchers.yaml` into the current group/matcher structure.
 4. Load the full baseline from `PiiMatcherBaselineProvider`.
 5. **Compute the diff** (see §4.3).
@@ -107,7 +107,7 @@ The update command never modifies or removes entries that already exist in the f
 | Baseline group key exists in file | Add new matchers into that existing group |
 | Baseline group key not in file | Create the group using its baseline key and name; append it **at the end** of the file |
 
-The invariant: after `cloning:matchers update`, every matcher that was already in the file is exactly as the user left it.
+The invariant: after `matchers update`, every matcher that was already in the file is exactly as the user left it.
 
 ### 4.4 Detecting new matchers
 
@@ -149,12 +149,12 @@ Same as normal mode output but ends with:
 
 ---
 
-## 5. `cloning:matchers list`
+## 5. `matchers list`
 
 ### 5.1 Command Signature
 
 ```
-cloning:matchers list
+matchers list
     {--path=  : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}
 ```
 
@@ -191,7 +191,7 @@ One row per matcher, grouped by their group name. The source column shows whethe
 
 When falling back to the baseline:
 ```
-  Effective PII matchers  (source: binary baseline — run cloning:matchers init to customise)
+  Effective PII matchers  (source: binary baseline — run matchers init to customise)
   ...
 ```
 
@@ -199,12 +199,12 @@ In `--ci` mode: no output; exit `Success (0)` always (the command is information
 
 ---
 
-## 6. `cloning:matchers check`
+## 6. `matchers check`
 
 ### 6.1 Command Signature
 
 ```
-cloning:matchers check
+matchers check
     {column  : Column name to test against the active matcher set}
     {--path= : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}
 ```
@@ -267,8 +267,8 @@ Both commands honour the global `--ci` flag (defined in **PRD-command-behaviour.
 Allows targeting a `pii-matchers.yaml` file in a non-standard location. Useful in monorepos with multiple Clonio projects in subdirectories:
 
 ```bash
-clonio cloning:matchers init --path services/auth/pii-matchers.yaml
-clonio cloning:matchers update --path services/auth/pii-matchers.yaml
+clonio matchers init --path services/auth/pii-matchers.yaml
+clonio matchers update --path services/auth/pii-matchers.yaml
 ```
 
 ---
@@ -365,7 +365,7 @@ final readonly class OrphanedMatcherEntryData
 |-----------|---------|-----------|-----------|
 | Output path not writable | `init` | IOError (5) | Show path and permission hint |
 | File exists, no `--force`, user declines | `init` | Success (0) | Exit silently |
-| `pii-matchers.yaml` not found | `update` | IOError (5) | Suggest `cloning:matchers init` |
+| `pii-matchers.yaml` not found | `update` | IOError (5) | Suggest `matchers init` |
 | `pii-matchers.yaml` invalid YAML | `update` | ValidationError (4) | Show parse error with line/column |
 | `pii-matchers.yaml` fails schema validation | `update` | ValidationError (4) | List all validation errors |
 | File already up to date | `update` | Success (0) | Print "up to date" message |
@@ -377,7 +377,7 @@ final readonly class OrphanedMatcherEntryData
 
 ## 12. `.gitignore` Guidance
 
-After running `cloning:matchers init`, Clonio prints:
+After running `matchers init`, Clonio prints:
 
 ```
   Tip: pii-matchers.yaml contains no credentials and is safe to commit.
@@ -388,8 +388,8 @@ After running `cloning:matchers init`, Clonio prints:
 
 ## 13. Out of Scope
 
-- `cloning:matchers remove <key>` — users set `enabled: false` or delete entries manually
-- `cloning:matchers validate` — validation happens implicitly on any command that reads the file
+- `matchers remove <key>` — users set `enabled: false` or delete entries manually
+- `matchers validate` — validation happens implicitly on any command that reads the file
 - Interactive matcher editor (TUI)
 - Pushing matcher updates to a remote config service
 
@@ -397,6 +397,6 @@ After running `cloning:matchers init`, Clonio prints:
 
 ## 14. Decisions
 
-- **Orphaned matchers are reported, not removed.** `cloning:matchers update` reports matchers in the file that are no longer in the baseline so the user can decide whether to remove them. The file is never modified to remove them automatically.
-- **`cloning:matchers init --merge` is not implemented.** `init` always writes the full baseline (replacing any existing file after confirmation). Users who want to merge use `cloning:matchers update` instead.
+- **Orphaned matchers are reported, not removed.** `matchers update` reports matchers in the file that are no longer in the baseline so the user can decide whether to remove them. The file is never modified to remove them automatically.
+- **`matchers init --merge` is not implemented.** `init` always writes the full baseline (replacing any existing file after confirmation). Users who want to merge use `matchers update` instead.
 - **New groups are appended at the end of the file.** There is no defined sort order for groups; new baseline groups are simply added after all existing groups.

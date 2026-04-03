@@ -15,7 +15,7 @@ class InitCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:init
+    protected $signature = 'matchers:init
         {--force  : Overwrite an existing pii-matchers.yaml without confirmation}
         {--path=  : Output path (default: pii-matchers.yaml in cwd)}';
 
@@ -62,7 +62,7 @@ class InitCommand extends Command
         $this->line(sprintf('  Total: %d matchers across %d groups', $totalMatchers, $totalGroups));
         $this->line('');
         $this->line(sprintf('  Edit %s to customise detection, then commit it to your repository.', $outputPath));
-        $this->line('  Run cloning:matchers:update after upgrading Clonio to add new baseline matchers.');
+        $this->line('  Run matchers:update after upgrading Clonio to add new baseline matchers.');
         $this->line('');
         $this->line(sprintf('  Tip: %s contains no credentials and is safe to commit.', $outputPath));
         $this->line('       Make sure clonio.json is in your .gitignore.');

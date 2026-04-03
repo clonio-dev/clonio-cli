@@ -10,9 +10,9 @@ use Illuminate\Support\Facades\Storage;
 it('exits with IoError when pii-matchers.yaml is not found', function (): void {
     Storage::fake('local');
 
-    $this->artisan('cloning:matchers:update')
+    $this->artisan('matchers:update')
         ->expectsOutputToContain('File not found')
-        ->expectsOutputToContain('cloning:matchers:init')
+        ->expectsOutputToContain('matchers:init')
         ->assertExitCode(ExitCode::IoError->value);
 });
 
@@ -24,7 +24,7 @@ it('reports up to date when no new matchers exist', function (): void {
     $writer = new PiiMatcherYamlWriter;
     $writer->write($provider->getGroups(), 'pii-matchers.yaml');
 
-    $this->artisan('cloning:matchers:update')
+    $this->artisan('matchers:update')
         ->expectsOutputToContain('up to date')
         ->assertExitCode(ExitCode::Success->value);
 });
@@ -54,7 +54,7 @@ YAML;
 
     $originalContent = Storage::disk('local')->get('pii-matchers.yaml');
 
-    $this->artisan('cloning:matchers:update', ['--dry-run' => true])
+    $this->artisan('matchers:update', ['--dry-run' => true])
         ->expectsOutputToContain('Dry run')
         ->assertExitCode(ExitCode::Success->value);
 
@@ -84,7 +84,7 @@ YAML;
 
     Storage::disk('local')->put('pii-matchers.yaml', $minimalYaml);
 
-    $this->artisan('cloning:matchers:update')
+    $this->artisan('matchers:update')
         ->expectsOutputToContain('matchers added')
         ->assertExitCode(ExitCode::Success->value);
 
@@ -114,7 +114,7 @@ YAML;
 
     Storage::disk('local')->put('pii-matchers.yaml', $minimalYaml);
 
-    $this->artisan('cloning:matchers:update', ['--dry-run' => true])
+    $this->artisan('matchers:update', ['--dry-run' => true])
         ->expectsOutputToContain('New matchers added')
         ->assertExitCode(ExitCode::Success->value);
 

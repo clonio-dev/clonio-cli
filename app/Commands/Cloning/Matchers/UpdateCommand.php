@@ -18,7 +18,7 @@ class UpdateCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:update
+    protected $signature = 'matchers:update
         {--dry-run  : Show what would be added without writing anything}
         {--path=    : Path to the pii-matchers.yaml file (default: pii-matchers.yaml in cwd)}';
 
@@ -42,7 +42,7 @@ class UpdateCommand extends Command
 
         if (! Storage::disk('local')->exists($filePath)) {
             $this->error(sprintf('  File not found: %s', $filePath));
-            $this->line(sprintf('  Run `cloning:matchers:init` to create %s first.', $filePath));
+            $this->line(sprintf('  Run `matchers:init` to create %s first.', $filePath));
             $this->line('');
 
             return ExitCode::IoError->value;
