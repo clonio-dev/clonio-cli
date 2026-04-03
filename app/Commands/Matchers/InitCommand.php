@@ -16,18 +16,18 @@ class InitCommand extends Command
      * @var string
      */
     protected $signature = 'matchers:init
-        {--force  : Overwrite an existing pii-matchers.yaml without confirmation}
-        {--path=  : Output path (default: pii-matchers.yaml in cwd)}';
+        {--force  : Overwrite an existing clonio.pii-matchers.yaml without confirmation}
+        {--path=  : Output path (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
      */
-    protected $description = 'Write the baseline PII matcher configuration to pii-matchers.yaml';
+    protected $description = 'Write the baseline PII matcher configuration to clonio.pii-matchers.yaml';
 
     public function handle(PiiMatcherBaselineProvider $baselineProvider, PiiMatcherYamlWriter $writer): int
     {
         $pathOption = $this->option('path');
-        $outputPath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'pii-matchers.yaml';
+        $outputPath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'clonio.pii-matchers.yaml';
 
         if (Storage::disk('local')->exists($outputPath) && ! $this->option('force')) {
             $confirmed = $this->confirm(sprintf('  %s already exists. Overwrite?', $outputPath), false);

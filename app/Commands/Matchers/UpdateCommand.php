@@ -20,12 +20,12 @@ class UpdateCommand extends Command
      */
     protected $signature = 'matchers:update
         {--dry-run  : Show what would be added without writing anything}
-        {--path=    : Path to the pii-matchers.yaml file (default: pii-matchers.yaml in cwd)}';
+        {--path=    : Path to the clonio.pii-matchers.yaml file (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
      */
-    protected $description = 'Add new baseline matchers to an existing pii-matchers.yaml';
+    protected $description = 'Add new baseline matchers to an existing clonio.pii-matchers.yaml';
 
     public function handle(
         PiiMatcherBaselineProvider $baselineProvider,
@@ -34,7 +34,7 @@ class UpdateCommand extends Command
         PiiMatcherUpdateService $updateService,
     ): int {
         $pathOption = $this->option('path');
-        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'pii-matchers.yaml';
+        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'clonio.pii-matchers.yaml';
 
         $this->line('');
         $this->line(sprintf('  Checking %s against binary baseline ...', $filePath));

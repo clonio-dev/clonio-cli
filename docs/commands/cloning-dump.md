@@ -184,7 +184,7 @@ Clonio ships with a built-in set of PII matchers covering common column names fo
 To customise which columns are detected and what transformations are applied, use:
 
 ```bash
-clonio matchers:init   # export the baseline matchers to pii-matchers.yaml
+clonio matchers:init   # export the baseline matchers to clonio.pii-matchers.yaml
 clonio matchers:list   # view all active matchers
 clonio matchers:check <column>  # test a column name against matchers
 ```

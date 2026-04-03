@@ -7,7 +7,7 @@ use App\Services\Pii\PiiMatcherBaselineProvider;
 use App\Services\Pii\PiiMatcherYamlWriter;
 use Illuminate\Support\Facades\Storage;
 
-it('exits with IoError when pii-matchers.yaml is not found', function (): void {
+it('exits with IoError when clonio.pii-matchers.yaml is not found', function (): void {
     Storage::fake('local');
 
     $this->artisan('matchers:update')
@@ -22,7 +22,7 @@ it('reports up to date when no new matchers exist', function (): void {
     // Write the current baseline to disk
     $provider = new PiiMatcherBaselineProvider;
     $writer = new PiiMatcherYamlWriter;
-    $writer->write($provider->getGroups(), 'pii-matchers.yaml');
+    $writer->write($provider->getGroups(), 'clonio.pii-matchers.yaml');
 
     $this->artisan('matchers:update')
         ->expectsOutputToContain('up to date')
@@ -50,16 +50,16 @@ groups:
           faker_arguments: []
 YAML;
 
-    Storage::disk('local')->put('pii-matchers.yaml', $minimalYaml);
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', $minimalYaml);
 
-    $originalContent = Storage::disk('local')->get('pii-matchers.yaml');
+    $originalContent = Storage::disk('local')->get('clonio.pii-matchers.yaml');
 
     $this->artisan('matchers:update', ['--dry-run' => true])
         ->expectsOutputToContain('Dry run')
         ->assertExitCode(ExitCode::Success->value);
 
     // File must not be modified
-    expect(Storage::disk('local')->get('pii-matchers.yaml'))->toBe($originalContent);
+    expect(Storage::disk('local')->get('clonio.pii-matchers.yaml'))->toBe($originalContent);
 });
 
 it('adds new matchers and writes the file', function (): void {
@@ -82,13 +82,13 @@ groups:
           faker_arguments: []
 YAML;
 
-    Storage::disk('local')->put('pii-matchers.yaml', $minimalYaml);
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', $minimalYaml);
 
     $this->artisan('matchers:update')
         ->expectsOutputToContain('matchers added')
         ->assertExitCode(ExitCode::Success->value);
 
-    $updatedContent = Storage::disk('local')->get('pii-matchers.yaml');
+    $updatedContent = Storage::disk('local')->get('clonio.pii-matchers.yaml');
     expect($updatedContent)->toContain('email_address');
 });
 
@@ -112,13 +112,13 @@ groups:
           faker_arguments: []
 YAML;
 
-    Storage::disk('local')->put('pii-matchers.yaml', $minimalYaml);
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', $minimalYaml);
 
     $this->artisan('matchers:update', ['--dry-run' => true])
         ->expectsOutputToContain('New matchers added')
         ->assertExitCode(ExitCode::Success->value);
 
     // Verify the file was NOT updated
-    $content = Storage::disk('local')->get('pii-matchers.yaml');
+    $content = Storage::disk('local')->get('clonio.pii-matchers.yaml');
     expect($content)->not->toContain('email_address');
 });

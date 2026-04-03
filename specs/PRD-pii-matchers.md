@@ -1,4 +1,4 @@
-# PRD — PII Matcher Configuration (`pii-matchers.yaml`)
+# PRD — PII Matcher Configuration (`clonio.pii-matchers.yaml`)
 
 **Version:** 0.2
 **Status:** Draft
@@ -8,7 +8,7 @@
 
 ## 1. Goal
 
-Define how PII column-detection rules are stored, organised, merged, and applied across Clonio. Matchers live in a dedicated `pii-matchers.yaml` file — separate from `clonio.json` — so that teams can inspect, extend, and **commit them to version control** without exposing database credentials. The binary ships a baseline set of matchers organised into semantic groups; users extend or override that baseline by editing `pii-matchers.yaml`. `cloning:dump` consults the active matcher set when auto-populating a cloning YAML file.
+Define how PII column-detection rules are stored, organised, merged, and applied across Clonio. Matchers live in a dedicated `clonio.pii-matchers.yaml` file — separate from `clonio.json` — so that teams can inspect, extend, and **commit them to version control** without exposing database credentials. The binary ships a baseline set of matchers organised into semantic groups; users extend or override that baseline by editing `clonio.pii-matchers.yaml`. `cloning:dump` consults the active matcher set when auto-populating a cloning YAML file.
 
 > **Relationship to PRD-clonio-json.md §5.2** — the `mappings.pii` key described there is superseded by this file. `mappings.pii` will be removed from the `clonio.json` schema in a future version.
 
@@ -21,7 +21,7 @@ Define how PII column-detection rules are stored, organised, merged, and applied
 | File | Contains credentials? | Commit to VCS? |
 |------|--------------------|----------------|
 | `clonio.json` | Yes (encrypted passwords) | **No** |
-| `pii-matchers.yaml` | No | **Yes** |
+| `clonio.pii-matchers.yaml` | No | **Yes** |
 | `*.cloning.yaml` | No | **Yes** |
 
 ---
@@ -43,7 +43,7 @@ Matchers are organised into **groups** — semantic PII categories (e.g. "Person
 
 The binary ships a **baseline** set of matchers organised into baseline groups. The baseline is never written to disk — it exists only inside the binary.
 
-When `pii-matchers.yaml` is present, it is the **sole source of truth**. The baseline is only consulted when no file exists. There is no silent merging at runtime; what is in the file is exactly what runs.
+When `clonio.pii-matchers.yaml` is present, it is the **sole source of truth**. The baseline is only consulted when no file exists. There is no silent merging at runtime; what is in the file is exactly what runs.
 
 Users manage the file explicitly via `matchers init` (write the full baseline) and `matchers update` (add new matchers from a newer binary). See **PRD-cloning-matchers.md**.
 
@@ -52,7 +52,7 @@ Users manage the file explicitly via `matchers init` (write the full baseline) a
 ## 4. File Location and Naming
 
 ```
-pii-matchers.yaml
+clonio.pii-matchers.yaml
 ```
 
 The file lives in the **current working directory** (the project root), written via `Storage::disk('local')`. It has no `encrypted:` values and is safe to commit.
@@ -131,7 +131,7 @@ Matching is applied to the **column name only**. The first matcher across all gr
 
 ## 7. Transformation Object
 
-The `transformation` object uses the identical shape as column strategy objects in `.cloning.yaml` (defined in **PRD-cloning-yaml-schema.md §5**). A transformation can be copy-pasted between `pii-matchers.yaml` and a cloning YAML file without any conversion.
+The `transformation` object uses the identical shape as column strategy objects in `.cloning.yaml` (defined in **PRD-cloning-yaml-schema.md §5**). A transformation can be copy-pasted between `clonio.pii-matchers.yaml` and a cloning YAML file without any conversion.
 
 All strategy fields that are required in the YAML schema are equally required here.
 
@@ -445,13 +445,13 @@ final readonly class PiiMatcherGroupData
 
 | Service | Responsibility |
 |---------|---------------|
-| `PiiMatcherLoader` (new) | Reads `pii-matchers.yaml` if present; otherwise returns baseline. Returns `PiiMatcherSetData` (flat list in evaluation order). |
+| `PiiMatcherLoader` (new) | Reads `clonio.pii-matchers.yaml` if present; otherwise returns baseline. Returns `PiiMatcherSetData` (flat list in evaluation order). |
 | `PiiMatcherBaselineProvider` (new) | Returns the hardcoded baseline as `list<PiiMatcherGroupData>`. Single source of truth for defaults in the binary. |
-| `PiiMatcherYamlWriter` (new) | Serialises `list<PiiMatcherGroupData>` to `pii-matchers.yaml` via `Storage::disk('local')` |
+| `PiiMatcherYamlWriter` (new) | Serialises `list<PiiMatcherGroupData>` to `clonio.pii-matchers.yaml` via `Storage::disk('local')` |
 | `PiiMatcherSetData` | Encapsulates the matcher list; provides `match(columnName)` |
 
 `PiiMatcherLoader` logic:
-1. If `pii-matchers.yaml` exists → parse it → return flat ordered list from groups
+1. If `clonio.pii-matchers.yaml` exists → parse it → return flat ordered list from groups
 2. If absent → call `PiiMatcherBaselineProvider` → flatten groups → return
 
 There is no runtime merging of file and baseline. Once the file exists, it owns the configuration entirely.
@@ -460,7 +460,7 @@ There is no runtime merging of file and baseline. Once the file exists, it owns 
 
 ## 12. Evaluation Order
 
-When matching a column name, matchers are evaluated in the order they appear in `pii-matchers.yaml`:
+When matching a column name, matchers are evaluated in the order they appear in `clonio.pii-matchers.yaml`:
 - Groups are processed top-to-bottom
 - Matchers within a group are processed top-to-bottom
 - First match wins; remaining matchers are not evaluated
@@ -468,7 +468,7 @@ When matching a column name, matchers are evaluated in the order they appear in 
 
 ---
 
-## 13. JSON Schema for `pii-matchers.yaml`
+## 13. JSON Schema for `clonio.pii-matchers.yaml`
 
 ```json
 {

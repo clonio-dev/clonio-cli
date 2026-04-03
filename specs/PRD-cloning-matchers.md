@@ -8,20 +8,20 @@
 
 ## 1. Goal
 
-Provide four commands for managing and inspecting the `pii-matchers.yaml` file:
+Provide four commands for managing and inspecting the `clonio.pii-matchers.yaml` file:
 
-- **`matchers init`** — write the full binary baseline to `pii-matchers.yaml` so the team can inspect, customise, and commit it.
-- **`matchers update`** — after upgrading the Clonio binary, add any new baseline matchers to an existing `pii-matchers.yaml` without touching entries the user has already customised.
+- **`matchers init`** — write the full binary baseline to `clonio.pii-matchers.yaml` so the team can inspect, customise, and commit it.
+- **`matchers update`** — after upgrading the Clonio binary, add any new baseline matchers to an existing `clonio.pii-matchers.yaml` without touching entries the user has already customised.
 - **`matchers list`** — display the effective matcher set (file if present, baseline otherwise) annotated with source.
 - **`matchers check <column-name>`** — test which matcher fires for a given column name.
 
-See **PRD-pii-matchers.md** for the full `pii-matchers.yaml` schema and matcher semantics.
+See **PRD-pii-matchers.md** for the full `clonio.pii-matchers.yaml` schema and matcher semantics.
 
 ---
 
 ## 2. Background
 
-When `pii-matchers.yaml` is absent, Clonio uses hidden binary defaults. Teams who want control over PII detection — either to add project-specific matchers, to disable false positives, or to review exactly what rules are active — must materialise those defaults into an editable file. `matchers init` is the entry point for that.
+When `clonio.pii-matchers.yaml` is absent, Clonio uses hidden binary defaults. Teams who want control over PII detection — either to add project-specific matchers, to disable false positives, or to review exactly what rules are active — must materialise those defaults into an editable file. `matchers init` is the entry point for that.
 
 When the Clonio binary is upgraded, the baseline may contain new matchers for newly recognised PII categories. `matchers update` merges those additions into the existing file without overwriting the team's customisations.
 
@@ -33,15 +33,15 @@ When the Clonio binary is upgraded, the baseline may contain new matchers for ne
 
 ```
 matchers init
-    {--force  : Overwrite an existing pii-matchers.yaml without confirmation}
-    {--path=  : Output path (default: pii-matchers.yaml in cwd)}
+    {--force  : Overwrite an existing clonio.pii-matchers.yaml without confirmation}
+    {--path=  : Output path (default: clonio.pii-matchers.yaml in cwd)}
 ```
 
 ### 3.2 Behaviour
 
-1. Resolve the output path (default: `pii-matchers.yaml` in `cwd`).
+1. Resolve the output path (default: `clonio.pii-matchers.yaml` in `cwd`).
 2. If the file already exists and `--force` is not set:
-   - Prompt: `pii-matchers.yaml already exists. Overwrite? [y/N]`
+   - Prompt: `clonio.pii-matchers.yaml already exists. Overwrite? [y/N]`
    - Declined → exit `Success (0)`.
 3. Load the full baseline from `PiiMatcherBaselineProvider`.
 4. Serialise all groups and matchers to YAML via `PiiMatcherYamlWriter`.
@@ -51,7 +51,7 @@ matchers init
 ### 3.3 Output (normal mode)
 
 ```
-  Writing PII matcher baseline to pii-matchers.yaml ...
+  Writing PII matcher baseline to clonio.pii-matchers.yaml ...
 
   Groups written:
     personal_identity   5 matchers
@@ -63,7 +63,7 @@ matchers init
 
   Total: 20 matchers across 6 groups
 
-  Edit pii-matchers.yaml to customise detection, then commit it to your repository.
+  Edit clonio.pii-matchers.yaml to customise detection, then commit it to your repository.
   Run matchers update after upgrading Clonio to add new baseline matchers.
 ```
 
@@ -80,14 +80,14 @@ After `matchers init` runs, `cloning:dump` uses the file instead of the binary d
 ```
 matchers update
     {--dry-run  : Show what would be added without writing anything}
-    {--path=    : Path to the pii-matchers.yaml file (default: pii-matchers.yaml in cwd)}
+    {--path=    : Path to the clonio.pii-matchers.yaml file (default: clonio.pii-matchers.yaml in cwd)}
 ```
 
 ### 4.2 Behaviour
 
 1. Resolve the file path.
 2. If the file does not exist → exit `IOError (5)` and suggest `matchers init`.
-3. Parse the existing `pii-matchers.yaml` into the current group/matcher structure.
+3. Parse the existing `clonio.pii-matchers.yaml` into the current group/matcher structure.
 4. Load the full baseline from `PiiMatcherBaselineProvider`.
 5. **Compute the diff** (see §4.3).
 6. If `--dry-run` → print the diff and exit `Success (0)` without writing.
@@ -118,7 +118,7 @@ The update command compares matcher **keys** (e.g. `email_address`, `national_id
 The output always shows three sections: additions, orphaned matchers, and a summary. Sections with no entries are omitted.
 
 ```
-  Checking pii-matchers.yaml against binary baseline ...
+  Checking clonio.pii-matchers.yaml against binary baseline ...
 
   New matchers added:
     financial    →  crypto_wallet_address  "Crypto Wallet Address"
@@ -135,9 +135,9 @@ The output always shows three sections: additions, orphaned matchers, and a summ
 
 When the file is already up to date with no orphans:
 ```
-  Checking pii-matchers.yaml against binary baseline ...
+  Checking clonio.pii-matchers.yaml against binary baseline ...
 
-  pii-matchers.yaml is up to date. No changes needed.
+  clonio.pii-matchers.yaml is up to date. No changes needed.
 ```
 
 ### 4.6 Output (`--dry-run`)
@@ -155,13 +155,13 @@ Same as normal mode output but ends with:
 
 ```
 matchers list
-    {--path=  : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}
+    {--path=  : Path to clonio.pii-matchers.yaml (default: clonio.pii-matchers.yaml in cwd)}
 ```
 
 ### 5.2 Behaviour
 
 1. Load the effective matcher set via `PiiMatcherLoader`:
-   - If `pii-matchers.yaml` exists at the resolved path, use it.
+   - If `clonio.pii-matchers.yaml` exists at the resolved path, use it.
    - Otherwise fall back to the binary baseline.
 2. Print all groups and matchers in evaluation order.
 
@@ -170,7 +170,7 @@ matchers list
 One row per matcher, grouped by their group name. The source column shows whether the matcher came from the file or the baseline.
 
 ```
-  Effective PII matchers  (source: pii-matchers.yaml)
+  Effective PII matchers  (source: clonio.pii-matchers.yaml)
 
   Personal Identity
     ✓  first_name       "First Name"          fake → firstName       [file]
@@ -186,7 +186,7 @@ One row per matcher, grouped by their group name. The source column shows whethe
   ...
 
   Total: 18 active matchers across 6 groups  (2 disabled)
-  Source: pii-matchers.yaml
+  Source: clonio.pii-matchers.yaml
 ```
 
 When falling back to the baseline:
@@ -206,7 +206,7 @@ In `--ci` mode: no output; exit `Success (0)` always (the command is information
 ```
 matchers check
     {column  : Column name to test against the active matcher set}
-    {--path= : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}
+    {--path= : Path to clonio.pii-matchers.yaml (default: clonio.pii-matchers.yaml in cwd)}
 ```
 
 ### 6.2 Behaviour
@@ -224,7 +224,7 @@ matchers check
     Matcher:        email_address
     Group:          contact
     PII category:   "Email Address"
-    Source:         pii-matchers.yaml
+    Source:         clonio.pii-matchers.yaml
     Matched by:     /^(e[-_]?mail|email[-_]?addr(ess)?|...)$/i  (regex)
 
     Transformation:
@@ -245,7 +245,7 @@ matchers check
   Column "api_key" — no active matcher found
 
   Note: matcher "api_token" (authentication) would match but is disabled.
-        Set enabled: true in pii-matchers.yaml to activate it.
+        Set enabled: true in clonio.pii-matchers.yaml to activate it.
 ```
 
 Exit code is always `Success (0)` — the command is a diagnostic tool, not a validator.
@@ -264,11 +264,11 @@ Both commands honour the global `--ci` flag (defined in **PRD-command-behaviour.
 
 ### 5.2 `--path` option
 
-Allows targeting a `pii-matchers.yaml` file in a non-standard location. Useful in monorepos with multiple Clonio projects in subdirectories:
+Allows targeting a `clonio.pii-matchers.yaml` file in a non-standard location. Useful in monorepos with multiple Clonio projects in subdirectories:
 
 ```bash
-clonio matchers init --path services/auth/pii-matchers.yaml
-clonio matchers update --path services/auth/pii-matchers.yaml
+clonio matchers init --path services/auth/clonio.pii-matchers.yaml
+clonio matchers update --path services/auth/clonio.pii-matchers.yaml
 ```
 
 ---
@@ -352,9 +352,9 @@ final readonly class OrphanedMatcherEntryData
 | Service | Responsibility |
 |---------|---------------|
 | `PiiMatcherBaselineProvider` | Returns the hardcoded baseline as `list<PiiMatcherGroupData>` |
-| `PiiMatcherLoader` | Loads `pii-matchers.yaml` if present, otherwise returns baseline; used by `list` and `check` |
+| `PiiMatcherLoader` | Loads `clonio.pii-matchers.yaml` if present, otherwise returns baseline; used by `list` and `check` |
 | `PiiMatcherYamlWriter` | Serialises `list<PiiMatcherGroupData>` → YAML; writes via `Storage::disk('local')` |
-| `PiiMatcherYamlReader` | Parses `pii-matchers.yaml` → `list<PiiMatcherGroupData>` |
+| `PiiMatcherYamlReader` | Parses `clonio.pii-matchers.yaml` → `list<PiiMatcherGroupData>` |
 | `PiiMatcherUpdateService` | Diffs existing groups against baseline; returns `MatchersUpdateDiffData`; applies additions |
 
 ---
@@ -365,13 +365,13 @@ final readonly class OrphanedMatcherEntryData
 |-----------|---------|-----------|-----------|
 | Output path not writable | `init` | IOError (5) | Show path and permission hint |
 | File exists, no `--force`, user declines | `init` | Success (0) | Exit silently |
-| `pii-matchers.yaml` not found | `update` | IOError (5) | Suggest `matchers init` |
-| `pii-matchers.yaml` invalid YAML | `update` | ValidationError (4) | Show parse error with line/column |
-| `pii-matchers.yaml` fails schema validation | `update` | ValidationError (4) | List all validation errors |
+| `clonio.pii-matchers.yaml` not found | `update` | IOError (5) | Suggest `matchers init` |
+| `clonio.pii-matchers.yaml` invalid YAML | `update` | ValidationError (4) | Show parse error with line/column |
+| `clonio.pii-matchers.yaml` fails schema validation | `update` | ValidationError (4) | List all validation errors |
 | File already up to date | `update` | Success (0) | Print "up to date" message |
-| `pii-matchers.yaml` not found | `list` | Success (0) | Show baseline with note that no file exists |
-| `pii-matchers.yaml` not found | `check` | Success (0) | Check against baseline; note that no file exists |
-| `pii-matchers.yaml` invalid YAML | `list`, `check` | ValidationError (4) | Show parse error with line/column |
+| `clonio.pii-matchers.yaml` not found | `list` | Success (0) | Show baseline with note that no file exists |
+| `clonio.pii-matchers.yaml` not found | `check` | Success (0) | Check against baseline; note that no file exists |
+| `clonio.pii-matchers.yaml` invalid YAML | `list`, `check` | ValidationError (4) | Show parse error with line/column |
 
 ---
 
@@ -380,7 +380,7 @@ final readonly class OrphanedMatcherEntryData
 After running `matchers init`, Clonio prints:
 
 ```
-  Tip: pii-matchers.yaml contains no credentials and is safe to commit.
+  Tip: clonio.pii-matchers.yaml contains no credentials and is safe to commit.
        Make sure clonio.json is in your .gitignore.
 ```
 

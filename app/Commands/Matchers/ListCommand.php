@@ -17,7 +17,7 @@ class ListCommand extends Command
      * @var string
      */
     protected $signature = 'matchers:list
-        {--path=  : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}';
+        {--path=  : Path to clonio.pii-matchers.yaml (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
@@ -31,7 +31,7 @@ class ListCommand extends Command
         }
 
         $pathOption = $this->option('path');
-        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'pii-matchers.yaml';
+        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'clonio.pii-matchers.yaml';
 
         $fileExists = Storage::disk('local')->exists($filePath);
 

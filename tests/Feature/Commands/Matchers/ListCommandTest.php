@@ -15,15 +15,15 @@ it('shows baseline source when no file exists', function (): void {
         ->assertExitCode(ExitCode::Success->value);
 });
 
-it('shows file source when pii-matchers.yaml exists', function (): void {
+it('shows file source when clonio.pii-matchers.yaml exists', function (): void {
     Storage::fake('local');
 
     $provider = new PiiMatcherBaselineProvider;
     $writer = new PiiMatcherYamlWriter;
-    $writer->write($provider->getGroups(), 'pii-matchers.yaml');
+    $writer->write($provider->getGroups(), 'clonio.pii-matchers.yaml');
 
     $this->artisan('matchers:list')
-        ->expectsOutputToContain('pii-matchers.yaml')
+        ->expectsOutputToContain('clonio.pii-matchers.yaml')
         ->assertExitCode(ExitCode::Success->value);
 });
 

@@ -17,7 +17,7 @@ class CheckCommand extends Command
      */
     protected $signature = 'matchers:check
         {column  : Column name to test against the active matcher set}
-        {--path= : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}';
+        {--path= : Path to clonio.pii-matchers.yaml (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
@@ -57,7 +57,7 @@ class CheckCommand extends Command
         $this->line(sprintf('    Matcher:        %s', $matched->key));
         $this->line(sprintf('    Group:          %s', $matched->group));
         $this->line(sprintf('    PII category:   "%s"', $matched->name));
-        $this->line(sprintf('    Source:         %s', $matched->isBaseline ? 'binary baseline' : 'pii-matchers.yaml'));
+        $this->line(sprintf('    Source:         %s', $matched->isBaseline ? 'binary baseline' : 'clonio.pii-matchers.yaml'));
 
         // Determine which pattern matched and its type
         $matchedPattern = $this->findMatchedPattern($column, $matched->patterns);

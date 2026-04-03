@@ -24,17 +24,17 @@ class PiiMatcherYamlReader
             $parsed = Yaml::parse($content);
         } catch (ParseException $parseException) {
             throw new RuntimeException(
-                sprintf('Failed to parse pii-matchers.yaml: %s', $parseException->getMessage()),
+                sprintf('Failed to parse clonio.pii-matchers.yaml: %s', $parseException->getMessage()),
                 0,
                 $parseException,
             );
         }
 
-        throw_unless(is_array($parsed), RuntimeException::class, 'pii-matchers.yaml must be a YAML mapping at the top level.');
+        throw_unless(is_array($parsed), RuntimeException::class, 'clonio.pii-matchers.yaml must be a YAML mapping at the top level.');
 
         $rawGroups = $parsed['groups'] ?? null;
 
-        throw_unless(is_array($rawGroups), RuntimeException::class, 'pii-matchers.yaml must contain a "groups" key.');
+        throw_unless(is_array($rawGroups), RuntimeException::class, 'clonio.pii-matchers.yaml must contain a "groups" key.');
 
         $groups = [];
 

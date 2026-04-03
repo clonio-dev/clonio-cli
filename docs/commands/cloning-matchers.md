@@ -1,10 +1,10 @@
 # matchers
 
-Manage PII column-detection rules stored in `pii-matchers.yaml`.
+Manage PII column-detection rules stored in `clonio.pii-matchers.yaml`.
 
 Clonio detects personally identifiable information (PII) columns automatically by matching column names against a set of rules called **matchers**. Matchers are grouped into semantic categories and can use regex, glob, or literal patterns. When a column matches, a configured transformation strategy (fake, hash, mask, etc.) is applied during `cloning:dump`.
 
-The binary ships a **baseline** set of matchers. You can customise detection by initialising a `pii-matchers.yaml` file in your project root and editing it — it contains no credentials and is safe to commit.
+The binary ships a **baseline** set of matchers. You can customise detection by initialising a `clonio.pii-matchers.yaml` file in your project root and editing it — it contains no credentials and is safe to commit.
 
 ---
 
@@ -19,7 +19,7 @@ The binary ships a **baseline** set of matchers. You can customise detection by 
 
 ## matchers init
 
-Write the full baseline PII matcher configuration to `pii-matchers.yaml`.
+Write the full baseline PII matcher configuration to `clonio.pii-matchers.yaml`.
 
 ```bash
 php clonio matchers init
@@ -29,19 +29,19 @@ php clonio matchers init
 
 | Option | Description |
 |--------|-------------|
-| `--force` | Overwrite an existing `pii-matchers.yaml` without confirmation |
-| `--path=<path>` | Output path (default: `pii-matchers.yaml` in cwd) |
+| `--force` | Overwrite an existing `clonio.pii-matchers.yaml` without confirmation |
+| `--path=<path>` | Output path (default: `clonio.pii-matchers.yaml` in cwd) |
 
 ### Behaviour
 
-1. If `pii-matchers.yaml` already exists and `--force` is not set, prompts for confirmation.
+1. If `clonio.pii-matchers.yaml` already exists and `--force` is not set, prompts for confirmation.
 2. Writes all baseline groups and matchers to the file.
 3. Prints a summary of groups and matcher counts.
 
 ### Example output
 
 ```
-  Writing PII matcher baseline to pii-matchers.yaml ...
+  Writing PII matcher baseline to clonio.pii-matchers.yaml ...
 
   Groups written:
     personal_identity     5 matchers
@@ -53,24 +53,24 @@ php clonio matchers init
 
   Total: 20 matchers across 6 groups
 
-  Edit pii-matchers.yaml to customise detection, then commit it to your repository.
+  Edit clonio.pii-matchers.yaml to customise detection, then commit it to your repository.
   Run matchers update after upgrading Clonio to add new baseline matchers.
 
-  Tip: pii-matchers.yaml contains no credentials and is safe to commit.
+  Tip: clonio.pii-matchers.yaml contains no credentials and is safe to commit.
        Make sure clonio.json is in your .gitignore.
 ```
 
 ### Notes
 
 - Run this once per project to get started.
-- After editing `pii-matchers.yaml`, the file is the sole source of truth. The baseline is only used when the file is absent.
+- After editing `clonio.pii-matchers.yaml`, the file is the sole source of truth. The baseline is only used when the file is absent.
 - After upgrading Clonio, run `matchers update` to pick up any new baseline matchers.
 
 ---
 
 ## matchers update
 
-Sync an existing `pii-matchers.yaml` with the current binary baseline by adding any new matchers that are in the baseline but not in your file.
+Sync an existing `clonio.pii-matchers.yaml` with the current binary baseline by adding any new matchers that are in the baseline but not in your file.
 
 ```bash
 php clonio matchers update
@@ -81,11 +81,11 @@ php clonio matchers update
 | Option | Description |
 |--------|-------------|
 | `--dry-run` | Show what would be added without writing anything |
-| `--path=<path>` | Path to `pii-matchers.yaml` (default: `pii-matchers.yaml` in cwd) |
+| `--path=<path>` | Path to `clonio.pii-matchers.yaml` (default: `clonio.pii-matchers.yaml` in cwd) |
 
 ### Behaviour
 
-1. Reads the existing `pii-matchers.yaml`.
+1. Reads the existing `clonio.pii-matchers.yaml`.
 2. Compares it against the baseline shipped in the current binary.
 3. Reports any new baseline matchers (additions) and any matchers in your file that no longer exist in the baseline (orphans).
 4. If `--dry-run` is not set, writes the additions to the file. Orphans and your customisations are left untouched.
@@ -93,7 +93,7 @@ php clonio matchers update
 ### Example output — new matchers found
 
 ```
-  Checking pii-matchers.yaml against binary baseline ...
+  Checking clonio.pii-matchers.yaml against binary baseline ...
 
   New matchers added:
     financial             →  crypto_wallet_address  "Crypto Wallet Address"
@@ -111,9 +111,9 @@ php clonio matchers update
 ### Example output — up to date
 
 ```
-  Checking pii-matchers.yaml against binary baseline ...
+  Checking clonio.pii-matchers.yaml against binary baseline ...
 
-  pii-matchers.yaml is up to date. No changes needed.
+  clonio.pii-matchers.yaml is up to date. No changes needed.
 ```
 
 ### Exit codes
@@ -121,13 +121,13 @@ php clonio matchers update
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `5` | `pii-matchers.yaml` not found — run `matchers init` first |
+| `5` | `clonio.pii-matchers.yaml` not found — run `matchers init` first |
 
 ---
 
 ## matchers list
 
-Show the full effective matcher set — from `pii-matchers.yaml` if it exists, otherwise from the binary baseline.
+Show the full effective matcher set — from `clonio.pii-matchers.yaml` if it exists, otherwise from the binary baseline.
 
 ```bash
 php clonio matchers list
@@ -137,12 +137,12 @@ php clonio matchers list
 
 | Option | Description |
 |--------|-------------|
-| `--path=<path>` | Path to `pii-matchers.yaml` (default: `pii-matchers.yaml` in cwd) |
+| `--path=<path>` | Path to `clonio.pii-matchers.yaml` (default: `clonio.pii-matchers.yaml` in cwd) |
 
 ### Example output
 
 ```
-  Effective PII matchers  (source: pii-matchers.yaml)
+  Effective PII matchers  (source: clonio.pii-matchers.yaml)
 
   Personal Identity
     ✓  first_name            "First Name"                    fake → firstName         [file]
@@ -160,13 +160,13 @@ php clonio matchers list
     —  api_token             "API Token / Key"               [file, disabled]
 
   Total: 19 active matchers across 6 groups  (1 disabled)
-  Source: pii-matchers.yaml
+  Source: clonio.pii-matchers.yaml
 ```
 
 ### Source annotation
 
 Each row is annotated with its source:
-- `[file]` — defined in `pii-matchers.yaml`
+- `[file]` — defined in `clonio.pii-matchers.yaml`
 - `[baseline]` — from the binary baseline (when no file exists)
 - `[file, disabled]` — in the file but `enabled: false`
 
@@ -190,7 +190,7 @@ php clonio matchers check <column>
 
 | Option | Description |
 |--------|-------------|
-| `--path=<path>` | Path to `pii-matchers.yaml` (default: `pii-matchers.yaml` in cwd) |
+| `--path=<path>` | Path to `clonio.pii-matchers.yaml` (default: `clonio.pii-matchers.yaml` in cwd) |
 
 ### Example — match found
 
@@ -204,7 +204,7 @@ php clonio matchers check email
     Matcher:        email_address
     Group:          contact
     PII category:   "Email Address"
-    Source:         pii-matchers.yaml
+    Source:         clonio.pii-matchers.yaml
     Matched by:     /^(e[-_]?mail|email[-_]?addr(ess)?|user[-_]?email|contact[-_]?email)$/i  (regex)
 
     Transformation:
@@ -231,7 +231,7 @@ Always exits `0`, regardless of whether a match is found.
 
 ---
 
-## The pii-matchers.yaml file
+## The clonio.pii-matchers.yaml file
 
 ### File format
 
@@ -281,8 +281,8 @@ groups:
 # 1. Initialise the matcher file in your project
 php clonio matchers init
 
-# 2. Review and edit pii-matchers.yaml
-# 3. Commit pii-matchers.yaml to version control
+# 2. Review and edit clonio.pii-matchers.yaml
+# 3. Commit clonio.pii-matchers.yaml to version control
 
 # 4. Test that a column is classified correctly
 php clonio matchers check user_email

@@ -16,7 +16,7 @@ class PiiMatcherLoader
 
     public function load(?string $path = null): PiiMatcherSetData
     {
-        $filePath = $path ?? 'pii-matchers.yaml';
+        $filePath = $path ?? 'clonio.pii-matchers.yaml';
 
         if (! Storage::disk('local')->exists($filePath)) {
             return $this->baselineProvider->getMatcherSet();
