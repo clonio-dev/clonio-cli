@@ -14,6 +14,7 @@ use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\DatabaseSchemaData;
+use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
@@ -171,6 +172,10 @@ class CloningRunOrchestrator
                 $this->disableFkChecks($targetConn, $target);
             }
 
+            if ($tableConfig->rows->clear !== ClearMode::None) {
+                $this->clearTable($targetConn, $tableConfig->tableName, $tableConfig->rows->clear, $target);
+            }
+
             $rows = 0;
             $skipped = 0;
             $offset = 0;
@@ -281,6 +286,21 @@ class CloningRunOrchestrator
             DatabaseConnectionType::SqlServer => '['.$name.']',
             default => '"'.$name.'"',
         };
+    }
+
+    private function clearTable(string $connName, string $tableName, ClearMode $method, ConnectionData $connection): void
+    {
+        if ($method === ClearMode::Truncate) {
+            // SQLite does not support TRUNCATE; fall back to DELETE
+            if ($connection->type->value === 'sqlite') {
+                DB::connection($connName)->table($tableName)->delete();
+            } else {
+                $quotedTable = $this->quoteTable($tableName, $connection->type);
+                DB::connection($connName)->statement(sprintf('TRUNCATE TABLE %s', $quotedTable));
+            }
+        } elseif ($method === ClearMode::Delete) {
+            DB::connection($connName)->table($tableName)->delete();
+        }
     }
 
     private function disableFkChecks(string $connName, ConnectionData $connection): void

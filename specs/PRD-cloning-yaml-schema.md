@@ -75,11 +75,24 @@ tables:
       strategy: full     # required; full | first | last — no default
       limit: 1000        # required when strategy is first or last
       sort_by: id        # optional; column to order by for first/last
+      clear: false       # optional; false | truncate | delete — default false
     columns:             # optional section; see column rule below
       <column_name>:
         strategy: keep   # keep | fake | hash | mask | null | static
         # strategy-specific options follow (see §5)
 ```
+
+#### `rows.clear`
+
+Controls whether the target table is emptied **before** data is transferred. Executed after foreign-key checks are disabled (when `options.disable_foreign_key_checks: true`) and before any rows are inserted.
+
+| Value | Behaviour |
+|-------|-----------|
+| `false` (default) | Target table is not cleared; transferred rows are appended |
+| `truncate` | Issues `TRUNCATE TABLE` on the target (SQLite fallback: `DELETE FROM`) |
+| `delete` | Issues `DELETE FROM` on the target (no `WHERE` clause) |
+
+`cloning:dump` always writes `clear: false` for every table. When `clear` is absent from a hand-written config it defaults to `false`.
 
 **Column listing rule — the only implicit default:**
 Columns that are **not listed** under `columns` are implicitly treated as `keep`. This is the single exception to the explicit-over-implicit principle: requiring every column of every table to be written out would make the file unreadable for schemas with hundreds of columns. All other values — `options`, `rows.strategy`, and every strategy option on a listed column — must be explicit.

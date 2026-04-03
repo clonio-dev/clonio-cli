@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\ClearMode;
 use App\Services\Cloning\CloningYamlLoader;
 use Illuminate\Support\Facades\Storage;
 
@@ -311,4 +312,105 @@ YAML;
     $config = $loader->load('no-remapping.yaml');
 
     expect($config->keyRemapping)->toBeNull();
+});
+
+it('loads clear as false when absent', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('test.yaml', $yaml);
+    $config = (new CloningYamlLoader)->load('test.yaml');
+
+    expect($config->getTable('users')?->rows->clear)->toBe(ClearMode::None);
+});
+
+it('loads clear as truncate', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+      clear: truncate
+YAML;
+
+    Storage::disk('local')->put('test.yaml', $yaml);
+    $config = (new CloningYamlLoader)->load('test.yaml');
+
+    expect($config->getTable('users')?->rows->clear)->toBe(ClearMode::Truncate);
+});
+
+it('loads clear as delete', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+      clear: delete
+YAML;
+
+    Storage::disk('local')->put('test.yaml', $yaml);
+    $config = (new CloningYamlLoader)->load('test.yaml');
+
+    expect($config->getTable('users')?->rows->clear)->toBe(ClearMode::Delete);
+});
+
+it('loads clear as false when set to an invalid value', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_keys: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+      clear: drop
+YAML;
+
+    Storage::disk('local')->put('test.yaml', $yaml);
+    $config = (new CloningYamlLoader)->load('test.yaml');
+
+    // invalid values silently fall back to None
+    expect($config->getTable('users')?->rows->clear)->toBe(ClearMode::None);
 });

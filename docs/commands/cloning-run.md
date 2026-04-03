@@ -130,7 +130,24 @@ Builds a foreign key dependency graph and topologically sorts tables in parent-f
 
 ### Phase 6 — Data Transfer
 
-For each table (in resolved order), fetches rows in chunks and applies the configured column transformations before inserting into the target. On unique or FK constraint violations, falls back to row-by-row insert and records skipped rows.
+For each table (in resolved order):
+
+1. If `options.disable_foreign_key_checks` is `true`, foreign-key constraints are disabled on the target connection.
+2. If `rows.clear` is `truncate` or `delete`, the target table is emptied before any rows are inserted (see [Clearing Tables](#clearing-tables)).
+3. Rows are fetched from the source in chunks and the configured column transformations are applied before inserting into the target.
+4. On unique or FK constraint violations, falls back to row-by-row insert and records skipped rows.
+
+#### Clearing Tables
+
+The `rows.clear` setting in the YAML config controls whether the target table is emptied before transfer:
+
+| Value | Behaviour |
+|-------|-----------|
+| `false` (default) | Target table is not cleared; transferred rows are appended |
+| `truncate` | Issues `TRUNCATE TABLE` (SQLite: falls back to `DELETE FROM`) |
+| `delete` | Issues `DELETE FROM` without a `WHERE` clause |
+
+Clearing happens **after** FK checks are disabled, so `TRUNCATE` does not fail on FK-constrained tables (on databases that enforce this restriction at the statement level).
 
 ### Phase 7 — Audit Log & Run Log
 

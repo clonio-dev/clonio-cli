@@ -32,6 +32,7 @@ class CloningYamlWriter
             $lines[] = sprintf('  %s:', $table->name);
             $lines[] = '    rows:';
             $lines[] = sprintf('      strategy: %s', $table->rowStrategy);
+            $lines[] = '      clear: false';
 
             if ($table->rowLimit !== null) {
                 $lines[] = sprintf('      limit: %d', $table->rowLimit);

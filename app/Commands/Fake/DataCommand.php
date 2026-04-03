@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Fake;
 
+use App\Data\ConnectionData;
 use App\Enums\ExitCode;
 use App\Fake\FakeDataSeeder;
 use App\Fake\FakeSchemaBuilder;
@@ -11,6 +12,7 @@ use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
 use LaravelZero\Framework\Commands\Command;
+use Symfony\Component\Console\Helper\ProgressBar;
 use Throwable;
 
 /**
@@ -51,7 +53,7 @@ class DataCommand extends Command
 
         $connectionData = $config->getConnection($connectionName);
 
-        if ($connectionData === null) {
+        if (! $connectionData instanceof ConnectionData) {
             $this->error(sprintf("Connection '%s' not found in clonio.json.", $connectionName));
             $this->line('Run <info>connection:list</info> to see available connections.');
 
@@ -81,8 +83,8 @@ class DataCommand extends Command
 
         try {
             $dbName = $connector->open($connectionData);
-        } catch (Throwable $e) {
-            $this->error('Could not connect: '.$e->getMessage());
+        } catch (Throwable $throwable) {
+            $this->error('Could not connect: '.$throwable->getMessage());
 
             return ExitCode::ConnectionError->value;
         }
@@ -108,8 +110,8 @@ class DataCommand extends Command
 
         try {
             $schema->createAll();
-        } catch (Throwable $e) {
-            $this->error('Failed to create schema: '.$e->getMessage());
+        } catch (Throwable $throwable) {
+            $this->error('Failed to create schema: '.$throwable->getMessage());
             DB::purge($dbName);
 
             return ExitCode::GeneralError->value;
@@ -132,7 +134,7 @@ class DataCommand extends Command
             $counts = $seeder->seed(
                 function (string $table, int $inserted, int $total) use (&$activeTable, &$bar): void {
                     if ($activeTable !== $table) {
-                        if ($bar !== null) {
+                        if ($bar instanceof ProgressBar) {
                             $bar->finish();
                             $this->newLine();
                         }
@@ -147,13 +149,13 @@ class DataCommand extends Command
                     $bar?->setProgress($inserted);
                 }
             );
-        } catch (Throwable $e) {
-            if ($bar !== null) {
+        } catch (Throwable $throwable) {
+            if ($bar instanceof ProgressBar) {
                 $bar->finish();
                 $this->newLine();
             }
 
-            $this->error('Seeding failed: '.$e->getMessage());
+            $this->error('Seeding failed: '.$throwable->getMessage());
             DB::purge($dbName);
 
             return ExitCode::GeneralError->value;
@@ -161,7 +163,7 @@ class DataCommand extends Command
             DB::purge($dbName);
         }
 
-        if ($bar !== null) {
+        if ($bar instanceof ProgressBar) {
             $bar->finish();
             $this->newLine();
         }
