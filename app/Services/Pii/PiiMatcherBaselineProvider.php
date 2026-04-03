@@ -64,6 +64,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'John',
                 ),
                 new PiiMatcherData(
                     key: 'last_name',
@@ -84,6 +85,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'Doe',
                 ),
                 new PiiMatcherData(
                     key: 'full_name',
@@ -104,6 +106,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'John Doe',
                 ),
                 new PiiMatcherData(
                     key: 'date_of_birth',
@@ -124,6 +127,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '1990-05-15',
                 ),
                 new PiiMatcherData(
                     key: 'national_id',
@@ -144,6 +148,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '123-45-6789',
                 ),
             ],
         );
@@ -178,6 +183,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'john.doe@example.com',
                 ),
                 new PiiMatcherData(
                     key: 'phone_number',
@@ -198,6 +204,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '+1-555-123-4567',
                 ),
                 new PiiMatcherData(
                     key: 'username',
@@ -218,6 +225,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'john_doe_42',
                 ),
             ],
         );
@@ -248,6 +256,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '123 Main Street',
                 ),
                 new PiiMatcherData(
                     key: 'city',
@@ -268,6 +277,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'Springfield',
                 ),
                 new PiiMatcherData(
                     key: 'postal_code',
@@ -288,6 +298,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '12345',
                 ),
                 new PiiMatcherData(
                     key: 'country',
@@ -308,6 +319,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'US',
                 ),
                 new PiiMatcherData(
                     key: 'latitude',
@@ -328,6 +340,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '40.712776',
                 ),
                 new PiiMatcherData(
                     key: 'longitude',
@@ -348,6 +361,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '-74.005974',
                 ),
             ],
         );
@@ -378,6 +392,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '4242424242424242',
                 ),
                 new PiiMatcherData(
                     key: 'iban',
@@ -398,6 +413,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'DE89370400440532013000',
                 ),
                 new PiiMatcherData(
                     key: 'company_name',
@@ -418,6 +434,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'Acme Corporation',
                 ),
             ],
         );
@@ -448,6 +465,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'mysecretpassword',
                 ),
                 new PiiMatcherData(
                     key: 'api_token',
@@ -468,6 +486,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: 'sk_live_abc123xyz789',
                 ),
             ],
         );
@@ -498,6 +517,7 @@ class PiiMatcherBaselineProvider
                         staticValue: null,
                     ),
                     isBaseline: true,
+                    exampleValue: '192.168.1.100',
                 ),
             ],
         );
