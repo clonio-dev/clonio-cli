@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Cloning\Matchers;
+namespace App\Commands\Matchers;
 
 use App\Enums\ExitCode;
 use App\Services\Pii\PiiMatcherLoader;
