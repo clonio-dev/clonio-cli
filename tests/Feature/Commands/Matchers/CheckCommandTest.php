@@ -56,3 +56,122 @@ it('shows source as binary baseline when no file present', function (): void {
         ->expectsOutputToContain('binary baseline')
         ->assertExitCode(ExitCode::Success->value);
 });
+
+it('shows built-in example for credit card column', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'credit_card'])
+        ->expectsOutputToContain('Example:')
+        ->expectsOutputToContain('Input:   4242424242424242')
+        ->expectsOutputToContain('Output:  4242************')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows built-in example for ip_address column with format preservation', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'ip'])
+        ->expectsOutputToContain('Example:')
+        ->expectsOutputToContain('Input:   192.168.1.100')
+        ->expectsOutputToContain('Output:  ***.***.*.***')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows built-in example for iban column', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'iban'])
+        ->expectsOutputToContain('Example:')
+        ->expectsOutputToContain('Input:   DE89370400440532013000')
+        ->expectsOutputToContain('Output:  DE89******************')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows built-in example for hash strategy (password)', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'password'])
+        ->expectsOutputToContain('Example:')
+        ->expectsOutputToContain('Input:   mysecretpassword')
+        ->expectsOutputToContain('Output:  ')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows built-in example for fake strategy with faker note', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'email'])
+        ->expectsOutputToContain('Example:')
+        ->expectsOutputToContain('Input:   john.doe@example.com')
+        ->expectsOutputToContain('faker generates fresh data')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('accepts a user-provided value and shows transformed output', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'credit_card', 'value' => '5555555555554444'])
+        ->expectsOutputToContain('Input:   5555555555554444')
+        ->expectsOutputToContain('Output:  5555************')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('applies user-provided value to hash strategy', function (): void {
+    Storage::fake('local');
+
+    $expected = hash('sha256', 'mypassword');
+
+    $this->artisan('matchers:check', ['column' => 'password', 'value' => 'mypassword'])
+        ->expectsOutputToContain('Input:   mypassword')
+        ->expectsOutputToContain(sprintf('Output:  %s', $expected))
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('rejects empty value argument', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'credit_card', 'value' => '   '])
+        ->expectsOutputToContain('cannot be empty')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('rejects value that is too long', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'credit_card', 'value' => str_repeat('a', 10001)])
+        ->expectsOutputToContain('too long')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('rejects value with control characters', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'credit_card', 'value' => "bad\x00value"])
+        ->expectsOutputToContain('control characters')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows hint to pass a value when yaml matcher has no example', function (): void {
+    Storage::fake('local');
+
+    Storage::put('clonio.pii-matchers.yaml', <<<'YAML'
+        version: "1"
+        groups:
+          custom:
+            name: "Custom"
+            matchers:
+              my_field:
+                name: "My Custom Field"
+                enabled: true
+                patterns:
+                  - my_field
+                transformation:
+                  strategy: mask
+                  visible_chars: 2
+                  mask_char: "#"
+        YAML);
+
+    $this->artisan('matchers:check', ['column' => 'my_field'])
+        ->expectsOutputToContain('pass a value as the 2nd argument')
+        ->assertExitCode(ExitCode::Success->value);
+});
