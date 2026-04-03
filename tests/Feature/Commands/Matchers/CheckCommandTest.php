@@ -167,6 +167,26 @@ it('rejects value with control characters', function (): void {
         ->assertExitCode(ExitCode::Success->value);
 });
 
+it('shows disabled hint when column matches a disabled matcher', function (): void {
+    Storage::fake('local');
+
+    // "token" matches api_token which is disabled by default
+    $this->artisan('matchers:check', ['column' => 'token'])
+        ->expectsOutputToContain('matcher found but currently disabled')
+        ->expectsOutputToContain('api_token')
+        ->expectsOutputToContain('This matcher is disabled')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows disabled hint for blood_type column', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:check', ['column' => 'blood_type'])
+        ->expectsOutputToContain('matcher found but currently disabled')
+        ->expectsOutputToContain('blood_type')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
 it('shows hint to pass a value when yaml matcher has no example', function (): void {
     Storage::fake('local');
 

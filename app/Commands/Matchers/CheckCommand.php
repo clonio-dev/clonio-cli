@@ -46,10 +46,26 @@ class CheckCommand extends Command
         $this->line('');
 
         if (! $matched instanceof PiiMatcherData) {
-            $this->line(sprintf('  Column "%s" — no matcher found', $column));
-            $this->line('');
-            $this->line('  This column will be treated as strategy: keep by cloning:dump.');
-            $this->line('');
+            $disabledMatch = $matcherSet->matchIncludingDisabled($column);
+
+            if ($disabledMatch instanceof PiiMatcherData) {
+                $this->line(sprintf('  Column "%s" — matcher found but currently disabled:', $column));
+                $this->line('');
+                $this->line(sprintf('    Matcher:        %s', $disabledMatch->key));
+                $this->line(sprintf('    Group:          %s', $disabledMatch->group));
+                $this->line(sprintf('    PII category:   "%s"', $disabledMatch->name));
+                $this->line(sprintf('    Sensitivity:    %s', $disabledMatch->sensitivity->label()));
+                $this->line(sprintf('    Source:         %s', $disabledMatch->isBaseline ? 'binary baseline' : 'clonio.pii-matchers.yaml'));
+                $this->line('');
+                $this->line('    This matcher is disabled. Enable it in clonio.pii-matchers.yaml to activate it.');
+                $this->line('    The column will be treated as strategy: keep by cloning:dump until enabled.');
+                $this->line('');
+            } else {
+                $this->line(sprintf('  Column "%s" — no matcher found', $column));
+                $this->line('');
+                $this->line('  This column will be treated as strategy: keep by cloning:dump.');
+                $this->line('');
+            }
 
             return ExitCode::Success->value;
         }
