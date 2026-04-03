@@ -59,6 +59,32 @@ it('round-trips a PostgreSQL connection with schema', function (): void {
     expect($array['schema'])->toBe('reporting');
 });
 
+it('includes trust_server_certificate in toArray only when true (SQL Server)', function (): void {
+    $data = [
+        'type' => 'sqlsrv',
+        'host' => 'sql.example.com',
+        'port' => 1433,
+        'database' => 'AppDb',
+        'username' => 'sa',
+        'password' => 'encrypted:pass',
+        'is_production' => true,
+        'trust_server_certificate' => true,
+    ];
+
+    $connection = ConnectionData::fromArray('mssql-prod', $data);
+
+    expect($connection->type)->toBe(DatabaseConnectionType::SqlServer)
+        ->and($connection->trustServerCertificate)->toBeTrue();
+
+    $array = $connection->toArray();
+    expect($array)->toHaveKey('trust_server_certificate')
+        ->and($array['trust_server_certificate'])->toBeTrue();
+
+    // When false, the key must be omitted entirely
+    $connectionNoTrust = ConnectionData::fromArray('mssql-prod', array_merge($data, ['trust_server_certificate' => false]));
+    expect($connectionNoTrust->toArray())->not->toHaveKey('trust_server_certificate');
+});
+
 it('round-trips a SQLite connection without network fields', function (): void {
     $data = [
         'type' => 'sqlite',
