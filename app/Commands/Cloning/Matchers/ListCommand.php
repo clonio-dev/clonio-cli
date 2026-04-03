@@ -82,15 +82,14 @@ class ListCommand extends Command
             }
         }
 
+        $rows = [];
+
         foreach ($groupedMatchers as $groupKey => $matchers) {
             $groupDisplayName = $groupNames[$groupKey] ?? ucwords(str_replace('_', ' ', $groupKey));
-            $this->line(sprintf('  %s', $groupDisplayName));
 
             foreach ($matchers as $matcher) {
                 if ($matcher->enabled) {
                     $totalActive++;
-                    $statusSymbol = '✓';
-                    $transformLabel = '';
 
                     if ($matcher->transformation->strategy === 'fake' && $matcher->transformation->fakerMethod !== null) {
                         $transformLabel = sprintf('fake → %s', $matcher->transformation->fakerMethod);
@@ -102,31 +101,33 @@ class ListCommand extends Command
                         $transformLabel = $matcher->transformation->strategy;
                     }
 
-                    $sourceAnnotation = $matcher->isBaseline ? '[baseline]' : '[file]';
-                    $this->line(sprintf(
-                        '    %s  %-20s  %-30s  %-25s  %s',
-                        $statusSymbol,
+                    $rows[] = [
+                        '✓',
+                        $groupDisplayName,
                         $matcher->key,
-                        sprintf('"%s"', $matcher->name),
+                        $matcher->name,
                         $transformLabel,
-                        $sourceAnnotation,
-                    ));
+                        $matcher->isBaseline ? 'baseline' : 'file',
+                    ];
                 } else {
                     $totalDisabled++;
-                    $sourceAnnotation = $matcher->isBaseline ? '[baseline, disabled]' : '[file, disabled]';
-                    $this->line(sprintf(
-                        '    —  %-20s  %-30s  %s',
+
+                    $rows[] = [
+                        '—',
+                        $groupDisplayName,
                         $matcher->key,
-                        sprintf('"%s"', $matcher->name),
-                        $sourceAnnotation,
-                    ));
+                        $matcher->name,
+                        '',
+                        ($matcher->isBaseline ? 'baseline' : 'file').', disabled',
+                    ];
                 }
             }
-
-            $this->line('');
         }
 
-        $disabledSuffix = $totalDisabled > 0 ? sprintf('  (%d disabled)', $totalDisabled) : '';
+        $this->table(['', 'Group', 'Key', 'Name', 'Transformation', 'Source'], $rows);
+        $this->line('');
+
+        $disabledSuffix = $totalDisabled > 0 ? sprintf(' (%d disabled)', $totalDisabled) : '';
         $this->line(sprintf(
             '  Total: %d active matcher%s across %d group%s%s',
             $totalActive,
