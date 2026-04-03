@@ -13,9 +13,9 @@ use Faker\Generator;
  *
  * @codeCoverageIgnore
  */
-final class FakeDataGenerator
+final readonly class FakeDataGenerator
 {
-    private readonly Generator $faker;
+    private Generator $faker;
 
     public function __construct()
     {

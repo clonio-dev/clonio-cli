@@ -22,17 +22,17 @@ use Illuminate\Support\Facades\DB;
  *
  * @codeCoverageIgnore
  */
-final class FakeDataSeeder
+final readonly class FakeDataSeeder
 {
     private const int BATCH_SIZE = 500;
 
     private const int MAX_IDS_IN_MEMORY = 50_000;
 
-    private readonly FakeDataGenerator $gen;
+    private FakeDataGenerator $gen;
 
     public function __construct(
-        private readonly string $connection,
-        private readonly int $rowCount,
+        private string $connection,
+        private int $rowCount,
     ) {
         $this->gen = new FakeDataGenerator;
     }
@@ -229,7 +229,6 @@ final class FakeDataSeeder
     {
         $statuses = ['open', 'open', 'in_progress', 'resolved', 'closed'];
         $priorities = ['low', 'medium', 'medium', 'high', 'critical'];
-        $ids = [];
         $inserted = 0;
         $batch = [];
         $projCount = count($projectIds);
@@ -273,7 +272,7 @@ final class FakeDataSeeder
             ->orderBy('id')
             ->pluck('id')
             ->map(fn (mixed $v): int => is_numeric($v) ? (int) $v : 0)
-            ->toArray();
+            ->all();
 
         /** @var list<int> $issueIds */
         return [$this->sample($issueIds), $inserted];
@@ -364,7 +363,7 @@ final class FakeDataSeeder
             ->whereNull('parent_id')
             ->pluck('id')
             ->map(fn (mixed $v): int => is_numeric($v) ? (int) $v : 0)
-            ->toArray();
+            ->all();
 
         /** @var list<int> $rootIds */
         $rootCount2 = count($rootIds);
@@ -400,7 +399,7 @@ final class FakeDataSeeder
             ->table('categories')
             ->pluck('id')
             ->map(fn (mixed $v): int => is_numeric($v) ? (int) $v : 0)
-            ->toArray();
+            ->all();
 
         /** @var list<int> $allIds */
         return [$this->sample($allIds), $inserted];
@@ -442,7 +441,7 @@ final class FakeDataSeeder
             ->table('tags')
             ->pluck('id')
             ->map(fn (mixed $v): int => is_numeric($v) ? (int) $v : 0)
-            ->toArray();
+            ->all();
 
         /** @var list<int> $ids */
         return [$this->sample($ids), $inserted];

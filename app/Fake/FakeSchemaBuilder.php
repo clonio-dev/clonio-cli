@@ -18,11 +18,11 @@ use Illuminate\Support\Facades\Schema;
  *
  * @codeCoverageIgnore
  */
-final class FakeSchemaBuilder
+final readonly class FakeSchemaBuilder
 {
     public function __construct(
-        private readonly string $connection,
-        private readonly DatabaseConnectionType $type,
+        private string $connection,
+        private DatabaseConnectionType $type,
     ) {}
 
     // ─── Public API ────────────────────────────────────────────────────────────
