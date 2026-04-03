@@ -6,6 +6,7 @@ namespace App\Services\Cloning;
 
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
+use App\Data\Cloning\KeyRemappingTableData;
 use Illuminate\Support\Facades\Storage;
 
 class CloningYamlWriter
@@ -80,6 +81,33 @@ class CloningYamlWriter
                             $lines[] = sprintf('        value: %s', $this->encodeYamlScalar($column->staticValue));
                             break;
                     }
+                }
+            }
+
+            $lines[] = '';
+        }
+
+        if ($result->keyRemapping !== null && $result->keyRemapping->isActive()) {
+            $lines[] = 'key_remapping:';
+            $lines[] = '  tables:';
+
+            foreach ($result->keyRemapping->tables as $krTable) {
+                $lines[] = sprintf('    - table: %s', $krTable->table);
+                $lines[] = sprintf('      primary_key: %s', $krTable->primaryKey);
+                $lines[] = sprintf('      strategy: %s', $krTable->strategy->value);
+                $lines[] = sprintf('      range_min: %d', $krTable->rangeMin);
+                $lines[] = sprintf('      range_max: %d', $krTable->rangeMax);
+
+                if ($krTable->foreignKeys !== []) {
+                    $lines[] = '      foreign_keys:';
+
+                    foreach ($krTable->foreignKeys as $fk) {
+                        $lines[] = sprintf('        - table: %s', $fk->table);
+                        $lines[] = sprintf('          column: %s', $fk->column);
+                        $lines[] = sprintf('          self_referential: %s', $fk->selfReferential ? 'true' : 'false');
+                    }
+                } else {
+                    $lines[] = '      foreign_keys: []';
                 }
             }
 
