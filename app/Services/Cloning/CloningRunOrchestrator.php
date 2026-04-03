@@ -220,14 +220,16 @@ class CloningRunOrchestrator
                     DB::connection($targetConn)->table($tableConfig->tableName)->insert($transformed);
                     $rows += count($transformed);
                 } catch (Throwable $bulkError) {
-                    $firstInsertError ??= $bulkError->getMessage();
+                    if ($firstInsertError === null) {
+                        $firstInsertError = $bulkError->getMessage();
+                    }
+
                     // Fall back to row-by-row
                     foreach ($transformed as $row) {
                         try {
                             DB::connection($targetConn)->table($tableConfig->tableName)->insert($row);
                             $rows++;
-                        } catch (Throwable $rowError) {
-                            $firstInsertError ??= $rowError->getMessage();
+                        } catch (Throwable) {
                             $skipped++;
                         }
                     }
