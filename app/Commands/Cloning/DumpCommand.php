@@ -6,10 +6,15 @@ namespace App\Commands\Cloning;
 
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
+use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingForeignKeyData;
+use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableDumpData;
 use App\Data\ConnectionData;
 use App\Data\Pii\PiiMatcherData;
+use App\Data\Schema\DatabaseSchemaData;
 use App\Enums\ExitCode;
+use App\Enums\KeyRemappingStrategy;
 use App\Services\Cloning\CloningYamlWriter;
 use App\Services\Config\ConfigService;
 use App\Services\Pii\PiiMatcherLoader;
@@ -229,6 +234,7 @@ class DumpCommand extends Command
             piiColumnsDetected: $piiColumnsDetected,
             outputPath: $outputPath,
             fakerLocale: $fakerLocale,
+            keyRemapping: $this->buildKeyRemapping($schema),
         );
 
         // 11. Write YAML
@@ -258,5 +264,64 @@ class DumpCommand extends Command
         }
 
         return ExitCode::Success->value;
+    }
+
+    private function buildKeyRemapping(DatabaseSchemaData $schema): ?KeyRemappingConfigData
+    {
+        // Collect tables that have an integer primary key
+        $intPkByTable = [];
+
+        foreach ($schema->tables as $table) {
+            foreach ($table->columns as $column) {
+                if ($column->isPrimary && $this->isIntegerType($column->type)) {
+                    $intPkByTable[$table->name] = $column->name;
+                    break;
+                }
+            }
+        }
+
+        if ($intPkByTable === []) {
+            return null;
+        }
+
+        // Build reverse FK index: referencedTable -> list of KeyRemappingForeignKeyData
+        /** @var array<string, list<KeyRemappingForeignKeyData>> $fksByReferencedTable */
+        $fksByReferencedTable = [];
+
+        foreach ($schema->tables as $table) {
+            foreach ($table->foreignKeys as $fk) {
+                if (! isset($intPkByTable[$fk->referencedTable])) {
+                    continue;
+                }
+
+                $fksByReferencedTable[$fk->referencedTable][] = new KeyRemappingForeignKeyData(
+                    table: $table->name,
+                    column: $fk->columnName,
+                    selfReferential: $table->name === $fk->referencedTable,
+                );
+            }
+        }
+
+        $tables = [];
+
+        foreach ($intPkByTable as $tableName => $primaryKey) {
+            $tables[] = new KeyRemappingTableData(
+                table: $tableName,
+                primaryKey: $primaryKey,
+                strategy: KeyRemappingStrategy::RandomInteger,
+                rangeMin: 100000,
+                rangeMax: 9999999,
+                foreignKeys: $fksByReferencedTable[$tableName] ?? [],
+            );
+        }
+
+        return new KeyRemappingConfigData(tables: $tables);
+    }
+
+    private function isIntegerType(string $type): bool
+    {
+        $normalized = strtolower($type);
+
+        return str_contains($normalized, 'int') || in_array($normalized, ['serial', 'bigserial'], true);
     }
 }

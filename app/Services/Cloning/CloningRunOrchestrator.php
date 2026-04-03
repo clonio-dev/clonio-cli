@@ -14,6 +14,7 @@ use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\DatabaseSchemaData;
+use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
@@ -171,10 +172,15 @@ class CloningRunOrchestrator
                 $this->disableFkChecks($targetConn, $target);
             }
 
+            if ($tableConfig->rows->clear !== ClearMode::None) {
+                $this->clearTable($targetConn, $tableConfig->tableName, $tableConfig->rows->clear, $target);
+            }
+
             $rows = 0;
             $skipped = 0;
             $offset = 0;
             $chunkSize = $options->chunkSize;
+            $firstInsertError = null;
 
             do {
                 /** @var list<object> $chunk */
@@ -213,7 +219,11 @@ class CloningRunOrchestrator
                 try {
                     DB::connection($targetConn)->table($tableConfig->tableName)->insert($transformed);
                     $rows += count($transformed);
-                } catch (Throwable) {
+                } catch (Throwable $bulkError) {
+                    if ($firstInsertError === null) {
+                        $firstInsertError = $bulkError->getMessage();
+                    }
+
                     // Fall back to row-by-row
                     foreach ($transformed as $row) {
                         try {
@@ -227,6 +237,15 @@ class CloningRunOrchestrator
 
                 $offset += count($chunk);
             } while (count($chunk) === $chunkSize);
+
+            if ($rows === 0 && $skipped > 0) {
+                $reason = sprintf('All %d rows failed to insert', $skipped);
+                if ($firstInsertError !== null) {
+                    $reason .= sprintf(': %s', $firstInsertError);
+                }
+
+                return [0, $skipped, true, $reason];
+            }
 
             return [$rows, $skipped, false, null];
         } catch (Throwable $throwable) {
@@ -281,6 +300,21 @@ class CloningRunOrchestrator
             DatabaseConnectionType::SqlServer => '['.$name.']',
             default => '"'.$name.'"',
         };
+    }
+
+    private function clearTable(string $connName, string $tableName, ClearMode $method, ConnectionData $connection): void
+    {
+        if ($method === ClearMode::Truncate) {
+            // SQLite does not support TRUNCATE; fall back to DELETE
+            if ($connection->type->value === 'sqlite') {
+                DB::connection($connName)->table($tableName)->delete();
+            } else {
+                $quotedTable = $this->quoteTable($tableName, $connection->type);
+                DB::connection($connName)->statement(sprintf('TRUNCATE TABLE %s', $quotedTable));
+            }
+        } elseif ($method === ClearMode::Delete) {
+            DB::connection($connName)->table($tableName)->delete();
+        }
     }
 
     private function disableFkChecks(string $connName, ConnectionData $connection): void

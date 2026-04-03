@@ -436,3 +436,36 @@ it('returns error when foreign_key is missing table', function (): void {
     $errors = $validator->validate($config);
     expect(implode(' ', $errors))->toContain("'table' is required");
 });
+
+it('passes validation when clear is false', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['rows']['clear'] = false;
+
+    expect($validator->validate($config))->toBe([]);
+});
+
+it('passes validation when clear is truncate', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['rows']['clear'] = 'truncate';
+
+    expect($validator->validate($config))->toBe([]);
+});
+
+it('passes validation when clear is delete', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['rows']['clear'] = 'delete';
+
+    expect($validator->validate($config))->toBe([]);
+});
+
+it('returns error when clear has an invalid value', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['rows']['clear'] = 'drop';
+
+    $errors = $validator->validate($config);
+    expect(implode(' ', $errors))->toContain('rows.clear');
+});

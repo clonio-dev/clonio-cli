@@ -8,6 +8,7 @@ use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DumpOptionsData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
+use App\Enums\ClearMode;
 
 it('CloningOptionsData stores all fields correctly', function (): void {
     $opts = new CloningOptionsData(
@@ -35,6 +36,19 @@ it('TableRowConfigData stores all fields correctly', function (): void {
     expect($rows->strategy)->toBe('first');
     expect($rows->limit)->toBe(100);
     expect($rows->sortBy)->toBe('created_at');
+    expect($rows->clear)->toBe(ClearMode::None);
+});
+
+it('TableRowConfigData stores clear as truncate', function (): void {
+    $rows = new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::Truncate);
+
+    expect($rows->clear)->toBe(ClearMode::Truncate);
+});
+
+it('TableRowConfigData stores clear as delete', function (): void {
+    $rows = new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::Delete);
+
+    expect($rows->clear)->toBe(ClearMode::Delete);
 });
 
 it('TableCloningConfigData getColumn returns the correct column', function (): void {

@@ -7,6 +7,7 @@ namespace App\Services\Pii;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Pii\PiiMatcherData;
 use App\Data\Pii\PiiMatcherGroupData;
+use App\Enums\PiiSensitivity;
 use RuntimeException;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -24,17 +25,17 @@ class PiiMatcherYamlReader
             $parsed = Yaml::parse($content);
         } catch (ParseException $parseException) {
             throw new RuntimeException(
-                sprintf('Failed to parse pii-matchers.yaml: %s', $parseException->getMessage()),
+                sprintf('Failed to parse clonio.pii-matchers.yaml: %s', $parseException->getMessage()),
                 0,
                 $parseException,
             );
         }
 
-        throw_unless(is_array($parsed), RuntimeException::class, 'pii-matchers.yaml must be a YAML mapping at the top level.');
+        throw_unless(is_array($parsed), RuntimeException::class, 'clonio.pii-matchers.yaml must be a YAML mapping at the top level.');
 
         $rawGroups = $parsed['groups'] ?? null;
 
-        throw_unless(is_array($rawGroups), RuntimeException::class, 'pii-matchers.yaml must contain a "groups" key.');
+        throw_unless(is_array($rawGroups), RuntimeException::class, 'clonio.pii-matchers.yaml must contain a "groups" key.');
 
         $groups = [];
 
@@ -102,6 +103,10 @@ class PiiMatcherYamlReader
 
         $transformation = $this->parseTransformation($groupKey, $matcherKey, $data['transformation'] ?? null, $matcherKey);
 
+        $sensitivity = isset($data['sensitivity']) && is_string($data['sensitivity'])
+            ? PiiSensitivity::tryFrom($data['sensitivity']) ?? PiiSensitivity::Medium
+            : PiiSensitivity::Medium;
+
         return new PiiMatcherData(
             key: $matcherKey,
             group: $groupKey,
@@ -110,6 +115,7 @@ class PiiMatcherYamlReader
             patterns: $patterns,
             transformation: $transformation,
             isBaseline: false,
+            sensitivity: $sensitivity,
         );
     }
 

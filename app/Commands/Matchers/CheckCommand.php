@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Cloning\Matchers;
+namespace App\Commands\Matchers;
 
 use App\Data\Pii\PiiMatcherData;
 use App\Enums\ExitCode;
+use App\Services\Cloning\AnonymizationEngine;
 use App\Services\Pii\PiiMatcherLoader;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
@@ -15,16 +16,17 @@ class CheckCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:check
+    protected $signature = 'matchers:check
         {column  : Column name to test against the active matcher set}
-        {--path= : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}';
+        {value?  : Optional value to test the transformation with (omit to use the built-in example)}
+        {--path= : Path to clonio.pii-matchers.yaml (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
      */
     protected $description = 'Check which PII matcher (if any) fires for a given column name';
 
-    public function handle(PiiMatcherLoader $loader): int
+    public function handle(PiiMatcherLoader $loader, AnonymizationEngine $engine): int
     {
         $column = (string) $this->argument('column');
 
@@ -44,12 +46,42 @@ class CheckCommand extends Command
         $this->line('');
 
         if (! $matched instanceof PiiMatcherData) {
-            $this->line(sprintf('  Column "%s" — no matcher found', $column));
-            $this->line('');
-            $this->line('  This column will be treated as strategy: keep by cloning:dump.');
-            $this->line('');
+            $disabledMatch = $matcherSet->matchIncludingDisabled($column);
+
+            if ($disabledMatch instanceof PiiMatcherData) {
+                $this->line(sprintf('  Column "%s" — matcher found but currently disabled:', $column));
+                $this->line('');
+                $this->line(sprintf('    Matcher:        %s', $disabledMatch->key));
+                $this->line(sprintf('    Group:          %s', $disabledMatch->group));
+                $this->line(sprintf('    PII category:   "%s"', $disabledMatch->name));
+                $this->line(sprintf('    Sensitivity:    %s', $disabledMatch->sensitivity->label()));
+                $this->line(sprintf('    Source:         %s', $disabledMatch->isBaseline ? 'binary baseline' : 'clonio.pii-matchers.yaml'));
+                $this->line('');
+                $this->line('    This matcher is disabled. Enable it in clonio.pii-matchers.yaml to activate it.');
+                $this->line('    The column will be treated as strategy: keep by cloning:dump until enabled.');
+                $this->line('');
+            } else {
+                $this->line(sprintf('  Column "%s" — no matcher found', $column));
+                $this->line('');
+                $this->line('  This column will be treated as strategy: keep by cloning:dump.');
+                $this->line('');
+            }
 
             return ExitCode::Success->value;
+        }
+
+        // Resolve the input value for the example
+        $rawValue = $this->argument('value');
+        $inputValue = null;
+
+        if (is_string($rawValue) && $rawValue !== '') {
+            $inputValue = $this->validateUserValue($rawValue);
+
+            if ($inputValue === null) {
+                return ExitCode::Success->value;
+            }
+        } elseif ($matched->exampleValue !== null) {
+            $inputValue = $matched->exampleValue;
         }
 
         $this->line(sprintf('  Column "%s" matched:', $column));
@@ -57,7 +89,8 @@ class CheckCommand extends Command
         $this->line(sprintf('    Matcher:        %s', $matched->key));
         $this->line(sprintf('    Group:          %s', $matched->group));
         $this->line(sprintf('    PII category:   "%s"', $matched->name));
-        $this->line(sprintf('    Source:         %s', $matched->isBaseline ? 'binary baseline' : 'pii-matchers.yaml'));
+        $this->line(sprintf('    Sensitivity:    %s', $matched->sensitivity->label()));
+        $this->line(sprintf('    Source:         %s', $matched->isBaseline ? 'binary baseline' : 'clonio.pii-matchers.yaml'));
 
         // Determine which pattern matched and its type
         $matchedPattern = $this->findMatchedPattern($column, $matched->patterns);
@@ -91,7 +124,64 @@ class CheckCommand extends Command
 
         $this->line('');
 
+        $this->showExample($matched, $engine, $inputValue);
+
         return ExitCode::Success->value;
+    }
+
+    private function showExample(PiiMatcherData $matched, AnonymizationEngine $engine, ?string $inputValue): void
+    {
+        if ($inputValue === null) {
+            $this->line('    Example:');
+            $this->line('      (pass a value as the 2nd argument to test the transformation)');
+            $this->line('');
+
+            return;
+        }
+
+        $output = $engine->transform($inputValue, $matched->transformation);
+
+        $outputStr = match (true) {
+            $output === null => '(null)',
+            is_scalar($output) => (string) $output,
+            default => '(non-scalar)',
+        };
+
+        $isFake = $matched->transformation->strategy === 'fake';
+
+        $this->line('    Example:');
+        $this->line(sprintf('      Input:   %s', $inputValue));
+
+        if ($isFake) {
+            $this->line(sprintf('      Output:  %s  (faker generates fresh data — input value is not used)', $outputStr));
+        } else {
+            $this->line(sprintf('      Output:  %s', $outputStr));
+        }
+
+        $this->line('');
+    }
+
+    private function validateUserValue(string $raw): ?string
+    {
+        if (trim($raw) === '') {
+            $this->error('  Value cannot be empty or whitespace only.');
+
+            return null;
+        }
+
+        if (mb_strlen($raw) > 10000) {
+            $this->error('  Value is too long (max 10,000 characters).');
+
+            return null;
+        }
+
+        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $raw) === 1) {
+            $this->error('  Value contains invalid control characters.');
+
+            return null;
+        }
+
+        return $raw;
     }
 
     /**

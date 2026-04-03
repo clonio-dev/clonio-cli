@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Cloning\Matchers;
+namespace App\Commands\Matchers;
 
 use App\Enums\ExitCode;
 use App\Services\Pii\PiiMatcherLoader;
@@ -16,8 +16,8 @@ class ListCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:list
-        {--path=  : Path to pii-matchers.yaml (default: pii-matchers.yaml in cwd)}';
+    protected $signature = 'matchers:list
+        {--path=  : Path to clonio.pii-matchers.yaml (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
@@ -31,11 +31,11 @@ class ListCommand extends Command
         }
 
         $pathOption = $this->option('path');
-        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'pii-matchers.yaml';
+        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'clonio.pii-matchers.yaml';
 
         $fileExists = Storage::disk('local')->exists($filePath);
 
-        $sourceLabel = $fileExists ? $filePath : 'binary baseline — run cloning:matchers init to customise';
+        $sourceLabel = $fileExists ? $filePath : 'binary baseline — run matchers:init to customise';
 
         $this->line('');
         $this->line(sprintf('  Effective PII matchers  (source: %s)', $sourceLabel));
@@ -82,15 +82,14 @@ class ListCommand extends Command
             }
         }
 
+        $rows = [];
+
         foreach ($groupedMatchers as $groupKey => $matchers) {
             $groupDisplayName = $groupNames[$groupKey] ?? ucwords(str_replace('_', ' ', $groupKey));
-            $this->line(sprintf('  %s', $groupDisplayName));
 
             foreach ($matchers as $matcher) {
                 if ($matcher->enabled) {
                     $totalActive++;
-                    $statusSymbol = '✓';
-                    $transformLabel = '';
 
                     if ($matcher->transformation->strategy === 'fake' && $matcher->transformation->fakerMethod !== null) {
                         $transformLabel = sprintf('fake → %s', $matcher->transformation->fakerMethod);
@@ -102,31 +101,35 @@ class ListCommand extends Command
                         $transformLabel = $matcher->transformation->strategy;
                     }
 
-                    $sourceAnnotation = $matcher->isBaseline ? '[baseline]' : '[file]';
-                    $this->line(sprintf(
-                        '    %s  %-20s  %-30s  %-25s  %s',
-                        $statusSymbol,
+                    $rows[] = [
+                        '✓',
+                        $groupDisplayName,
                         $matcher->key,
-                        sprintf('"%s"', $matcher->name),
+                        $matcher->name,
+                        $matcher->sensitivity->label(),
                         $transformLabel,
-                        $sourceAnnotation,
-                    ));
+                        $matcher->isBaseline ? 'baseline' : 'file',
+                    ];
                 } else {
                     $totalDisabled++;
-                    $sourceAnnotation = $matcher->isBaseline ? '[baseline, disabled]' : '[file, disabled]';
-                    $this->line(sprintf(
-                        '    —  %-20s  %-30s  %s',
+
+                    $rows[] = [
+                        '—',
+                        $groupDisplayName,
                         $matcher->key,
-                        sprintf('"%s"', $matcher->name),
-                        $sourceAnnotation,
-                    ));
+                        $matcher->name,
+                        $matcher->sensitivity->label(),
+                        '',
+                        ($matcher->isBaseline ? 'baseline' : 'file').', disabled',
+                    ];
                 }
             }
-
-            $this->line('');
         }
 
-        $disabledSuffix = $totalDisabled > 0 ? sprintf('  (%d disabled)', $totalDisabled) : '';
+        $this->table(['', 'Group', 'Key', 'Name', 'Sensitivity', 'Transformation', 'Source'], $rows);
+        $this->line('');
+
+        $disabledSuffix = $totalDisabled > 0 ? sprintf(' (%d disabled)', $totalDisabled) : '';
         $this->line(sprintf(
             '  Total: %d active matcher%s across %d group%s%s',
             $totalActive,

@@ -69,12 +69,12 @@ This makes `vendor/bin/clonio` available with the exact release version. See [do
 | [`connection:list`](docs/commands/connection-list.md) | List all configured database connections |
 | [`connection:delete`](docs/commands/connection-delete.md) | Delete a saved database connection |
 | [`connection:test`](docs/commands/connection-test.md) | Test one or all saved database connections |
-| [`cloning:matchers:init`](docs/commands/cloning-matchers.md) | Write PII matcher baseline to pii-matchers.yaml |
-| [`cloning:matchers:update`](docs/commands/cloning-matchers.md) | Add new baseline matchers to pii-matchers.yaml |
-| [`cloning:matchers:list`](docs/commands/cloning-matchers.md) | Show effective PII matcher set |
-| [`cloning:matchers:check`](docs/commands/cloning-matchers.md) | Test a column name against the matcher set |
 | [`cloning:dump`](docs/commands/cloning-dump.md) | Inspect a database and generate a .cloning.yaml file |
 | [`cloning:run`](docs/commands/cloning-run.md) | Transfer a database using a .cloning.yaml configuration |
+| [`matchers:init`](docs/commands/cloning-matchers.md) | Write PII matcher baseline to clonio.pii-matchers.yaml |
+| [`matchers:update`](docs/commands/cloning-matchers.md) | Add new baseline matchers to clonio.pii-matchers.yaml |
+| [`matchers:list`](docs/commands/cloning-matchers.md) | Show effective PII matcher set |
+| [`matchers:check`](docs/commands/cloning-matchers.md) | Test a column name against the matcher set |
 | [`audit:add`](docs/commands/audit-channel.md) | Add an audit delivery channel |
 | [`audit:update`](docs/commands/audit-channel.md) | Update an existing audit delivery channel |
 | [`audit:delete`](docs/commands/audit-channel.md) | Delete an audit delivery channel |

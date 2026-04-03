@@ -26,6 +26,7 @@ class PiiMatcherYamlWriter
             foreach ($group->matchers as $matcher) {
                 $matcherEntry = [
                     'name' => $matcher->name,
+                    'sensitivity' => $matcher->sensitivity->value,
                     'enabled' => $matcher->enabled,
                 ];
 

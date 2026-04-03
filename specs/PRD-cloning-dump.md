@@ -20,15 +20,15 @@ The output file is the input to `cloning:run`. See **PRD-cloning-run.md** and **
 
 ### PII Matcher Source
 
-The PII detection logic used during dump is driven by the **active PII matcher set** loaded from `pii-matchers.yaml`. See **PRD-pii-matchers.md** for the full specification of how matchers are defined, stored, and organised into groups.
+The PII detection logic used during dump is driven by the **active PII matcher set** loaded from `clonio.pii-matchers.yaml`. See **PRD-pii-matchers.md** for the full specification of how matchers are defined, stored, and organised into groups.
 
 In short:
-- If `pii-matchers.yaml` is **absent**, the binary baseline matchers are used silently.
-- If `pii-matchers.yaml` is **present**, it is the sole source of truth — no merging with the baseline occurs.
-- Run `cloning:matchers init` to write the full baseline to `pii-matchers.yaml` for inspection and editing.
-- Run `cloning:matchers update` after upgrading Clonio to add new baseline matchers to an existing file.
+- If `clonio.pii-matchers.yaml` is **absent**, the binary baseline matchers are used silently.
+- If `clonio.pii-matchers.yaml` is **present**, it is the sole source of truth — no merging with the baseline occurs.
+- Run `matchers init` to write the full baseline to `clonio.pii-matchers.yaml` for inspection and editing.
+- Run `matchers update` after upgrading Clonio to add new baseline matchers to an existing file.
 
-`pii-matchers.yaml` contains no credentials and is safe to commit to version control. A committed file means every developer on the team gets identical, project-specific PII detection. See **PRD-cloning-matchers.md** for the command specifications.
+`clonio.pii-matchers.yaml` contains no credentials and is safe to commit to version control. A committed file means every developer on the team gets identical, project-specific PII detection. See **PRD-cloning-matchers.md** for the command specifications.
 
 ---
 
@@ -71,7 +71,7 @@ cloning:dump
 
 ### 4.4 PII detection
 
-1. Load the active matcher set via `PiiMatcherLoader` (from `pii-matchers.yaml` if present, otherwise binary baseline). See **PRD-pii-matchers.md** for loading rules.
+1. Load the active matcher set via `PiiMatcherLoader` (from `clonio.pii-matchers.yaml` if present, otherwise binary baseline). See **PRD-pii-matchers.md** for loading rules.
 2. For each table → for each column:
    - Call `PiiMatcherSetData::match($columnName)`.
    - If a `PiiMatcherData` is returned, pre-populate the column's strategy and options from `$matcher->transformation`.
@@ -261,7 +261,7 @@ final readonly class DumpResultData
 |---------|---------------|
 | `DatabaseConnectionService` | Decrypt password, open live DB connection |
 | `SchemaInspector` (via factory) | Fetch full `DatabaseSchema` DTO |
-| `PiiMatcherLoader` (new) | Load `pii-matchers.yaml` if present, otherwise load binary baseline; return `PiiMatcherSetData` |
+| `PiiMatcherLoader` (new) | Load `clonio.pii-matchers.yaml` if present, otherwise load binary baseline; return `PiiMatcherSetData` |
 | `PiiMatcherSetData` | Encapsulates merged matcher list; `match(columnName)` returns `?PiiMatcherData` |
 | `CloningYamlWriter` (new) | Serialize `DumpResultData` → YAML string; write via `Storage::disk('local')` |
 

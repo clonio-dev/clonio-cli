@@ -22,6 +22,17 @@ final readonly class PiiMatcherSetData
         return null;
     }
 
+    public function matchIncludingDisabled(string $columnName): ?PiiMatcherData
+    {
+        foreach ($this->matchers as $matcher) {
+            if ($this->columnMatchesPatterns($columnName, $matcher->patterns)) {
+                return $matcher;
+            }
+        }
+
+        return null;
+    }
+
     /** @param list<string> $patterns */
     private function columnMatchesPatterns(string $columnName, array $patterns): bool
     {

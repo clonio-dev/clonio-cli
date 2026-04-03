@@ -8,6 +8,7 @@ use App\Data\Pii\PiiMatcherData;
 use App\Data\Pii\PiiMatcherSetData;
 use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\ForeignKeyData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
@@ -247,6 +248,107 @@ it('overwrites existing file without prompt when --force is given', function ():
     $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
     expect($yaml)->not->toBe('old content');
     expect($yaml)->toContain('connection: production-db');
+});
+
+it('includes key_remapping section for tables with integer primary keys', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'mydb',
+        tables: [
+            new TableSchemaData(
+                name: 'users',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'orders',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'bigint', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'user_id', type: 'int', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [
+                    new ForeignKeyData(columnName: 'user_id', referencedTable: 'users', referencedColumn: 'id'),
+                ],
+            ),
+        ],
+    );
+
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->toBeString();
+    expect($yaml)->toContain('key_remapping:');
+    expect($yaml)->toContain('table: users');
+    expect($yaml)->toContain('primary_key: id');
+    expect($yaml)->toContain('strategy: random_integer');
+    expect($yaml)->toContain('table: orders');
+    expect($yaml)->toContain('column: user_id');
+    expect($yaml)->toContain('self_referential: false');
+});
+
+it('omits key_remapping section when no integer primary keys exist', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'mydb',
+        tables: [
+            new TableSchemaData(
+                name: 'logs',
+                columns: [
+                    new ColumnSchemaData(name: 'uuid', type: 'varchar', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'message', type: 'text', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->not->toContain('key_remapping:');
 });
 
 it('only-pii: only includes PII columns and tables', function (): void {

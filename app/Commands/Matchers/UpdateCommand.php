@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Cloning\Matchers;
+namespace App\Commands\Matchers;
 
 use App\Enums\ExitCode;
 use App\Services\Pii\PiiMatcherBaselineProvider;
@@ -18,14 +18,14 @@ class UpdateCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'cloning:matchers:update
+    protected $signature = 'matchers:update
         {--dry-run  : Show what would be added without writing anything}
-        {--path=    : Path to the pii-matchers.yaml file (default: pii-matchers.yaml in cwd)}';
+        {--path=    : Path to the clonio.pii-matchers.yaml file (default: clonio.pii-matchers.yaml in cwd)}';
 
     /**
      * @var string
      */
-    protected $description = 'Add new baseline matchers to an existing pii-matchers.yaml';
+    protected $description = 'Add new baseline matchers to an existing clonio.pii-matchers.yaml';
 
     public function handle(
         PiiMatcherBaselineProvider $baselineProvider,
@@ -34,7 +34,7 @@ class UpdateCommand extends Command
         PiiMatcherUpdateService $updateService,
     ): int {
         $pathOption = $this->option('path');
-        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'pii-matchers.yaml';
+        $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : 'clonio.pii-matchers.yaml';
 
         $this->line('');
         $this->line(sprintf('  Checking %s against binary baseline ...', $filePath));
@@ -42,7 +42,7 @@ class UpdateCommand extends Command
 
         if (! Storage::disk('local')->exists($filePath)) {
             $this->error(sprintf('  File not found: %s', $filePath));
-            $this->line(sprintf('  Run `cloning:matchers:init` to create %s first.', $filePath));
+            $this->line(sprintf('  Run `matchers:init` to create %s first.', $filePath));
             $this->line('');
 
             return ExitCode::IoError->value;

@@ -12,6 +12,7 @@ use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
+use App\Enums\ClearMode;
 use App\Enums\KeyRemappingStrategy;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -110,11 +111,14 @@ class CloningYamlLoader
         $rowStrategy = is_string($rowsRaw['strategy'] ?? null) ? $rowsRaw['strategy'] : 'full';
         $rowLimit = is_int($rowsRaw['limit'] ?? null) ? $rowsRaw['limit'] : null;
         $sortBy = is_string($rowsRaw['sort_by'] ?? null) ? $rowsRaw['sort_by'] : null;
+        $clearRaw = $rowsRaw['clear'] ?? null;
+        $clear = is_string($clearRaw) ? (ClearMode::tryFrom($clearRaw) ?? ClearMode::None) : ClearMode::None;
 
         $rows = new TableRowConfigData(
             strategy: $rowStrategy,
             limit: $rowLimit,
             sortBy: $sortBy,
+            clear: $clear,
         );
 
         /** @var array<string, mixed> $columnsRaw */

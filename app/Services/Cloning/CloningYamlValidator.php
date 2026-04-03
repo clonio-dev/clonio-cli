@@ -195,6 +195,15 @@ class CloningYamlValidator
             }
         }
 
+        // clear is optional; when present must be false, 'truncate', or 'delete'
+        if (array_key_exists('clear', $rows)) {
+            $clear = $rows['clear'];
+
+            if (! in_array($clear, [false, 'truncate', 'delete'], true)) {
+                $errors[] = sprintf("%s: rows.clear must be false, 'truncate', or 'delete'", $prefix);
+            }
+        }
+
         return $errors;
     }
 
