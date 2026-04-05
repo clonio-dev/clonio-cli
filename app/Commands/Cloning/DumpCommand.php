@@ -234,7 +234,7 @@ class DumpCommand extends Command
             piiColumnsDetected: $piiColumnsDetected,
             outputPath: $outputPath,
             fakerLocale: $fakerLocale,
-            keyRemapping: $this->buildKeyRemapping($schema),
+            keyRemapping: $onlyPii ? null : $this->buildKeyRemapping($schema),
         );
 
         // 11. Write YAML

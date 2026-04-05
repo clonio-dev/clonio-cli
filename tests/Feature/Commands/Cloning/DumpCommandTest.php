@@ -300,11 +300,12 @@ it('includes key_remapping section for tables with integer primary keys', functi
 
     $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
     expect($yaml)->toBeString();
-    expect($yaml)->toContain('key_remapping:');
-    expect($yaml)->toContain('table: users');
-    expect($yaml)->toContain('primary_key: id');
-    expect($yaml)->toContain('strategy: random_integer');
-    expect($yaml)->toContain('table: orders');
+    // Remapping is now written inline as a column strategy, not as a top-level section
+    expect($yaml)->not->toContain('key_remapping:');
+    expect($yaml)->toContain('strategy: remapping');
+    expect($yaml)->toContain('- use: random_integer');
+    expect($yaml)->toContain('- min: 100000');
+    expect($yaml)->toContain('- max: 9999999');
     expect($yaml)->toContain('column: user_id');
     expect($yaml)->toContain('self_referential: false');
 });
@@ -348,7 +349,7 @@ it('omits key_remapping section when no integer primary keys exist', function ()
         ->assertExitCode(ExitCode::Success->value);
 
     $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
-    expect($yaml)->not->toContain('key_remapping:');
+    expect($yaml)->not->toContain('strategy: remapping');
 });
 
 it('only-pii: only includes PII columns and tables', function (): void {
