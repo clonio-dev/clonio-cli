@@ -26,12 +26,129 @@ See **PRD-cloning-yaml-schema.md** for the base YAML schema. See **PRD-cloning-r
 
 ## 3. YAML Schema Extension
 
-### 3.1 New top-level `key_remapping` section
+### 3.1 Preferred: inline `strategy: remapping` column
+
+As of v0.4, key remapping is configured **inline inside the table's `columns` block** using `strategy: remapping`. This keeps all per-table configuration in one place and is the format that `cloning:dump` will produce.
 
 ```yaml
+# yaml-language-server: $schema=https://clonio.dev/schema/cloning-v1.json
 version: "1"
 connection: production
-options: { ... }
+
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      # Primary Key — remapped
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys:
+              - table: orders
+                column: user_id
+              - table: employees
+                column: manager_id
+                self_referential: true
+      # PII: Email Address
+      email:
+        strategy: fake
+        faker_method: safeEmail
+        faker_arguments: []
+      # PII: First Name
+      first_name:
+        strategy: fake
+        faker_method: firstName
+        faker_arguments: []
+
+  orders:
+    rows:
+      strategy: full
+    columns:
+      # Primary Key — remapped
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys:
+              - table: order_items
+                column: order_id
+      # user_id is a FK to users.id — rewritten automatically by remapping
+      # PII: Shipping address
+      shipping_address:
+        strategy: fake
+        faker_method: address
+        faker_arguments: []
+
+  order_items:
+    rows:
+      strategy: full
+    # no PII detected — no columns listed; all kept as-is
+
+  employees:
+    rows:
+      strategy: full
+    columns:
+      # Primary Key — remapped
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys:
+              - table: employees
+                column: manager_id
+                self_referential: true
+```
+
+**How FK rewriting works in this example:**
+
+| Source row | Column | Transformation |
+|---|---|---|
+| `orders` row | `user_id` | Replaced with the new mapped value for the `users.id` that matched the original `user_id` |
+| `order_items` row | `order_id` | Replaced with the new mapped value for the `orders.id` that matched the original `order_id` |
+| `employees` row | `manager_id` | Self-referential: inserted with `null`, then updated in a second pass after all employees are inserted |
+
+The `foreign_keys` list on a remapped column declares **where that column's new values must be propagated**. Each entry says: "after remapping `users.id`, also rewrite `orders.user_id` to keep referential integrity."
+
+### 3.2 `strategy: remapping` field reference
+
+The remapping strategy is configured via an `arguments` list of single-key mappings:
+
+| Argument key | Type | Required | Description |
+| --- | --- | --- | --- |
+| `use` | enum | yes | `random_integer` or `new_uuid` |
+| `min` | integer | only for `random_integer` | Lower bound, inclusive. Default: 100000. |
+| `max` | integer | only for `random_integer` | Upper bound, inclusive. Default: 9999999. |
+| `foreign_keys` | list | yes | FK columns on other (or the same) tables that reference this column. May be empty (`[]`). |
+
+Each entry in `foreign_keys`:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `table` | string | yes | Table that holds the FK column. |
+| `column` | string | yes | Column name of the FK. |
+| `self_referential` | bool | no | `true` when the FK table is the same as the remapped table (e.g. `employees.manager_id → employees.id`). Defaults to `false`. |
+
+### 3.3 Legacy: top-level `key_remapping` section (still supported)
+
+The original top-level `key_remapping:` section is still parsed and will continue to work for backward compatibility. Existing YAML files do not need to be migrated. When both formats are present in the same file, **inline column remapping takes priority**.
+
+```yaml
+# Legacy format — still works, but prefer inline strategy: remapping
 key_remapping:
   tables:
     - table: users
@@ -51,37 +168,9 @@ key_remapping:
         - table: comments
           column: post_id
           self_referential: false
-tables: { ... }
 ```
 
-`key_remapping` is **optional** when hand-writing YAML. When absent, behaviour is identical to today. `cloning:dump` always emits this section automatically (see §8).
-
-### 3.2 `key_remapping` field reference
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `tables` | list | no | Per-table remapping configuration. If absent or empty, remapping does not run. |
-
-### 3.3 `key_remapping.tables[]` field reference
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `table` | string | yes | Table name. Must match a table in the `tables` section. |
-| `primary_key` | string | yes | Name of the single-column primary key to remap. Composite PKs are not supported unless every column is also a FK (junction tables — see §4.4). |
-| `strategy` | enum | yes | `random_integer` or `new_uuid`. |
-| `range_min` | integer | only for `random_integer` | Lower bound, inclusive. Default: 100000. |
-| `range_max` | integer | only for `random_integer` | Upper bound, inclusive. Default: 9999999. |
-| `foreign_keys` | list | yes | FK columns on other (or the same) tables that reference this table's PK. May be empty. |
-
-### 3.4 `key_remapping.tables[].foreign_keys[]` field reference
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `table` | string | yes | Table that holds the FK column. |
-| `column` | string | yes | Column name of the FK. |
-| `self_referential` | bool | no | `true` when the FK table is the same as the remapped table (e.g. `employees.parent_id → employees.id`). Defaults to `false`. |
-
-### 3.5 Validation rules
+### 3.4 Validation rules
 
 - `strategy: new_uuid` is only valid when `primary_key` is a UUID/CHAR(36) column. The validator checks the source schema if a connection is available; otherwise it is accepted and fails at runtime.
 - `range_min` must be `≥ 1` and `< range_max`.

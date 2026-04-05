@@ -93,17 +93,123 @@ clonio cloning:run production-db.cloning.yaml --target staging --ci
   run: clonio cloning:run prod.cloning.yaml --target staging --ci --allow-failure
 ```
 
+## Key Remapping
+
+Key remapping assigns new IDs to transferred primary keys and rewrites all foreign key references that point to those IDs, preventing ID collisions on the target environment.
+
+### Defining remapping inline (recommended)
+
+Add `strategy: remapping` to any column in a table's `columns` block. The `arguments` list specifies the strategy and, crucially, which other columns hold foreign keys to this one:
+
+```yaml
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys:
+              - table: orders
+                column: user_id
+              - table: employees
+                column: manager_id
+                self_referential: true   # employees.manager_id → employees.id
+      email:
+        strategy: fake
+        faker_method: safeEmail
+        faker_arguments: []
+
+  orders:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys:
+              - table: order_items
+                column: order_id
+    # orders.user_id is rewritten automatically because users.id declares it as a FK
+
+  order_items:
+    rows:
+      strategy: full
+    # no PII detected — no columns listed; all kept as-is
+
+  employees:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys:
+              - table: employees
+                column: manager_id
+                self_referential: true
+```
+
+**How FK rewriting works:**
+
+- `orders.user_id` is rewritten to the new value for whichever `users.id` matched the original.
+- `order_items.order_id` is rewritten to the new `orders.id`.
+- `employees.manager_id` is self-referential: on first pass it is set to `null`, then updated in a second pass once all employees are inserted.
+
+### Argument reference
+
+| Argument key | Type | When | Description |
+|---|---|---|---|
+| `use` | enum | always | `random_integer` or `new_uuid` |
+| `min` | integer | `random_integer` only | Lower bound (inclusive). Default: 100000. |
+| `max` | integer | `random_integer` only | Upper bound (inclusive). Default: 9999999. |
+| `foreign_keys` | list | always | Columns on other (or the same) tables that must be rewritten. Use `[]` when there are none. |
+
+Each `foreign_keys` entry:
+
+| Field | Type | Description |
+|---|---|---|
+| `table` | string | Table that holds the FK column |
+| `column` | string | Name of the FK column |
+| `self_referential` | bool | `true` when the FK points to the same table (default: `false`) |
+
+### Skipping remapping for a single run
+
+```bash
+clonio cloning:run production-db.cloning.yaml --target staging --skip-remapping-keys
+```
+
+Bypasses all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined.
+
+### Legacy format (still supported)
+
+The original top-level `key_remapping:` section is still parsed. Existing YAML files do not need to be updated. When both formats are present in the same file, the inline column format takes priority.
+
+---
+
 ## The 8-Phase Pipeline
 
 ```
-Phase 1 — YAML Validation
-Phase 2 — Connection Checks
-Phase 3 — Dry-run              (only if --dry-run; exits here)
-Phase 4 — Schema Replication   (skipped if --skip-schema)
-Phase 5 — Dependency Resolution
-Phase 6 — Data Transfer
-Phase 7 — Audit Log & Run Log
-Phase 8 — Summary
+Phase 1  — YAML Validation
+Phase 2  — Connection Checks
+Phase 3  — Dry-run               (only if --dry-run; exits here)
+Phase 4  — Schema Replication    (skipped if --skip-schema)
+Phase 5  — Dependency Resolution
+Phase 5b — Key Mapping Generation (when remapping columns are defined)
+Phase 6  — Data Transfer
+Phase 7  — Key Mapping Cleanup   (when remapping columns are defined)
+Phase 8  — Audit Log & Run Log
+Phase 9  — Summary
 ```
 
 Each phase must complete before the next begins.
