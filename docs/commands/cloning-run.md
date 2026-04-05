@@ -46,14 +46,19 @@ clonio cloning:run production-db.cloning.yaml --target local-dev
 
 ### Dry run (no data transferred)
 
-Validates the config, tests connectivity, and estimates row counts without moving any data:
+Validates the config, tests connectivity, estimates row counts, and shows the schema diff between source and target — without moving any data:
 
 ```bash
 clonio cloning:run production-db.cloning.yaml --target staging --dry-run
 ```
 
 ```
-  Dry-run: production-db → staging
+  Dry-run: production-db
+
+  Schema diff: source → target
+
+  Missing tables (1):   audit_logs
+  Modified table:        users: +1 cols (phone)
 
   Table                   Rows (est.)   Strategy   Transformations
   ─────────────────────────────────────────────────────────────────
@@ -65,6 +70,12 @@ clonio cloning:run production-db.cloning.yaml --target staging --dry-run
   Total                    61 464 rows across 3 tables (1 not found, will be skipped)
 
   No data will be transferred. Run without --dry-run to execute.
+```
+
+When source and target schemas are identical, the diff block shows:
+
+```
+  Schema diff: target matches source
 ```
 
 ### Skip specific tables
@@ -92,6 +103,50 @@ clonio cloning:run production-db.cloning.yaml --target staging --ci
 - name: Sync staging (optional)
   run: clonio cloning:run prod.cloning.yaml --target staging --ci --allow-failure
 ```
+
+## Schema Synchronization
+
+Before transferring data, Clonio can synchronize the target schema to match the source. Three options in the `options:` block of the YAML file control this behaviour:
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `enforce_column_types` | `false` | Add columns to existing target tables that are present in the source but missing from the target |
+| `drop_extra_columns` | `false` | Drop columns from existing target tables that exist in the target but not in the source |
+| `drop_unknown_tables` | `false` | Drop tables from the target that do not exist in the source |
+
+```yaml
+options:
+  chunk_size: 1000
+  enforce_column_types: true   # add missing columns
+  drop_extra_columns: true     # remove extra columns
+  drop_unknown_tables: false   # keep extra tables
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+```
+
+All three options are applied during **Phase 4 — Schema Replication**, which runs before any data is transferred. Schema replication is skipped entirely when `--skip-schema` is passed on the command line.
+
+### Behaviour matrix
+
+| Source table | Target table | Action |
+|---|---|---|
+| Exists | Missing | Always created (regardless of `enforce_column_types`) |
+| Exists | Exists, missing columns | Columns added when `enforce_column_types: true` |
+| Exists | Exists, extra columns | Columns dropped when `drop_extra_columns: true` |
+| Missing | Exists | Table dropped when `drop_unknown_tables: true` |
+
+### Schema diff in dry-run
+
+`--dry-run` always inspects both the source and target schemas and prints a diff summary before the per-table row counts, so you can see exactly what Phase 4 will change before committing to a full run.
+
+### Caution: `drop_extra_columns`
+
+Dropping columns is irreversible and will destroy any data stored in those columns on the target. Only enable `drop_extra_columns: true` when:
+
+- The target environment is ephemeral (e.g. a fresh CI database) or regularly rebuilt, **or**
+- You have confirmed that the extra columns on the target are safe to remove.
+
+---
 
 ## Key Remapping
 
@@ -224,11 +279,18 @@ Resolves the source connection (from the YAML `connection` field) and the target
 
 ### Phase 3 — Dry-run
 
-Only runs when `--dry-run` is set. Fetches the source schema, counts estimated rows per table, and prints a summary. Tables not found in the source are shown as `NOT FOUND`. Exits with code `0` after printing the summary.
+Only runs when `--dry-run` is set. Fetches both the source and target schemas, computes the schema diff, counts estimated rows per table, and prints a summary. Tables not found in the source are shown as `NOT FOUND`. Exits with code `0` after printing the summary.
 
 ### Phase 4 — Schema Replication
 
-Replicates the source schema to the target: creates missing tables, adds missing columns. Controlled by `options.enforce_column_types` and `options.drop_unknown_tables` in the YAML. Skipped when `--skip-schema` is set.
+Synchronizes the target schema with the source. Controlled by three options in the YAML `options` block (see [Schema Synchronization](#schema-synchronization)):
+
+- Always creates tables that exist in the source but not in the target.
+- `enforce_column_types: true` — adds missing columns to existing target tables.
+- `drop_extra_columns: true` — drops columns from existing target tables that are absent in the source.
+- `drop_unknown_tables: true` — drops tables from the target that are not present in the source.
+
+Skipped entirely when `--skip-schema` is set.
 
 ### Phase 5 — Dependency Resolution
 
