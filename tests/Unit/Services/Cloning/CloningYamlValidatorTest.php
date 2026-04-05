@@ -533,3 +533,43 @@ it('returns error when remapping random_integer has min greater than or equal to
     expect($errors)->not->toBe([]);
     expect(implode(' ', $errors))->toContain("'min' must be less than 'max'");
 });
+
+it('accepts drop_extra_columns as optional boolean when present', function (): void {
+    $data = [
+        'version' => '1',
+        'connection' => 'production-db',
+        'options' => [
+            'chunk_size' => 1000,
+            'enforce_column_types' => false,
+            'drop_unknown_tables' => false,
+            'drop_extra_columns' => true,
+            'disable_foreign_key_checks' => true,
+            'faker_locale' => 'en_US',
+        ],
+        'tables' => ['users' => ['rows' => ['strategy' => 'full']]],
+    ];
+
+    $errors = (new CloningYamlValidator)->validate($data);
+
+    expect($errors)->toBe([]);
+});
+
+it('rejects drop_extra_columns when not a boolean', function (): void {
+    $data = [
+        'version' => '1',
+        'connection' => 'production-db',
+        'options' => [
+            'chunk_size' => 1000,
+            'enforce_column_types' => false,
+            'drop_unknown_tables' => false,
+            'drop_extra_columns' => 'yes',
+            'disable_foreign_key_checks' => true,
+            'faker_locale' => 'en_US',
+        ],
+        'tables' => ['users' => ['rows' => ['strategy' => 'full']]],
+    ];
+
+    $errors = (new CloningYamlValidator)->validate($data);
+
+    expect($errors)->toContain("Field 'options.drop_extra_columns' must be a boolean");
+});

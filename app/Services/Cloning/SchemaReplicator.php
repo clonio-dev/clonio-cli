@@ -32,6 +32,7 @@ class SchemaReplicator
         array $tables,
         bool $enforceColumnTypes,
         bool $dropUnknownTables,
+        bool $dropExtraColumns = false,
     ): void {
         $targetConnName = $this->connector->open($target);
 
@@ -51,14 +52,27 @@ class SchemaReplicator
                     // Create table
                     $sql = $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
                     DB::connection($targetConnName)->statement($sql);
-                } elseif ($enforceColumnTypes) {
-                    // Add missing columns
-                    $existingCols = array_map(static fn (ColumnSchemaData $c): string => $c->name, $targetTable->columns);
+                } else {
+                    $sourceColNames = array_map(static fn (ColumnSchemaData $c): string => $c->name, $sourceTable->columns);
+                    $targetColNames = array_map(static fn (ColumnSchemaData $c): string => $c->name, $targetTable->columns);
 
-                    foreach ($sourceTable->columns as $col) {
-                        if (! in_array($col->name, $existingCols, true)) {
-                            $alterSql = $this->buildAddColumnSql($tableName, $col, $target->type);
-                            DB::connection($targetConnName)->statement($alterSql);
+                    if ($enforceColumnTypes) {
+                        // Add missing columns
+                        foreach ($sourceTable->columns as $col) {
+                            if (! in_array($col->name, $targetColNames, true)) {
+                                $alterSql = $this->buildAddColumnSql($tableName, $col, $target->type);
+                                DB::connection($targetConnName)->statement($alterSql);
+                            }
+                        }
+                    }
+
+                    if ($dropExtraColumns) {
+                        // Drop columns that exist in target but not in source
+                        foreach ($targetTable->columns as $col) {
+                            if (! in_array($col->name, $sourceColNames, true)) {
+                                $dropColSql = $this->buildDropColumnSql($tableName, $col->name, $target->type);
+                                DB::connection($targetConnName)->statement($dropColSql);
+                            }
                         }
                     }
                 }
@@ -120,6 +134,14 @@ class SchemaReplicator
         $quotedCol = $this->quoteIdentifier($col->name, $driver);
 
         return sprintf('ALTER TABLE %s ADD COLUMN %s %s %s', $quotedTable, $quotedCol, $mappedType, $nullable);
+    }
+
+    private function buildDropColumnSql(string $tableName, string $columnName, DatabaseConnectionType $driver): string
+    {
+        $quotedTable = $this->quoteIdentifier($tableName, $driver);
+        $quotedCol = $this->quoteIdentifier($columnName, $driver);
+
+        return sprintf('ALTER TABLE %s DROP COLUMN %s', $quotedTable, $quotedCol);
     }
 
     private function buildDropTableSql(string $tableName, DatabaseConnectionType $driver): string

@@ -25,6 +25,7 @@ class CloningYamlWriter
         $lines[] = '  chunk_size: 1000';
         $lines[] = '  enforce_column_types: false';
         $lines[] = '  drop_unknown_tables: false';
+        $lines[] = '  drop_extra_columns: false';
         $lines[] = '  disable_foreign_key_checks: true';
         $lines[] = sprintf('  faker_locale: %s', $result->fakerLocale);
         $lines[] = '';

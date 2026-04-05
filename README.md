@@ -71,6 +71,7 @@ This makes `vendor/bin/clonio` available with the exact release version. See [do
 | [`connection:test`](docs/commands/connection-test.md) | Test one or all saved database connections |
 | [`cloning:dump`](docs/commands/cloning-dump.md) | Inspect a database and generate a .cloning.yaml file |
 | [`cloning:run`](docs/commands/cloning-run.md) | Transfer a database using a .cloning.yaml configuration |
+| [`.cloning.yaml` format](docs/cloning-yaml.md) | Full reference for the cloning configuration file format |
 | [`matchers:init`](docs/commands/cloning-matchers.md) | Write PII matcher baseline to clonio.pii-matchers.yaml |
 | [`matchers:update`](docs/commands/cloning-matchers.md) | Add new baseline matchers to clonio.pii-matchers.yaml |
 | [`matchers:list`](docs/commands/cloning-matchers.md) | Show effective PII matcher set |

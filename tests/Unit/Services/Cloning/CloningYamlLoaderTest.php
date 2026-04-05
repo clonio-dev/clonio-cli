@@ -542,3 +542,54 @@ YAML;
     expect($krTable?->rangeMin)->toBe(200000);
     expect($krTable?->rangeMax)->toBe(8888888);
 });
+
+it('parses drop_extra_columns option when present', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  drop_extra_columns: true
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
+
+    expect($config->options->dropExtraColumns)->toBeTrue();
+});
+
+it('defaults drop_extra_columns to false when not present', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
+
+    expect($config->options->dropExtraColumns)->toBeFalse();
+});

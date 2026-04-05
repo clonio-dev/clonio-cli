@@ -126,6 +126,7 @@ options:
   chunk_size: 1000
   enforce_column_types: false
   drop_unknown_tables: false
+  drop_extra_columns: false
   disable_foreign_key_checks: true
   faker_locale: en_US
 

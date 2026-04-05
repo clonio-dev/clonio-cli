@@ -77,6 +77,7 @@ class CloningRunOrchestrator
                     $sortedTables,
                     $config->options->enforceColumnTypes,
                     $config->options->dropUnknownTables,
+                    $config->options->dropExtraColumns,
                 );
                 $this->runLog->log('info', 'schema_replicated', ['tables' => $sortedTables]);
             } catch (Throwable $e) {

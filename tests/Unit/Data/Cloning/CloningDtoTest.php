@@ -15,6 +15,7 @@ it('CloningOptionsData stores all fields correctly', function (): void {
         chunkSize: 500,
         enforceColumnTypes: true,
         dropUnknownTables: false,
+        dropExtraColumns: false,
         disableForeignKeyChecks: true,
         fakerLocale: 'de_DE',
     );
@@ -89,6 +90,7 @@ it('CloningConfigData getTable returns the correct table', function (): void {
             chunkSize: 1000,
             enforceColumnTypes: false,
             dropUnknownTables: false,
+            dropExtraColumns: false,
             disableForeignKeyChecks: true,
             fakerLocale: 'en_US',
         ),
