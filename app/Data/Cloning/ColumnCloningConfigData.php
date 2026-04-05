@@ -7,8 +7,8 @@ namespace App\Data\Cloning;
 final readonly class ColumnCloningConfigData
 {
     /**
-     * @param list<scalar> $fakerArguments
-     * @param list<KeyRemappingForeignKeyData>|null $remappingForeignKeys
+     * @param  list<scalar>  $fakerArguments
+     * @param  list<KeyRemappingForeignKeyData>|null  $remappingForeignKeys
      */
     public function __construct(
         public string $columnName,

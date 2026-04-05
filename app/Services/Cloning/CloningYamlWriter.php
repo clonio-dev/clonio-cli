@@ -7,6 +7,7 @@ namespace App\Services\Cloning;
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
 use App\Data\Cloning\KeyRemappingForeignKeyData;
+use App\Data\Cloning\KeyRemappingTableData;
 use App\Enums\KeyRemappingStrategy;
 use Illuminate\Support\Facades\Storage;
 
@@ -50,12 +51,12 @@ class CloningYamlWriter
                 static fn (ColumnDumpData $col): bool => $col->strategy !== 'keep'
             );
 
-            if ($nonKeepColumns === [] && $krTable === null) {
+            if ($nonKeepColumns === [] && ! $krTable instanceof KeyRemappingTableData) {
                 $lines[] = '    # no PII detected — no columns listed; all kept as-is';
             } else {
                 $lines[] = '    columns:';
 
-                if ($krTable !== null) {
+                if ($krTable instanceof KeyRemappingTableData) {
                     $lines[] = '      # Primary Key — remapped';
                     $lines[] = sprintf('      %s:', $krTable->primaryKey);
                     $lines[] = '        strategy: remapping';

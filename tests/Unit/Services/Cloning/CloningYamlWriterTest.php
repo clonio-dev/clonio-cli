@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
+use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableDumpData;
+use App\Enums\KeyRemappingStrategy;
 use App\Services\Cloning\CloningYamlWriter;
 use Illuminate\Support\Facades\Storage;
 
@@ -292,11 +295,11 @@ it('writes remapping strategy as inline column not key_remapping section', funct
         rowLimit: null,
         sortBy: null,
     );
-    $keyRemapping = new \App\Data\Cloning\KeyRemappingConfigData(tables: [
-        new \App\Data\Cloning\KeyRemappingTableData(
+    $keyRemapping = new KeyRemappingConfigData(tables: [
+        new KeyRemappingTableData(
             table: 'users',
             primaryKey: 'id',
-            strategy: \App\Enums\KeyRemappingStrategy::RandomInteger,
+            strategy: KeyRemappingStrategy::RandomInteger,
             rangeMin: 100000,
             rangeMax: 9999999,
             foreignKeys: [],
