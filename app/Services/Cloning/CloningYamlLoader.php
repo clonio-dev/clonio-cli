@@ -65,6 +65,7 @@ class CloningYamlLoader
             chunkSize: is_int($optionsRaw['chunk_size'] ?? null) ? $optionsRaw['chunk_size'] : 1000,
             enforceColumnTypes: (bool) ($optionsRaw['enforce_column_types'] ?? false),
             dropUnknownTables: (bool) ($optionsRaw['drop_unknown_tables'] ?? false),
+            dropExtraColumns: (bool) ($optionsRaw['drop_extra_columns'] ?? false),
             disableForeignKeyChecks: (bool) ($optionsRaw['disable_foreign_key_checks'] ?? true),
             fakerLocale: is_string($optionsRaw['faker_locale'] ?? null) ? $optionsRaw['faker_locale'] : 'en_US',
         );

@@ -20,6 +20,7 @@ function makeAuditRecord(): AuditRecordData
             chunkSize: 1000,
             enforceColumnTypes: false,
             dropUnknownTables: false,
+            dropExtraColumns: false,
             disableForeignKeyChecks: true,
             fakerLocale: 'en_US',
         ),

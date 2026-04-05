@@ -115,6 +115,11 @@ class CloningYamlValidator
             }
         }
 
+        // drop_extra_columns is optional (defaults to false); validate type only when present
+        if (array_key_exists('drop_extra_columns', $options) && ! is_bool($options['drop_extra_columns'])) {
+            $errors[] = "Field 'options.drop_extra_columns' must be a boolean";
+        }
+
         if (! array_key_exists('faker_locale', $options) || ! is_string($options['faker_locale'])) {
             $errors[] = "Field 'options.faker_locale' must be a string";
         }

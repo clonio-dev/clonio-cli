@@ -59,6 +59,7 @@ function makeOrchestratorConfig(string $tableName = 'users', ClearMode $clear = 
             chunkSize: 1000,
             enforceColumnTypes: false,
             dropUnknownTables: false,
+            dropExtraColumns: false,
             disableForeignKeyChecks: $disableFk,
             fakerLocale: 'en_US',
         ),

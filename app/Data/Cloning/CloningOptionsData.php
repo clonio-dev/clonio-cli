@@ -10,6 +10,7 @@ final readonly class CloningOptionsData
         public int $chunkSize,
         public bool $enforceColumnTypes,
         public bool $dropUnknownTables,
+        public bool $dropExtraColumns,
         public bool $disableForeignKeyChecks,
         public string $fakerLocale,
     ) {}
