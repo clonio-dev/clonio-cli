@@ -172,6 +172,7 @@ class AddCommand extends Command
             AuditChannelType::MsTeams => $this->promptWebhookFields('Teams', 'Create an incoming webhook in Teams under Apps → Incoming Webhook.'),
             AuditChannelType::Slack => $this->promptWebhookFields('Slack', 'Create an incoming webhook at api.slack.com → Your Apps → Incoming Webhooks.'),
             AuditChannelType::Ntfy => $this->promptNtfyFields(),
+            AuditChannelType::Stdout, AuditChannelType::Stderr => [],
         };
     }
 

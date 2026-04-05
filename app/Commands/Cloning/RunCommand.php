@@ -19,6 +19,8 @@ use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogRenderer;
 use App\Services\Audit\AuditLogSigner;
 use App\Services\Audit\LocalDeliveryAdapter;
+use App\Services\Audit\StderrDeliveryAdapter;
+use App\Services\Audit\StdoutDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
@@ -332,7 +334,7 @@ class RunCommand extends Command
             $builder = new AuditLogBuilder($signer);
             $renderer = new AuditLogRenderer;
             $localAdapter = new LocalDeliveryAdapter;
-            $deliveryService = new AuditDeliveryService($localAdapter, $runLog);
+            $deliveryService = new AuditDeliveryService($localAdapter, new StdoutDeliveryAdapter, new StderrDeliveryAdapter, $runLog);
 
             $yamlFileName = basename($filePath);
             $auditRecord = $builder->build(

@@ -118,6 +118,7 @@ class UpdateCommand extends Command
             AuditChannelType::MsTeams,
             AuditChannelType::Slack => $this->updateWebhookFields($current),
             AuditChannelType::Ntfy => $this->updateNtfyFields($current),
+            AuditChannelType::Stdout, AuditChannelType::Stderr => $current,
         };
     }
 

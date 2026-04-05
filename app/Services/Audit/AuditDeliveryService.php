@@ -12,6 +12,8 @@ class AuditDeliveryService
 {
     public function __construct(
         private readonly LocalDeliveryAdapter $localAdapter,
+        private readonly StdoutDeliveryAdapter $stdoutAdapter,
+        private readonly StderrDeliveryAdapter $stderrAdapter,
         private readonly RunLogWriter $runLog,
     ) {}
 
@@ -59,7 +61,32 @@ class AuditDeliveryService
             /** @var array<string, mixed> $channelConfig */
             $type = $channelConfig['type'] ?? null;
 
-            if ($type !== 'local') {
+            if ($type === 'local') {
+                /** @var array<string, mixed> $auditLogConfig */
+                $auditLogConfig = is_array($channelConfig['audit_log'] ?? null) ? $channelConfig['audit_log'] : [];
+                /** @var array<string, mixed> $runLogConfig */
+                $runLogConfig = is_array($channelConfig['run_log'] ?? null) ? $channelConfig['run_log'] : [];
+
+                // Deliver audit artefacts
+                $auditPath = is_string($auditLogConfig['path'] ?? null) ? $auditLogConfig['path'] : 'audit-logs';
+                $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $auditPath, $templateVars));
+
+                // Deliver run log
+                $runLogPath = is_string($runLogConfig['path'] ?? null) ? $runLogConfig['path'] : 'run-logs';
+                $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
+
+                $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$runLogFilename => $runLogContent], $runLogPath, $templateVars));
+            } elseif ($type === 'stdout') {
+                $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
+
+                $this->deliverWithRetry(fn () => $this->stdoutAdapter->deliver($auditArtefacts));
+                $this->deliverWithRetry(fn () => $this->stdoutAdapter->deliver([$runLogFilename => $runLogContent]));
+            } elseif ($type === 'stderr') {
+                $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
+
+                $this->deliverWithRetry(fn () => $this->stderrAdapter->deliver($auditArtefacts));
+                $this->deliverWithRetry(fn () => $this->stderrAdapter->deliver([$runLogFilename => $runLogContent]));
+            } else {
                 $this->runLog->log('warning', 'audit_channel_unsupported', [
                     'channel' => $channelName,
                     'type' => $type,
@@ -67,21 +94,6 @@ class AuditDeliveryService
 
                 continue;
             }
-
-            /** @var array<string, mixed> $auditLogConfig */
-            $auditLogConfig = is_array($channelConfig['audit_log'] ?? null) ? $channelConfig['audit_log'] : [];
-            /** @var array<string, mixed> $runLogConfig */
-            $runLogConfig = is_array($channelConfig['run_log'] ?? null) ? $channelConfig['run_log'] : [];
-
-            // Deliver audit artefacts
-            $auditPath = is_string($auditLogConfig['path'] ?? null) ? $auditLogConfig['path'] : 'audit-logs';
-            $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $auditPath, $templateVars));
-
-            // Deliver run log
-            $runLogPath = is_string($runLogConfig['path'] ?? null) ? $runLogConfig['path'] : 'run-logs';
-            $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
-
-            $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$runLogFilename => $runLogContent], $runLogPath, $templateVars));
         }
     }
 

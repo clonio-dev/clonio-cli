@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\LocalDeliveryAdapter;
+use App\Services\Audit\StderrDeliveryAdapter;
+use App\Services\Audit\StdoutDeliveryAdapter;
 use App\Services\Cloning\RunLogWriter;
 use Illuminate\Support\Facades\Storage;
 
@@ -14,7 +16,7 @@ it('silently skips delivery when audit config is null', function (): void {
     $adapter->shouldNotReceive('deliver');
 
     $runLog = new RunLogWriter;
-    $service = new AuditDeliveryService($adapter, $runLog);
+    $service = new AuditDeliveryService($adapter, new StdoutDeliveryAdapter, new StderrDeliveryAdapter, $runLog);
 
     $service->deliver(
         auditConfig: null,
@@ -34,7 +36,7 @@ it('delivers to local channel when configured', function (): void {
         ->andReturn();
 
     $runLog = new RunLogWriter;
-    $service = new AuditDeliveryService($adapter, $runLog);
+    $service = new AuditDeliveryService($adapter, new StdoutDeliveryAdapter, new StderrDeliveryAdapter, $runLog);
 
     $auditConfig = [
         'channels' => [
@@ -62,7 +64,7 @@ it('skips unsupported channel types', function (): void {
     $adapter->shouldNotReceive('deliver');
 
     $runLog = new RunLogWriter;
-    $service = new AuditDeliveryService($adapter, $runLog);
+    $service = new AuditDeliveryService($adapter, new StdoutDeliveryAdapter, new StderrDeliveryAdapter, $runLog);
 
     $auditConfig = [
         'channels' => [
@@ -90,7 +92,7 @@ it('applies channel override to filter channels', function (): void {
     $adapter->shouldReceive('deliver')->twice()->andReturn();
 
     $runLog = new RunLogWriter;
-    $service = new AuditDeliveryService($adapter, $runLog);
+    $service = new AuditDeliveryService($adapter, new StdoutDeliveryAdapter, new StderrDeliveryAdapter, $runLog);
 
     $auditConfig = [
         'channels' => [

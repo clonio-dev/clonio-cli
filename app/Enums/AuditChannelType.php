@@ -14,6 +14,8 @@ enum AuditChannelType: string
     case MsTeams = 'ms_teams';
     case Slack = 'slack';
     case Ntfy = 'ntfy';
+    case Stdout = 'stdout';
+    case Stderr = 'stderr';
 
     public function label(): string
     {
@@ -24,6 +26,8 @@ enum AuditChannelType: string
             self::MsTeams => 'Microsoft Teams',
             self::Slack => 'Slack',
             self::Ntfy => 'ntfy.sh / self-hosted ntfy',
+            self::Stdout => 'Standard output',
+            self::Stderr => 'Standard error',
         };
     }
 
@@ -63,7 +67,7 @@ enum AuditChannelType: string
     public function hasSecrets(): bool
     {
         return match ($this) {
-            self::Local => false,
+            self::Local, self::Stdout, self::Stderr => false,
             default => true,
         };
     }

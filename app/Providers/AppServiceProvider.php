@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\LocalDeliveryAdapter;
+use App\Services\Audit\StderrDeliveryAdapter;
+use App\Services\Audit\StdoutDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\DependencyResolver;
 use App\Services\Cloning\RunLogWriter;
@@ -94,6 +96,8 @@ class AppServiceProvider extends ServiceProvider
         // Bind AuditDeliveryService
         $this->app->bind(AuditDeliveryService::class, fn (): AuditDeliveryService => new AuditDeliveryService(
             localAdapter: new LocalDeliveryAdapter,
+            stdoutAdapter: new StdoutDeliveryAdapter,
+            stderrAdapter: new StderrDeliveryAdapter,
             runLog: $this->app->make(RunLogWriter::class),
         ));
     }

@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 use App\Enums\AuditChannelType;
 
-it('returns all six enum values', function (): void {
-    expect(AuditChannelType::values())->toBe(['local', 's3', 'email', 'ms_teams', 'slack', 'ntfy']);
+it('returns all eight enum values', function (): void {
+    expect(AuditChannelType::values())->toBe(['local', 's3', 'email', 'ms_teams', 'slack', 'ntfy', 'stdout', 'stderr']);
 });
 
 it('returns labels for all cases', function (): void {
     $labels = AuditChannelType::labels();
-    expect($labels)->toHaveCount(6)
+    expect($labels)->toHaveCount(8)
         ->and($labels)->toContain('Local filesystem')
         ->and($labels)->toContain('S3-compatible storage')
         ->and($labels)->toContain('Email (SMTP)')
         ->and($labels)->toContain('Microsoft Teams')
         ->and($labels)->toContain('Slack')
-        ->and($labels)->toContain('ntfy.sh / self-hosted ntfy');
+        ->and($labels)->toContain('ntfy.sh / self-hosted ntfy')
+        ->and($labels)->toContain('Standard output')
+        ->and($labels)->toContain('Standard error');
 });
 
 it('resolves a case from its label', function (): void {
@@ -35,11 +37,15 @@ it('defaultDeliversRunLog returns true only for local and s3', function (): void
         ->and(AuditChannelType::Email->defaultDeliversRunLog())->toBeFalse()
         ->and(AuditChannelType::MsTeams->defaultDeliversRunLog())->toBeFalse()
         ->and(AuditChannelType::Slack->defaultDeliversRunLog())->toBeFalse()
-        ->and(AuditChannelType::Ntfy->defaultDeliversRunLog())->toBeFalse();
+        ->and(AuditChannelType::Ntfy->defaultDeliversRunLog())->toBeFalse()
+        ->and(AuditChannelType::Stdout->defaultDeliversRunLog())->toBeFalse()
+        ->and(AuditChannelType::Stderr->defaultDeliversRunLog())->toBeFalse();
 });
 
-it('hasSecrets returns false only for local', function (): void {
+it('hasSecrets returns false only for local, stdout, and stderr', function (): void {
     expect(AuditChannelType::Local->hasSecrets())->toBeFalse()
+        ->and(AuditChannelType::Stdout->hasSecrets())->toBeFalse()
+        ->and(AuditChannelType::Stderr->hasSecrets())->toBeFalse()
         ->and(AuditChannelType::S3->hasSecrets())->toBeTrue()
         ->and(AuditChannelType::Email->hasSecrets())->toBeTrue()
         ->and(AuditChannelType::MsTeams->hasSecrets())->toBeTrue()
@@ -53,5 +59,7 @@ it('label returns expected string for each case', function (): void {
         ->and(AuditChannelType::Email->label())->toBe('Email (SMTP)')
         ->and(AuditChannelType::MsTeams->label())->toBe('Microsoft Teams')
         ->and(AuditChannelType::Slack->label())->toBe('Slack')
-        ->and(AuditChannelType::Ntfy->label())->toBe('ntfy.sh / self-hosted ntfy');
+        ->and(AuditChannelType::Ntfy->label())->toBe('ntfy.sh / self-hosted ntfy')
+        ->and(AuditChannelType::Stdout->label())->toBe('Standard output')
+        ->and(AuditChannelType::Stderr->label())->toBe('Standard error');
 });
