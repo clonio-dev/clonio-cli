@@ -27,19 +27,6 @@ current:
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-define release
-	@NEW=$(1); \
-	echo "Building PHAR for $$NEW..."; \
-	echo "$$NEW" > VERSION; \
-	php clonio app:build clonio --no-interaction; \
-	git add VERSION builds/clonio; \
-	git commit -m "chore: release $$NEW"; \
-	git tag "$$NEW"; \
-	git push origin main; \
-	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. The build pipeline will start automatically."
-endef
-
 patch:
 	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \
@@ -48,15 +35,16 @@ patch:
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
 	PATCH=$$(echo "$$VERSION" | cut -d. -f3); \
 	NEW="v$$MAJOR.$$MINOR.$$((PATCH+1))"; \
-	echo "Building PHAR for $$NEW..."; \
+	VERSION_NO_V=$$(echo "$$NEW" | sed 's/^v//'); \
+	echo "Releasing $$NEW..."; \
 	echo "$$NEW" > VERSION; \
-	php clonio app:build clonio --no-interaction; \
-	git add VERSION builds/clonio; \
+	sed -i 's/"version": ".*"/"version": "'"$$VERSION_NO_V"'"/' composer.json; \
+	git add VERSION composer.json; \
 	git commit -m "chore: release $$NEW"; \
 	git tag "$$NEW"; \
 	git push origin main; \
 	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. The build pipeline will start automatically."
+	echo "Done — $$NEW pushed. CI will build the PHAR and standalone binaries automatically."
 
 minor:
 	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
@@ -65,15 +53,16 @@ minor:
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
 	NEW="v$$MAJOR.$$((MINOR+1)).0"; \
-	echo "Building PHAR for $$NEW..."; \
+	VERSION_NO_V=$$(echo "$$NEW" | sed 's/^v//'); \
+	echo "Releasing $$NEW..."; \
 	echo "$$NEW" > VERSION; \
-	php clonio app:build clonio --no-interaction; \
-	git add VERSION builds/clonio; \
+	sed -i 's/"version": ".*"/"version": "'"$$VERSION_NO_V"'"/' composer.json; \
+	git add VERSION composer.json; \
 	git commit -m "chore: release $$NEW"; \
 	git tag "$$NEW"; \
 	git push origin main; \
 	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. The build pipeline will start automatically."
+	echo "Done — $$NEW pushed. CI will build the PHAR and standalone binaries automatically."
 
 major:
 	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
@@ -81,12 +70,13 @@ major:
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	NEW="v$$((MAJOR+1)).0.0"; \
-	echo "Building PHAR for $$NEW..."; \
+	VERSION_NO_V=$$(echo "$$NEW" | sed 's/^v//'); \
+	echo "Releasing $$NEW..."; \
 	echo "$$NEW" > VERSION; \
-	php clonio app:build clonio --no-interaction; \
-	git add VERSION builds/clonio; \
+	sed -i 's/"version": ".*"/"version": "'"$$VERSION_NO_V"'"/' composer.json; \
+	git add VERSION composer.json; \
 	git commit -m "chore: release $$NEW"; \
 	git tag "$$NEW"; \
 	git push origin main; \
 	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. The build pipeline will start automatically."
+	echo "Done — $$NEW pushed. CI will build the PHAR and standalone binaries automatically."
