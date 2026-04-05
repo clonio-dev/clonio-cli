@@ -13,6 +13,7 @@ use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
+use App\Data\Schema\SchemaDiffData;
 use App\Enums\ExitCode;
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\AuditLogBuilder;
@@ -28,6 +29,7 @@ use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\RunLogWriter;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
+use App\Services\Schema\SchemaDiffService;
 use App\Services\Schema\SchemaInspector;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -227,7 +229,7 @@ class RunCommand extends Command
 
         // ─── Phase 3: Dry-run ──────────────────────────────────────────────────
         if ((bool) $this->option('dry-run')) {
-            return $this->runDryRun($config, $sourceConnection, $inspector, $ci);
+            return $this->runDryRun($config, $sourceConnection, $targetConnection, $inspector, $ci);
         }
 
         // ─── Phase 4-6: Full Run ───────────────────────────────────────────────
@@ -271,6 +273,35 @@ class RunCommand extends Command
         }
 
         $skipSchema = (bool) $this->option('skip-schema');
+
+        if ($verbose) {
+            try {
+                $targetSchema = $inspector->inspect($targetConnection);
+                $schemaDiff = (new SchemaDiffService)->diff($sourceSchema, $targetSchema);
+
+                if ($schemaDiff->hasDifferences()) {
+                    $parts = [];
+
+                    if ($schemaDiff->missingTables !== []) {
+                        $parts[] = count($schemaDiff->missingTables).' missing';
+                    }
+
+                    if ($schemaDiff->modifiedTables !== []) {
+                        $parts[] = count($schemaDiff->modifiedTables).' modified';
+                    }
+
+                    if ($schemaDiff->extraTables !== []) {
+                        $parts[] = count($schemaDiff->extraTables).' extra on target';
+                    }
+
+                    $this->line(sprintf('  <comment>~</comment>  Schema diff: %s', implode(', ', $parts)));
+                } else {
+                    $this->line('  <info>✓</info>  Schema diff: target matches source');
+                }
+            } catch (Throwable) {
+                // non-fatal: skip diff output if target schema cannot be inspected
+            }
+        }
 
         if ($verbose && ! $skipSchema) {
             $this->line('  <info>✓</info>  Replicating schema ...');
@@ -438,6 +469,7 @@ class RunCommand extends Command
     private function runDryRun(
         CloningConfigData $config,
         ConnectionData $source,
+        ConnectionData $target,
         SchemaInspector $inspector,
         bool $ci,
     ): int {
@@ -447,6 +479,15 @@ class RunCommand extends Command
             $this->error(sprintf('Failed to inspect source schema: %s', $throwable->getMessage()));
 
             return ExitCode::ConnectionError->value;
+        }
+
+        $schemaDiff = null;
+
+        try {
+            $targetSchema = $inspector->inspect($target);
+            $schemaDiff = (new SchemaDiffService)->diff($schema, $targetSchema);
+        } catch (Throwable) {
+            // non-fatal: proceed without diff if target cannot be inspected
         }
 
         /** @var list<DryRunTableData> $dryRunTables */
@@ -461,9 +502,6 @@ class RunCommand extends Command
 
             if ($exists) {
                 try {
-                    $sourceConnName = null;
-                    // We need a connection to count rows
-                    // Use SchemaInspector's connector indirectly
                     $estimatedRows = $this->countRows($source, $tableName);
                 } catch (Throwable) {
                     $estimatedRows = null;
@@ -505,7 +543,7 @@ class RunCommand extends Command
         );
 
         if (! $ci) {
-            $this->renderDryRunTable($dryRunResult, $config->connectionName);
+            $this->renderDryRunTable($dryRunResult, $config->connectionName, $schemaDiff);
         }
 
         return ExitCode::Success->value;
@@ -546,11 +584,56 @@ class RunCommand extends Command
         }
     }
 
-    private function renderDryRunTable(DryRunResultData $result, string $sourceName): void
+    private function renderSchemaDiff(SchemaDiffData $diff): void
+    {
+        if ($diff->isIdentical()) {
+            $this->line('  Schema diff: target matches source');
+            $this->line('');
+
+            return;
+        }
+
+        $this->line('  Schema diff: source → target');
+        $this->line('');
+
+        if ($diff->missingTables !== []) {
+            $this->line(sprintf('  Missing tables (%d):   %s', count($diff->missingTables), implode(', ', $diff->missingTables)));
+        }
+
+        if ($diff->extraTables !== []) {
+            $this->line(sprintf('  Extra tables (%d):     %s', count($diff->extraTables), implode(', ', $diff->extraTables)));
+        }
+
+        foreach ($diff->modifiedTables as $tableDiff) {
+            $parts = [];
+
+            if ($tableDiff->missingColumns !== []) {
+                $parts[] = sprintf('+%d col%s (%s)', count($tableDiff->missingColumns), count($tableDiff->missingColumns) === 1 ? '' : 's', implode(', ', $tableDiff->missingColumns));
+            }
+
+            if ($tableDiff->extraColumns !== []) {
+                $parts[] = sprintf('-%d col%s (%s)', count($tableDiff->extraColumns), count($tableDiff->extraColumns) === 1 ? '' : 's', implode(', ', $tableDiff->extraColumns));
+            }
+
+            foreach ($tableDiff->modifiedColumns as $colDiff) {
+                $parts[] = sprintf('~%s (%s → %s%s)', $colDiff->name, $colDiff->sourceType, $colDiff->targetType, $colDiff->sourceNullable !== $colDiff->targetNullable ? ', nullable changed' : '');
+            }
+
+            $this->line(sprintf('  Modified table:        %s: %s', $tableDiff->tableName, implode(', ', $parts)));
+        }
+
+        $this->line('');
+    }
+
+    private function renderDryRunTable(DryRunResultData $result, string $sourceName, ?SchemaDiffData $schemaDiff = null): void
     {
         $this->line('');
         $this->line(sprintf('  Dry-run: %s', $sourceName));
         $this->line('');
+
+        if ($schemaDiff instanceof SchemaDiffData) {
+            $this->renderSchemaDiff($schemaDiff);
+        }
 
         $tableWidth = 24;
         $rowsWidth = 14;

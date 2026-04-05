@@ -690,3 +690,125 @@ YAML;
         ->expectsOutputToContain('Cannot connect')
         ->assertExitCode(ExitCode::ConnectionError->value);
 });
+
+it('dry-run shows schema diff when target is missing tables', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $sourceSchema = new DatabaseSchemaData(
+        databaseName: 'mydb',
+        tables: [
+            new TableSchemaData(
+                name: 'users',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'orders',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $targetSchema = new DatabaseSchemaData(
+        databaseName: 'stagingdb',
+        tables: [
+            new TableSchemaData(
+                name: 'users',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $callCount = 0;
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturnUsing(static function () use (&$callCount, $sourceSchema, $targetSchema) {
+        $callCount++;
+
+        return $callCount === 1 ? $sourceSchema : $targetSchema;
+    });
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('Schema diff')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect($callCount)->toBe(2);
+});
+
+it('dry-run shows identical schema message when schemas match', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('target matches source')
+        ->assertExitCode(ExitCode::Success->value);
+});
