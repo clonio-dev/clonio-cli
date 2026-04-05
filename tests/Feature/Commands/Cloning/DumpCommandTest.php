@@ -352,6 +352,64 @@ it('omits key_remapping section when no integer primary keys exist', function ()
     expect($yaml)->not->toContain('strategy: remapping');
 });
 
+it('--all-columns includes keep-strategy columns in the YAML', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+    $schema = makeSimpleSchema(); // has id, email, password, created_at
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', [
+        '--connection' => 'production-db',
+        '--all-columns' => true,
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->toBeString();
+    // PII columns still present
+    expect($yaml)->toContain('email:');
+    expect($yaml)->toContain('strategy: fake');
+    // Keep columns now also present
+    expect($yaml)->toContain('created_at:');
+    expect($yaml)->toContain('strategy: keep');
+    // No 'no PII detected' comment since columns are explicitly listed
+    expect($yaml)->not->toContain('# no PII detected');
+});
+
+it('--all-columns and --only-pii together return ValidationError', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('cloning:dump', [
+        '--connection' => 'production-db',
+        '--all-columns' => true,
+        '--only-pii' => true,
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::ValidationError->value);
+});
+
 it('only-pii: only includes PII columns and tables', function (): void {
     Storage::fake('local');
 

@@ -15,5 +15,6 @@ final readonly class DumpResultData
         public string $outputPath,
         public string $fakerLocale = 'en_US',
         public ?KeyRemappingConfigData $keyRemapping = null,
+        public bool $includeKeepColumns = false,
     ) {}
 }
