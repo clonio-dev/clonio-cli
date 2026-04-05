@@ -414,3 +414,131 @@ YAML;
     // invalid values silently fall back to None
     expect($config->getTable('users')?->rows->clear)->toBe(ClearMode::None);
 });
+
+it('loads inline remapping strategy column', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 100000
+          - max: 9999999
+          - foreign_keys: []
+      email:
+        strategy: fake
+        faker_method: safeEmail
+        faker_arguments: []
+YAML;
+
+    Storage::disk('local')->put('remapping-inline.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('remapping-inline.yaml');
+
+    // keyRemapping is built from the inline column
+    expect($config->keyRemapping)->not->toBeNull();
+    expect($config->keyRemapping?->isActive())->toBeTrue();
+    $krTable = $config->keyRemapping?->getTable('users');
+    expect($krTable)->not->toBeNull();
+    expect($krTable?->primaryKey)->toBe('id');
+    expect($krTable?->strategy->value)->toBe('random_integer');
+    expect($krTable?->rangeMin)->toBe(100000);
+    expect($krTable?->rangeMax)->toBe(9999999);
+    expect($krTable?->foreignKeys)->toBe([]);
+
+    // The remapping column itself is accessible
+    $idCol = $config->getTable('users')?->getColumn('id');
+    expect($idCol?->strategy)->toBe('remapping');
+    expect($idCol?->remappingUse)->toBe('random_integer');
+    expect($idCol?->remappingMin)->toBe(100000);
+    expect($idCol?->remappingMax)->toBe(9999999);
+});
+
+it('loads inline remapping with new_uuid strategy', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: new_uuid
+          - foreign_keys: []
+YAML;
+
+    Storage::disk('local')->put('uuid-remapping.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('uuid-remapping.yaml');
+
+    $krTable = $config->keyRemapping?->getTable('users');
+    expect($krTable?->strategy->value)->toBe('new_uuid');
+});
+
+it('inline remapping takes priority over legacy key_remapping section', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: prod
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - min: 200000
+          - max: 8888888
+          - foreign_keys: []
+key_remapping:
+  tables:
+    - table: users
+      primary_key: id
+      strategy: random_integer
+      range_min: 1
+      range_max: 99
+YAML;
+
+    Storage::disk('local')->put('both.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('both.yaml');
+
+    // Inline wins — range from inline config
+    $krTable = $config->keyRemapping?->getTable('users');
+    expect($krTable?->rangeMin)->toBe(200000);
+    expect($krTable?->rangeMax)->toBe(8888888);
+});
