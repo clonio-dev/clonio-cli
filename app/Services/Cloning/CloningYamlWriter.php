@@ -46,10 +46,12 @@ class CloningYamlWriter
 
             $krTable = $result->keyRemapping?->getTable($table->name);
 
-            $nonKeepColumns = array_filter(
-                $table->columns,
-                static fn (ColumnDumpData $col): bool => $col->strategy !== 'keep'
-            );
+            $nonKeepColumns = $result->includeKeepColumns
+                ? $table->columns
+                : array_filter(
+                    $table->columns,
+                    static fn (ColumnDumpData $col): bool => $col->strategy !== 'keep'
+                );
 
             if ($nonKeepColumns === [] && ! $krTable instanceof KeyRemappingTableData) {
                 $lines[] = '    # no PII detected — no columns listed; all kept as-is';
@@ -112,6 +114,10 @@ class CloningYamlWriter
 
                         case 'static':
                             $lines[] = sprintf('        value: %s', $this->encodeYamlScalar($column->staticValue));
+                            break;
+
+                        case 'keep':
+                            // no extra fields needed
                             break;
                     }
                 }

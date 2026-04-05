@@ -33,6 +33,7 @@ class DumpCommand extends Command
         {--output=      : Output file path (default: <connection-name>.cloning.yaml)}
         {--force        : Overwrite an existing file without asking}
         {--only-pii     : Omit tables/columns with no PII match}
+        {--all-columns  : Include all columns in the YAML, not just PII-detected ones}
         {--locale=      : FakerPHP locale for options.faker_locale (default: en_US)}
         {--ci           : CI mode — suppress non-error output}';
 
@@ -55,6 +56,14 @@ class DumpCommand extends Command
         }
 
         $ci = (bool) $this->option('ci');
+        $onlyPii = (bool) $this->option('only-pii');
+        $allColumns = (bool) $this->option('all-columns');
+
+        if ($allColumns && $onlyPii) {
+            $this->error('--all-columns and --only-pii cannot be used together.');
+
+            return ExitCode::ValidationError->value;
+        }
 
         // 2. Resolve connection
         $connectionOption = $this->option('connection');
@@ -139,7 +148,6 @@ class DumpCommand extends Command
         // 8. Build table dump data
         $localeOption = $this->option('locale');
         $fakerLocale = is_string($localeOption) && $localeOption !== '' ? $localeOption : 'en_US';
-        $onlyPii = (bool) $this->option('only-pii');
 
         $tableDumps = [];
         $piiColumnsDetected = 0;
@@ -235,6 +243,7 @@ class DumpCommand extends Command
             outputPath: $outputPath,
             fakerLocale: $fakerLocale,
             keyRemapping: $onlyPii ? null : $this->buildKeyRemapping($schema),
+            includeKeepColumns: $allColumns,
         );
 
         // 11. Write YAML
