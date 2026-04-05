@@ -6,6 +6,7 @@ namespace App\Commands;
 
 use App\Enums\ExitCode;
 use App\Services\Art\AsciiArtService;
+use App\Services\Config\ConfigService;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
@@ -23,7 +24,7 @@ class InitCommand extends Command
      */
     protected $description = 'Bootstrap Clonio in the current directory by ensuring APP_KEY is available';
 
-    public function handle(AsciiArtService $asciiArtService): int
+    public function handle(AsciiArtService $asciiArtService, ConfigService $config): int
     {
         $asciiArtService->clonioLogoWithShadow($this->output, '  ');
         $this->line('  Checking for APP_KEY ...');
@@ -37,6 +38,8 @@ class InitCommand extends Command
             } else {
                 $this->info('  ✓  APP_KEY found in .env — ready.');
             }
+
+            $this->ensureDefaultAuditChannels($config);
 
             return ExitCode::Success->value;
         }
@@ -52,6 +55,8 @@ class InitCommand extends Command
             if (! $this->confirm('  Regenerate key?', false)) {
                 $this->line('  Cancelled.');
                 $this->line('');
+
+                $this->ensureDefaultAuditChannels($config);
 
                 return ExitCode::Success->value;
             }
@@ -81,7 +86,36 @@ class InitCommand extends Command
 
         $this->showGitignoreHint();
 
+        $this->ensureDefaultAuditChannels($config);
+
         return ExitCode::Success->value;
+    }
+
+    private function ensureDefaultAuditChannels(ConfigService $config): void
+    {
+        $defaults = [
+            'local' => [
+                'type' => 'local',
+                'audit_log' => ['path' => './audit-logs/{year}/{month}'],
+                'run_log' => ['path' => './run-logs/{year}/{month}'],
+            ],
+            'stdout' => ['type' => 'stdout'],
+            'stderr' => ['type' => 'stderr'],
+        ];
+
+        foreach ($defaults as $name => $channelConfig) {
+            if (! $config->hasAuditChannel($name)) {
+                $config->setAuditChannel($name, $channelConfig);
+            }
+        }
+
+        // Ensure audit_log and run_log deliver_to have 'local' by default
+        foreach (['audit_log', 'run_log'] as $logType) {
+            $current = $config->getAuditDeliverTo($logType);
+            if (! in_array('local', $current, true)) {
+                $config->setAuditDeliverTo($logType, array_merge($current, ['local']));
+            }
+        }
     }
 
     private function keyInSystemEnv(): bool

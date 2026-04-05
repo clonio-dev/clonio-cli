@@ -112,3 +112,63 @@ it('replaces APP_KEY in .env when force is confirmed', function (): void {
         ->toContain('APP_KEY=base64:')
         ->not->toContain('APP_KEY=base64:oldkey');
 });
+
+it('creates default audit channels in clonio.json on fresh init', function (): void {
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    $this->artisan('init')->assertExitCode(0);
+
+    Storage::assertExists('clonio.json');
+    $raw = Storage::get('clonio.json');
+    $config = json_decode($raw, true);
+
+    expect($config['audit']['channels'])->toHaveKeys(['local', 'stdout', 'stderr']);
+    expect($config['audit']['channels']['local']['type'])->toBe('local');
+    expect($config['audit']['channels']['stdout']['type'])->toBe('stdout');
+    expect($config['audit']['channels']['stderr']['type'])->toBe('stderr');
+    expect($config['audit']['audit_log']['deliver_to'])->toContain('local');
+    expect($config['audit']['run_log']['deliver_to'])->toContain('local');
+});
+
+it('creates default audit channels even when APP_KEY already exists', function (): void {
+    // APP_KEY already in env from beforeEach
+    $this->artisan('init')->assertExitCode(0);
+
+    Storage::assertExists('clonio.json');
+    $raw = Storage::get('clonio.json');
+    $config = json_decode($raw, true);
+
+    expect($config['audit']['channels'])->toHaveKeys(['local', 'stdout', 'stderr']);
+});
+
+it('does not overwrite existing audit channels on re-init', function (): void {
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    // Pre-populate with a custom local channel
+    Storage::put('clonio.json', json_encode([
+        'connections' => [],
+        'audit' => [
+            'channels' => [
+                'local' => [
+                    'type' => 'local',
+                    'audit_log' => ['path' => './custom-path'],
+                    'run_log' => ['path' => './custom-run-path'],
+                ],
+            ],
+            'audit_log' => ['deliver_to' => ['local']],
+            'run_log' => ['deliver_to' => ['local']],
+        ],
+    ]));
+
+    $this->artisan('init')->assertExitCode(0);
+
+    $raw = Storage::get('clonio.json');
+    $config = json_decode($raw, true);
+
+    // Custom path must NOT be overwritten
+    expect($config['audit']['channels']['local']['audit_log']['path'])->toBe('./custom-path');
+    // stdout and stderr should be added since they didn't exist
+    expect($config['audit']['channels'])->toHaveKeys(['stdout', 'stderr']);
+});
