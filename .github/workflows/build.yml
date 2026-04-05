@@ -91,7 +91,7 @@ jobs:
 
       - name: Download SPC binary
         run: |
-          curl -fsSL "https://github.com/crazywhalecc/static-php-cli/releases/latest/download/${{ matrix.spc-binary }}.tar.gz" \
+          curl -fsSL "https://github.com/crazywhalecc/static-php-cli/releases/download/2.8.4/${{ matrix.spc-binary }}.tar.gz" \
             -o spc.tar.gz
           tar -xzf spc.tar.gz
           chmod +x ./spc
