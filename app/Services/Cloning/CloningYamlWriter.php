@@ -6,7 +6,8 @@ namespace App\Services\Cloning;
 
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
-use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingForeignKeyData;
+use App\Enums\KeyRemappingStrategy;
 use Illuminate\Support\Facades\Storage;
 
 class CloningYamlWriter
@@ -42,15 +43,45 @@ class CloningYamlWriter
                 $lines[] = sprintf('      sort_by: %s', $table->sortBy);
             }
 
+            $krTable = $result->keyRemapping?->getTable($table->name);
+
             $nonKeepColumns = array_filter(
                 $table->columns,
                 static fn (ColumnDumpData $col): bool => $col->strategy !== 'keep'
             );
 
-            if ($nonKeepColumns === []) {
+            if ($nonKeepColumns === [] && $krTable === null) {
                 $lines[] = '    # no PII detected — no columns listed; all kept as-is';
             } else {
                 $lines[] = '    columns:';
+
+                if ($krTable !== null) {
+                    $lines[] = '      # Primary Key — remapped';
+                    $lines[] = sprintf('      %s:', $krTable->primaryKey);
+                    $lines[] = '        strategy: remapping';
+                    $lines[] = '        arguments:';
+                    $lines[] = sprintf('          - use: %s', $krTable->strategy->value);
+
+                    if ($krTable->strategy === KeyRemappingStrategy::RandomInteger) {
+                        $lines[] = sprintf('          - min: %d', $krTable->rangeMin);
+                        $lines[] = sprintf('          - max: %d', $krTable->rangeMax);
+                    }
+
+                    if ($krTable->foreignKeys !== []) {
+                        $fkYaml = array_map(
+                            static fn (KeyRemappingForeignKeyData $fk): string => sprintf(
+                                '{table: %s, column: %s, self_referential: %s}',
+                                $fk->table,
+                                $fk->column,
+                                $fk->selfReferential ? 'true' : 'false'
+                            ),
+                            $krTable->foreignKeys
+                        );
+                        $lines[] = '          - foreign_keys: ['.implode(', ', $fkYaml).']';
+                    } else {
+                        $lines[] = '          - foreign_keys: []';
+                    }
+                }
 
                 foreach ($nonKeepColumns as $column) {
                     if ($column->piiDetected && $column->piiCategory !== null) {
@@ -82,33 +113,6 @@ class CloningYamlWriter
                             $lines[] = sprintf('        value: %s', $this->encodeYamlScalar($column->staticValue));
                             break;
                     }
-                }
-            }
-
-            $lines[] = '';
-        }
-
-        if ($result->keyRemapping instanceof KeyRemappingConfigData && $result->keyRemapping->isActive()) {
-            $lines[] = 'key_remapping:';
-            $lines[] = '  tables:';
-
-            foreach ($result->keyRemapping->tables as $krTable) {
-                $lines[] = sprintf('    - table: %s', $krTable->table);
-                $lines[] = sprintf('      primary_key: %s', $krTable->primaryKey);
-                $lines[] = sprintf('      strategy: %s', $krTable->strategy->value);
-                $lines[] = sprintf('      range_min: %d', $krTable->rangeMin);
-                $lines[] = sprintf('      range_max: %d', $krTable->rangeMax);
-
-                if ($krTable->foreignKeys !== []) {
-                    $lines[] = '      foreign_keys:';
-
-                    foreach ($krTable->foreignKeys as $fk) {
-                        $lines[] = sprintf('        - table: %s', $fk->table);
-                        $lines[] = sprintf('          column: %s', $fk->column);
-                        $lines[] = sprintf('          self_referential: %s', $fk->selfReferential ? 'true' : 'false');
-                    }
-                } else {
-                    $lines[] = '      foreign_keys: []';
                 }
             }
 

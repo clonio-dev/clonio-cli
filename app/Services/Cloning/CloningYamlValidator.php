@@ -26,7 +26,7 @@ class CloningYamlValidator
 
     private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last'];
 
-    private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static'];
+    private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'remapping'];
 
     private const array VALID_HASH_ALGORITHMS = ['sha256', 'sha512', 'md5', 'sha1'];
 
@@ -406,6 +406,52 @@ class CloningYamlValidator
             case 'static':
                 if (! array_key_exists('value', $config)) {
                     $errors[] = sprintf("%s: 'static' strategy requires 'value'", $prefix);
+                }
+
+                break;
+
+            case 'remapping':
+                $argsRaw = $config['arguments'] ?? null;
+
+                if (! is_array($argsRaw) || $argsRaw === []) {
+                    $errors[] = sprintf("%s: 'remapping' strategy requires 'arguments' list", $prefix);
+                    break;
+                }
+
+                // Flatten arguments list into a single map
+                $args = [];
+                foreach ($argsRaw as $entry) {
+                    if (is_array($entry)) {
+                        /** @var array<string, mixed> $entry */
+                        foreach ($entry as $k => $v) {
+                            $args[$k] = $v;
+                        }
+                    }
+                }
+
+                $validUseValues = ['random_integer', 'new_uuid'];
+                $use = $args['use'] ?? null;
+
+                if (! is_string($use) || ! in_array($use, $validUseValues, true)) {
+                    $errors[] = sprintf("%s: 'remapping' requires argument 'use' (one of: %s)", $prefix, implode(', ', $validUseValues));
+                    break;
+                }
+
+                if ($use === 'random_integer') {
+                    $min = $args['min'] ?? null;
+                    $max = $args['max'] ?? null;
+
+                    if (! is_int($min) || $min < 1) {
+                        $errors[] = sprintf("%s: 'remapping' requires argument 'min' (integer >= 1)", $prefix);
+                    }
+
+                    if (! is_int($max) || $max < 1) {
+                        $errors[] = sprintf("%s: 'remapping' requires argument 'max' (integer >= 1)", $prefix);
+                    }
+
+                    if (is_int($min) && is_int($max) && $min >= $max) {
+                        $errors[] = sprintf("%s: 'remapping' argument 'min' must be less than 'max'", $prefix);
+                    }
                 }
 
                 break;

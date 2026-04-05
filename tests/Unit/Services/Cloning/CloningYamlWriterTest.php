@@ -280,3 +280,46 @@ it('writes to file using Storage facade', function (): void {
     $content = Storage::disk('local')->get('output.yaml');
     expect($content)->toContain('connection: prod');
 });
+
+it('writes remapping strategy as inline column not key_remapping section', function (): void {
+    Storage::fake('local');
+
+    $writer = new CloningYamlWriter;
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [makeFakeColumn('email'), makeKeepColumn('id')],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+    $keyRemapping = new \App\Data\Cloning\KeyRemappingConfigData(tables: [
+        new \App\Data\Cloning\KeyRemappingTableData(
+            table: 'users',
+            primaryKey: 'id',
+            strategy: \App\Enums\KeyRemappingStrategy::RandomInteger,
+            rangeMin: 100000,
+            rangeMax: 9999999,
+            foreignKeys: [],
+        ),
+    ]);
+    $result = new DumpResultData(
+        connectionName: 'prod',
+        tables: [$table],
+        totalColumns: 2,
+        piiColumnsDetected: 1,
+        outputPath: 'prod.cloning.yaml',
+        fakerLocale: 'en_US',
+        keyRemapping: $keyRemapping,
+    );
+
+    $yaml = $writer->write($result);
+
+    // Remapping must be inline in columns
+    expect($yaml)->toContain('strategy: remapping');
+    expect($yaml)->toContain('- use: random_integer');
+    expect($yaml)->toContain('- min: 100000');
+    expect($yaml)->toContain('- max: 9999999');
+    expect($yaml)->toContain('- foreign_keys: []');
+    // The old top-level section must NOT appear
+    expect($yaml)->not->toContain('key_remapping:');
+});

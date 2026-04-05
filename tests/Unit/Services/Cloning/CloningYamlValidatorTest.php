@@ -469,3 +469,67 @@ it('returns error when clear has an invalid value', function (): void {
     $errors = $validator->validate($config);
     expect(implode(' ', $errors))->toContain('rows.clear');
 });
+
+// ─── remapping column strategy validation ────────────────────────────────────
+
+it('passes validation for a valid remapping column with random_integer', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['id'] = [
+        'strategy' => 'remapping',
+        'arguments' => [
+            ['use' => 'random_integer'],
+            ['min' => 100000],
+            ['max' => 9999999],
+            ['foreign_keys' => []],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->toBe([]);
+});
+
+it('returns error when remapping strategy has no arguments', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['id'] = [
+        'strategy' => 'remapping',
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->not->toBe([]);
+    expect(implode(' ', $errors))->toContain("'remapping' strategy requires 'arguments' list");
+});
+
+it('returns error when remapping strategy has no use argument', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['id'] = [
+        'strategy' => 'remapping',
+        'arguments' => [
+            ['min' => 100000],
+            ['max' => 9999999],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->not->toBe([]);
+    expect(implode(' ', $errors))->toContain("'remapping' requires argument 'use'");
+});
+
+it('returns error when remapping random_integer has min greater than or equal to max', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['id'] = [
+        'strategy' => 'remapping',
+        'arguments' => [
+            ['use' => 'random_integer'],
+            ['min' => 9999999],
+            ['max' => 100000],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    expect($errors)->not->toBe([]);
+    expect(implode(' ', $errors))->toContain("'min' must be less than 'max'");
+});

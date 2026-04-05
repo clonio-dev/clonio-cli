@@ -83,12 +83,34 @@ class CloningYamlLoader
             $tables[] = $this->mapTableConfig((string) $tableName, $tableConfig);
         }
 
-        // Parse key_remapping section (optional)
-        $keyRemapping = null;
-        $keyRemappingRaw = $data['key_remapping'] ?? null;
-        if (is_array($keyRemappingRaw)) {
-            /** @var array<string, mixed> $keyRemappingRaw */
-            $keyRemapping = $this->mapKeyRemappingConfig($keyRemappingRaw);
+        // Prefer inline remapping columns; fall back to legacy key_remapping: section
+        $inlineRemappingTables = [];
+        foreach ($tables as $tableData) {
+            foreach ($tableData->columns as $column) {
+                if ($column->strategy !== 'remapping') {
+                    continue;
+                }
+
+                $inlineRemappingTables[] = new KeyRemappingTableData(
+                    table: $tableData->tableName,
+                    primaryKey: $column->columnName,
+                    strategy: KeyRemappingStrategy::tryFrom($column->remappingUse ?? 'random_integer') ?? KeyRemappingStrategy::RandomInteger,
+                    rangeMin: $column->remappingMin ?? 100000,
+                    rangeMax: $column->remappingMax ?? 9999999,
+                    foreignKeys: $column->remappingForeignKeys ?? [],
+                );
+            }
+        }
+
+        if ($inlineRemappingTables !== []) {
+            $keyRemapping = new KeyRemappingConfigData(tables: $inlineRemappingTables);
+        } else {
+            $keyRemapping = null;
+            $keyRemappingRaw = $data['key_remapping'] ?? null;
+            if (is_array($keyRemappingRaw)) {
+                /** @var array<string, mixed> $keyRemappingRaw */
+                $keyRemapping = $this->mapKeyRemappingConfig($keyRemappingRaw);
+            }
         }
 
         return new CloningConfigData(
@@ -223,6 +245,10 @@ class CloningYamlLoader
         $visibleChars = null;
         $preserveFormat = null;
         $staticValue = null;
+        $remappingUse = null;
+        $remappingMin = null;
+        $remappingMax = null;
+        $remappingForeignKeys = null;
 
         switch ($strategy) {
             case 'fake':
@@ -248,6 +274,56 @@ class CloningYamlLoader
                 $rawValue = $config['value'] ?? null;
                 $staticValue = is_scalar($rawValue) ? (string) $rawValue : null;
                 break;
+
+            case 'remapping':
+                $argsRaw = $config['arguments'] ?? [];
+                if (is_array($argsRaw)) {
+                    foreach ($argsRaw as $argEntry) {
+                        if (! is_array($argEntry)) {
+                            continue;
+                        }
+
+                        /** @var array<string, mixed> $argEntry */
+                        foreach ($argEntry as $argKey => $argValue) {
+                            switch ($argKey) {
+                                case 'use':
+                                    $remappingUse = is_string($argValue) ? $argValue : null;
+                                    break;
+
+                                case 'min':
+                                    $remappingMin = is_int($argValue) ? $argValue : null;
+                                    break;
+
+                                case 'max':
+                                    $remappingMax = is_int($argValue) ? $argValue : null;
+                                    break;
+
+                                case 'foreign_keys':
+                                    if (is_array($argValue)) {
+                                        $remappingForeignKeys = [];
+
+                                        /** @var array<mixed> $argValue */
+                                        foreach ($argValue as $fkEntry) {
+                                            if (! is_array($fkEntry)) {
+                                                continue;
+                                            }
+
+                                            /** @var array<string, mixed> $fkEntry */
+                                            $remappingForeignKeys[] = new KeyRemappingForeignKeyData(
+                                                table: is_string($fkEntry['table'] ?? null) ? $fkEntry['table'] : '',
+                                                column: is_string($fkEntry['column'] ?? null) ? $fkEntry['column'] : '',
+                                                selfReferential: (bool) ($fkEntry['self_referential'] ?? false),
+                                            );
+                                        }
+                                    }
+
+                                    break;
+                            }
+                        }
+                    }
+                }
+
+                break;
         }
 
         return new ColumnCloningConfigData(
@@ -261,6 +337,10 @@ class CloningYamlLoader
             visibleChars: $visibleChars,
             preserveFormat: $preserveFormat,
             staticValue: $staticValue,
+            remappingUse: $remappingUse,
+            remappingMin: $remappingMin,
+            remappingMax: $remappingMax,
+            remappingForeignKeys: $remappingForeignKeys,
         );
     }
 }
