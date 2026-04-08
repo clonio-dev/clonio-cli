@@ -21,7 +21,7 @@ it('reports already up to date when versions match', function (): void {
     $this->app->instance(BinaryResolver::class, fakeBinaryResolver('/tmp/clonio_fake'));
 
     $this->artisan('update')
-        ->expectsOutputToContain('Already up to date')
+        ->expectsOutputToContain('Already at version')
         ->assertExitCode(0);
 });
 
@@ -36,7 +36,7 @@ it('downloads and replaces the binary when a newer version is available', functi
     $this->app->instance(BinaryResolver::class, fakeBinaryResolver($tmpBinary));
 
     $this->artisan('update')
-        ->expectsOutputToContain('New version available')
+        ->expectsOutputToContain('Target version')
         ->expectsOutputToContain('Downloading')
         ->expectsOutputToContain('Updated successfully')
         ->assertExitCode(0);
@@ -53,6 +53,65 @@ it('fails gracefully when github api is unreachable', function (): void {
 
     $this->artisan('update')
         ->expectsOutputToContain('Could not reach GitHub')
+        ->assertExitCode(1);
+});
+
+it('shows ssl warning and succeeds with --no-verify-ssl', function (): void {
+    Http::fake([
+        'api.github.com/*' => Http::response(['tag_name' => app()->version()]),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver('/tmp/clonio_fake'));
+
+    $this->artisan('update', ['--no-verify-ssl' => true])
+        ->expectsOutputToContain('SSL verification disabled')
+        ->expectsOutputToContain('Already at version')
+        ->assertExitCode(0);
+});
+
+it('updates to a specific version when version argument is given', function (): void {
+    $tmpBinary = (string) tempnam(sys_get_temp_dir(), 'clonio_test_');
+
+    Http::fake([
+        'api.github.com/*' => Http::response(['tag_name' => 'v2.1.0']),
+        'github.com/*' => Http::response('fake-binary-content'),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver($tmpBinary));
+
+    $this->artisan('update', ['version' => '2.1.0'])
+        ->expectsOutputToContain('Target version: 2.1.0')
+        ->expectsOutputToContain('Updated successfully to 2.1.0')
+        ->assertExitCode(0);
+
+    @unlink($tmpBinary);
+});
+
+it('accepts version with v prefix', function (): void {
+    $tmpBinary = (string) tempnam(sys_get_temp_dir(), 'clonio_test_');
+
+    Http::fake([
+        'api.github.com/*' => Http::response(['tag_name' => 'v2.1.0']),
+        'github.com/*' => Http::response('fake-binary-content'),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver($tmpBinary));
+
+    $this->artisan('update', ['version' => 'v2.1.0'])
+        ->expectsOutputToContain('Target version: 2.1.0')
+        ->assertExitCode(0);
+
+    @unlink($tmpBinary);
+});
+
+it('fails when requested version does not exist', function (): void {
+    Http::fake([
+        'api.github.com/*' => Http::response(['message' => 'Not Found'], 404),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver('/tmp/clonio_fake'));
+
+    $this->artisan('update', ['version' => '99.99.99'])
         ->assertExitCode(1);
 });
 
