@@ -72,7 +72,7 @@ class DeleteCommand extends Command
                         + (in_array($name, $runDeliverTo, true) ? 1 : 0);
 
         if ($activeCount > 0) {
-            $this->components->warn(sprintf(
+            $this->warn(sprintf(
                 "Channel '%s' is active in %d deliver_to list%s. Deleting it will remove it from all deliver_to entries.",
                 $name,
                 $activeCount,

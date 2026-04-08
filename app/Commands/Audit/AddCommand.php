@@ -263,7 +263,7 @@ class AddCommand extends Command
         $this->line(sprintf('  <comment>%s</comment>', $hint));
         $webhookUrlOpt = $this->option('webhook-url');
         if (is_string($webhookUrlOpt) && $webhookUrlOpt !== '') {
-            $this->components->warn('Passing webhook URL via CLI flag may expose it in shell history.');
+            $this->warn('Passing webhook URL via CLI flag may expose it in shell history.');
             $webhookUrl = $webhookUrlOpt;
         } else {
             $asked = $this->secret($providerLabel.' webhook URL');
@@ -299,7 +299,7 @@ class AddCommand extends Command
         $tokenOpt = $this->option('ntfy-token');
         $token = null;
         if (is_string($tokenOpt) && $tokenOpt !== '') {
-            $this->components->warn('Passing token via CLI flag may expose it in shell history.');
+            $this->warn('Passing token via CLI flag may expose it in shell history.');
             $token = $tokenOpt;
         } else {
             $asked = $this->secret('Bearer token (optional — press Enter to skip)');
@@ -368,7 +368,7 @@ class AddCommand extends Command
     {
         $opt = $this->option($option);
         if (is_string($opt) && $opt !== '') {
-            $this->components->warn(sprintf('Passing --%s via CLI flag may expose it in shell history.', $option));
+            $this->warn(sprintf('Passing --%s via CLI flag may expose it in shell history.', $option));
 
             return $opt;
         }
