@@ -113,6 +113,26 @@ it('replaces APP_KEY in .env when force is confirmed', function (): void {
         ->not->toContain('APP_KEY=base64:oldkey');
 });
 
+it('displays hint about created audit channels on fresh init', function (): void {
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    $this->artisan('init')
+        ->expectsOutputToContain('Created clonio.json with default audit channels: local, stdout, stderr')
+        ->assertExitCode(0);
+});
+
+it('displays ready message when audit channels already exist', function (): void {
+    // APP_KEY already in env from beforeEach
+    // First init creates the channels
+    $this->artisan('init')->assertExitCode(0);
+
+    // Second init should find them already present
+    $this->artisan('init')
+        ->expectsOutputToContain('Audit channels in clonio.json')
+        ->assertExitCode(0);
+});
+
 it('creates default audit channels in clonio.json on fresh init', function (): void {
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
