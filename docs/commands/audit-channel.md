@@ -65,10 +65,9 @@ A summary table is displayed before writing. The operation can be cancelled at t
 
 | Option | Description |
 |---|---|
-| `--audit-log-path=` | Directory path template for audit logs (default: `./audit-logs/{year}/{month}`) |
-| `--run-log-path=` | Directory path template for run logs (default: `./run-logs/{year}/{month}`) |
+| `--local-path=` | Directory path template for audit and run logs (default: `./clonio-logs/{year}/{month}`) |
 
-Path templates support: `{year}`, `{month}`, `{day}`, `{source}`, `{target}`, `{timestamp}`.
+Both audit logs and run logs are written to the same directory. Path templates support: `{year}`, `{month}`, `{day}`, `{source}`, `{target}`, `{timestamp}`.
 
 #### S3 (`--type=s3`)
 
@@ -126,7 +125,7 @@ Path templates support: `{year}`, `{month}`, `{day}`, `{source}`, `{target}`, `{
 clonio audit:add
 
 # Non-interactive: local channel
-clonio audit:add logs --type=local --audit-log-path=./audit/{year}/{month} --run-log-path=./runs/{year}/{month}
+clonio audit:add logs --type=local --local-path=./clonio-logs/{year}/{month}
 
 # Non-interactive: S3 channel
 clonio audit:add s3-backup --type=s3 --endpoint=https://s3.amazonaws.com --bucket=my-bucket \

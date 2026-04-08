@@ -173,8 +173,7 @@ it('does not overwrite existing audit channels on re-init', function (): void {
             'channels' => [
                 'local' => [
                     'type' => 'local',
-                    'audit_log' => ['path' => './custom-path'],
-                    'run_log' => ['path' => './custom-run-path'],
+                    'path' => './custom-path',
                 ],
             ],
             'audit_log' => ['deliver_to' => ['local']],
@@ -188,7 +187,7 @@ it('does not overwrite existing audit channels on re-init', function (): void {
     $config = json_decode($raw, true);
 
     // Custom path must NOT be overwritten
-    expect($config['audit']['channels']['local']['audit_log']['path'])->toBe('./custom-path');
+    expect($config['audit']['channels']['local']['path'])->toBe('./custom-path');
     // stdout and stderr should be added since they didn't exist
     expect($config['audit']['channels'])->toHaveKeys(['stdout', 'stderr']);
 });

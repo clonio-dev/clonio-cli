@@ -620,8 +620,7 @@ YAML;
             'channels' => [
                 'local-main' => [
                     'type' => 'local',
-                    'audit_log' => ['path' => 'audit-logs'],
-                    'run_log' => ['path' => 'run-logs'],
+                    'path' => 'clonio-logs',
                 ],
             ],
         ],
@@ -648,7 +647,7 @@ YAML;
         ->assertExitCode(ExitCode::Success->value);
 
     // Check that audit files were written
-    $files = Storage::disk('local')->allFiles('audit-logs');
+    $files = Storage::disk('local')->allFiles('clonio-logs');
     expect($files)->not->toBeEmpty();
     expect($files[0])->toContain('_audit.html');
 });

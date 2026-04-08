@@ -43,8 +43,7 @@ it('errors when channel type is unknown', function (): void {
 it('cancels when the user declines saving changes', function (): void {
     $channel = [
         'type' => 'local',
-        'audit_log' => ['path' => './logs'],
-        'run_log' => ['path' => './run-logs'],
+        'path' => './clonio-logs',
     ];
 
     $config = Mockery::mock(ConfigService::class);
@@ -56,8 +55,7 @@ it('cancels when the user declines saving changes', function (): void {
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update', ['name' => 'my-local'])
-        ->expectsQuestion('Audit log path', './logs')
-        ->expectsQuestion('Run log path', './run-logs')
+        ->expectsQuestion('Log path', './clonio-logs')
         ->expectsConfirmation('Deliver audit log via this channel?', 'no')
         ->expectsConfirmation('Deliver run log via this channel?', 'no')
         ->expectsConfirmation('Save changes?', 'no')
@@ -68,8 +66,7 @@ it('cancels when the user declines saving changes', function (): void {
 it('auto-selects the only channel when no name is given', function (): void {
     $channel = [
         'type' => 'local',
-        'audit_log' => ['path' => './logs'],
-        'run_log' => ['path' => './run-logs'],
+        'path' => './clonio-logs',
     ];
 
     $config = Mockery::mock(ConfigService::class);
@@ -82,8 +79,7 @@ it('auto-selects the only channel when no name is given', function (): void {
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update')
-        ->expectsQuestion('Audit log path', './logs')
-        ->expectsQuestion('Run log path', './run-logs')
+        ->expectsQuestion('Log path', './clonio-logs')
         ->expectsConfirmation('Deliver audit log via this channel?', 'no')
         ->expectsConfirmation('Deliver run log via this channel?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')

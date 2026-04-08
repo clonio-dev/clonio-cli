@@ -96,8 +96,7 @@ class InitCommand extends Command
         $defaults = [
             'local' => [
                 'type' => 'local',
-                'audit_log' => ['path' => './audit-logs/{year}/{month}'],
-                'run_log' => ['path' => './run-logs/{year}/{month}'],
+                'path' => './clonio-logs/{year}/{month}',
             ],
             'stdout' => ['type' => 'stdout'],
             'stderr' => ['type' => 'stderr'],

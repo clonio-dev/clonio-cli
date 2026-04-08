@@ -20,8 +20,7 @@ class AddCommand extends Command
     protected $signature = 'audit:add
         {name?                      : Unique name for this channel}
         {--type=                    : Channel type — local|s3|email|ms_teams|slack|ntfy}
-        {--local-audit-log-path=    : (local) Audit log path template}
-        {--local-run-log-path=      : (local) Run log path template}
+        {--local-path=              : (local) Path template for audit and run logs}
         {--s3-endpoint=             : (s3) S3-compatible endpoint URL}
         {--s3-bucket=               : (s3) Bucket name}
         {--s3-access-key=           : (s3) Access key ID}
@@ -181,12 +180,10 @@ class AddCommand extends Command
      */
     private function promptLocalFields(): array
     {
-        $auditLogPath = $this->optionOrAsk('local-audit-log-path', 'Audit log path ('.self::TEMPLATE_HINT.')', './audit-logs/{year}/{month}');
-        $runLogPath = $this->optionOrAsk('local-run-log-path', 'Run log path ('.self::TEMPLATE_HINT.')', './run-logs/{year}/{month}');
+        $path = $this->optionOrAsk('local-path', 'Log path ('.self::TEMPLATE_HINT.')', './clonio-logs/{year}/{month}');
 
         return [
-            'audit_log' => ['path' => $auditLogPath],
-            'run_log' => ['path' => $runLogPath],
+            'path' => $path,
         ];
     }
 
