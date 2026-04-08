@@ -32,6 +32,22 @@ class AsciiArtService
         $this->paintToConsole($output, $lines, $indent);
     }
 
+    public function clonioLogoWithClaim(OutputStyle $output, string $indent = ''): void
+    {
+        $content = file_get_contents(resource_path('ascii-art/clonio-logo-with-shadow.txt'));
+        if ($content === false) {
+            return;
+        }
+
+        $lines = explode("\n", $content);
+
+        $this->paintToConsole($output, $lines, $indent);
+
+        $output->writeln($indent.'👻  Clone your production database to dev and test environments –');
+        $output->writeln($indent.'   with automatic anonymization, schema versioning, and full audit trails.');
+        $output->writeln('');
+    }
+
     /**
      * @param  string[]  $lines
      */
