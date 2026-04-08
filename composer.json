@@ -75,5 +75,5 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "bin": ["builds/clonio"]
+    "bin": ["clonio"]
 }
