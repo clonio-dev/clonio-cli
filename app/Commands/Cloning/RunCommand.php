@@ -172,11 +172,11 @@ class RunCommand extends Command
                 return ExitCode::ValidationError->value;
             }
 
-            // Interactive: show choice list excluding source
+            // Interactive: show choice list excluding source and production connections
             $connections = $configService->getConnections();
             $otherNames = array_values(array_filter(
                 array_keys($connections),
-                static fn (string $n): bool => $n !== $config->connectionName
+                static fn (string $n): bool => $n !== $config->connectionName && ! $connections[$n]->isProduction
             ));
 
             if ($otherNames === []) {

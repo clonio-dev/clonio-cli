@@ -304,6 +304,67 @@ YAML;
         ->assertExitCode(ExitCode::ValidationError->value);
 });
 
+it('excludes production connections from interactive target selection', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $prodConnection = makeRunMysqlConnection('production-db');
+    $prod2Connection = new ConnectionData(
+        name: 'other-prod',
+        type: DatabaseConnectionType::Mysql,
+        host: 'db.prod2.io',
+        port: 3306,
+        database: 'prod2db',
+        schema: null,
+        username: 'root',
+        password: 'secret',
+        isProduction: true,
+    );
+    $stagingConnection = makeRunTargetConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($prodConnection);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($stagingConnection);
+    $config->shouldReceive('getConnections')->andReturn([
+        'production-db' => $prodConnection,
+        'other-prod' => $prod2Connection,
+        'staging' => $stagingConnection,
+    ]);
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn(makeRunResult());
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    // Interactive selection should only show 'staging', not 'other-prod'
+    $this->artisan('cloning:run', ['file' => 'test.cloning.yaml'])
+        ->expectsChoice('Select a target connection', 'staging', ['staging'])
+        ->assertExitCode(ExitCode::Success->value);
+});
+
 it('exits 0 on dry-run with mocked schema inspector', function (): void {
     Storage::fake('local');
     $yaml = <<<'YAML'
