@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c6d080cd8e5d3c05f02b88a5c403c5ac",
+    "content-hash": "9d9efc978dae4ba3cf116b3a6b2eb32c",
     "packages": [
         {
             "name": "brick/math",
@@ -7263,6 +7263,104 @@
             "time": "2025-12-06T11:56:16+00:00"
         },
         {
+            "name": "nunomaduro/pao",
+            "version": "v0.1.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/nunomaduro/pao.git",
+                "reference": "4c5db4a762b1a99a91d6249892b356a1f0681a33"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/nunomaduro/pao/zipball/4c5db4a762b1a99a91d6249892b356a1f0681a33",
+                "reference": "4c5db4a762b1a99a91d6249892b356a1f0681a33",
+                "shasum": ""
+            },
+            "require": {
+                "ext-simplexml": "*",
+                "php": "^8.3",
+                "shipfastlabs/agent-detector": "^1.1.0"
+            },
+            "conflict": {
+                "laravel/framework": "<12.0",
+                "nunomaduro/collision": "<8.9.2",
+                "pestphp/pest": "<4.4.3 || >=6.0",
+                "phpunit/phpunit": "<12.5.14 || >=13.0.0 <13.0.5 || >=14.0"
+            },
+            "require-dev": {
+                "brianium/paratest": "^7.20.0",
+                "laravel/pint": "^1.29.0",
+                "orchestra/testbench": "^10.11.0 || ^11.0.0",
+                "pestphp/pest": "^4.4.3 || ^5.0.0",
+                "pestphp/pest-plugin-type-coverage": "^4.0.3 || ^5.0.0",
+                "phpstan/phpstan": "^2.1.46",
+                "rector/rector": "^2.4.1",
+                "symfony/process": "^7.4.5 || ^8.1.0",
+                "symfony/var-dumper": "^7.4.6 || ^8.0.8"
+            },
+            "type": "library",
+            "extra": {
+                "pest": {
+                    "plugins": [
+                        "Pao\\Drivers\\Pest\\Plugin"
+                    ]
+                },
+                "laravel": {
+                    "providers": [
+                        "Pao\\Laravel\\ServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/Autoload.php"
+                ],
+                "psr-4": {
+                    "Pao\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Nuno Maduro",
+                    "email": "enunomaduro@gmail.com"
+                }
+            ],
+            "description": "Agent-optimized output for PHP testing tools",
+            "keywords": [
+                "Agent",
+                "PHPStan",
+                "json",
+                "paratest",
+                "pest",
+                "php",
+                "phpunit",
+                "testing"
+            ],
+            "support": {
+                "issues": "https://github.com/nunomaduro/pao/issues",
+                "source": "https://github.com/nunomaduro/pao/tree/v0.1.3"
+            },
+            "funding": [
+                {
+                    "url": "https://www.paypal.com/paypalme/enunomaduro",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/nunomaduro",
+                    "type": "github"
+                },
+                {
+                    "url": "https://www.patreon.com/nunomaduro",
+                    "type": "patreon"
+                }
+            ],
+            "time": "2026-04-08T15:22:27+00:00"
+        },
+        {
             "name": "nunomaduro/pokio",
             "version": "v0.1.2",
             "source": {
@@ -9584,6 +9682,73 @@
                 }
             ],
             "time": "2025-02-07T05:00:38+00:00"
+        },
+        {
+            "name": "shipfastlabs/agent-detector",
+            "version": "v1.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/shipfastlabs/agent-detector.git",
+                "reference": "eefb18b61968a59a0428a4f75bee2e21596fe949"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/shipfastlabs/agent-detector/zipball/eefb18b61968a59a0428a4f75bee2e21596fe949",
+                "reference": "eefb18b61968a59a0428a4f75bee2e21596fe949",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.2.0"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.24.0",
+                "pestphp/pest": "^3.8.5|^4.1.0",
+                "pestphp/pest-plugin-type-coverage": "^3.0|^4.0.2",
+                "phpstan/phpstan": "^2.1.26",
+                "rector/rector": "^2.1.7",
+                "symfony/var-dumper": "^7.3.3"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions.php"
+                ],
+                "psr-4": {
+                    "AgentDetector\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Pushpak Chahjed",
+                    "email": "pushpak1300@gmail.com"
+                }
+            ],
+            "description": "Detect if code is running in an AI agent or automated development environment",
+            "keywords": [
+                "Agent",
+                "ai",
+                "automation",
+                "claude",
+                "cursor",
+                "detection",
+                "devin",
+                "php"
+            ],
+            "support": {
+                "issues": "https://github.com/shipfastlabs/agent-detector/issues",
+                "source": "https://github.com/shipfastlabs/agent-detector/tree/v1.1.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/pushpak1300",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-03-11T22:59:30+00:00"
         },
         {
             "name": "staabm/side-effects-detector",
