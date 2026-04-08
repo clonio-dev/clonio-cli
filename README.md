@@ -8,7 +8,7 @@
 
 Clonio transfers your production database to your test and dev environments with automatic anonymization, fake data generation, and full audit trails.
 
-It is free and open source for individuals and NGOs. See [clonio.io](https://clonio.io) for more information.
+It is free and open source for individuals and NGOs. See [clonio.dev](https://clonio.dev) for more information.
 
 ---
 
