@@ -79,3 +79,24 @@ it('embeds canonical JSON in audit-data script tag', function (): void {
     expect($html)->toContain('id="audit-data"');
     expect($html)->toContain('application/json');
 });
+
+it('formats duration as HH:MM:SS,mmm', function (): void {
+    expect(AuditLogRenderer::formatDuration(0.0))->toBe('00:00:00,000');
+    expect(AuditLogRenderer::formatDuration(0.5))->toBe('00:00:00,500');
+    expect(AuditLogRenderer::formatDuration(445.757))->toBe('00:07:25,757');
+    expect(AuditLogRenderer::formatDuration(3661.042))->toBe('01:01:01,042');
+    expect(AuditLogRenderer::formatDuration(59.999))->toBe('00:00:59,999');
+});
+
+it('renders duration in human-friendly format in HTML', function (): void {
+    $renderer = new AuditLogRenderer;
+    $record = makeFullAuditRecord();
+
+    $signer = new AuditLogSigner;
+    [$canonicalJson] = $signer->sign($record);
+
+    $html = $renderer->render($record, $canonicalJson);
+
+    expect($html)->toContain('00:00:00,500');
+    expect($html)->not->toContain('>0.500<');
+});
