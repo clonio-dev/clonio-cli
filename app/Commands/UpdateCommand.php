@@ -14,7 +14,9 @@ class UpdateCommand extends Command
     /**
      * @var string
      */
-    protected $signature = 'update';
+    protected $signature = 'update
+        {version?          : Target version (e.g. 1.2.0 or v1.2.0) — defaults to latest}
+        {--no-verify-ssl : Skip SSL certificate verification (use behind corporate VPNs)}';
 
     /**
      * @var string
@@ -23,9 +25,9 @@ class UpdateCommand extends Command
 
     private const string GITHUB_REPO = 'clonio-dev/clonio-cli';
 
-    private const string RELEASES_API = 'https://api.github.com/repos/'.self::GITHUB_REPO.'/releases/latest';
+    private const string RELEASES_API = 'https://api.github.com/repos/'.self::GITHUB_REPO.'/releases';
 
-    private const string DOWNLOAD_BASE = 'https://github.com/'.self::GITHUB_REPO.'/releases/latest/download';
+    private const string DOWNLOAD_BASE = 'https://github.com/'.self::GITHUB_REPO.'/releases/download';
 
     public function handle(BinaryResolver $resolver): int
     {
@@ -33,52 +35,47 @@ class UpdateCommand extends Command
 
         [$currentPath, $filename] = $resolver->resolve();
 
-        try {
-            $response = Http::timeout(10)
-                ->retry(3, 100)
-                ->withUserAgent('clonio-cli')
-                ->accept('application/vnd.github.v3+json')
-                ->get(self::RELEASES_API);
-        } catch (Throwable) {
-            $this->error('Could not reach GitHub. Please check your internet connection.');
+        $skipSsl = (bool) $this->option('no-verify-ssl');
 
-            return Command::FAILURE;
+        if ($skipSsl) {
+            $this->warn('SSL verification disabled. Use only when behind a corporate VPN or proxy.');
         }
 
-        if ($response->failed()) {
-            $this->error('Could not reach GitHub. Please check your internet connection.');
+        $versionArg = $this->argument('version');
+        $requestedVersion = is_string($versionArg) && $versionArg !== '' ? $versionArg : null;
 
-            return Command::FAILURE;
-        }
+        // Resolve target version
+        $targetTag = $this->resolveTargetTag($requestedVersion, $skipSsl);
 
-        $latestTag = $response->json('tag_name');
-
-        if (! is_string($latestTag)) {
-            $this->error('Unexpected response from GitHub API.');
-
+        if ($targetTag === null) {
             return Command::FAILURE;
         }
 
         $currentVersion = $this->normalizeVersion(app()->version());
-        $latestVersion = $this->normalizeVersion($latestTag);
+        $targetVersion = $this->normalizeVersion($targetTag);
 
-        if ($currentVersion === $latestVersion) {
-            $this->info(sprintf('Already up to date (%s).', $currentVersion));
+        if ($currentVersion === $targetVersion) {
+            $this->info(sprintf('Already at version %s.', $currentVersion));
 
             return Command::SUCCESS;
         }
 
-        $this->info(sprintf('New version available: %s (current: %s)', $latestVersion, $currentVersion));
+        $this->info(sprintf('Target version: %s (current: %s)', $targetVersion, $currentVersion));
         $this->info(sprintf('Downloading %s...', $filename));
 
         $tmpPath = $currentPath.'.update';
 
         try {
-            $download = Http::timeout(120)
+            $downloadRequest = Http::timeout(120)
                 ->retry(3, 100)
                 ->withUserAgent('clonio-cli')
-                ->sink($tmpPath)
-                ->get(self::DOWNLOAD_BASE.'/'.$filename);
+                ->sink($tmpPath);
+
+            if ($skipSsl) {
+                $downloadRequest = $downloadRequest->withoutVerifying();
+            }
+
+            $download = $downloadRequest->get(self::DOWNLOAD_BASE.'/'.$targetTag.'/'.$filename);
         } catch (Throwable) {
             @unlink($tmpPath);
             $this->error('Download failed.');
@@ -109,9 +106,79 @@ class UpdateCommand extends Command
             return Command::FAILURE;
         }
 
-        $this->info(sprintf('Updated successfully to %s.', $latestVersion));
+        $this->info(sprintf('Updated successfully to %s.', $targetVersion));
 
         return Command::SUCCESS;
+    }
+
+    private function resolveTargetTag(?string $requestedVersion, bool $skipSsl): ?string
+    {
+        if ($requestedVersion !== null) {
+            // Ensure the tag starts with 'v'
+            $tag = str_starts_with($requestedVersion, 'v') ? $requestedVersion : 'v'.$requestedVersion;
+
+            // Verify the release exists
+            try {
+                $request = Http::timeout(10)
+                    ->retry(3, 100)
+                    ->withUserAgent('clonio-cli')
+                    ->accept('application/vnd.github.v3+json');
+
+                if ($skipSsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request->get(self::RELEASES_API.'/tags/'.$tag);
+            } catch (Throwable) {
+                $this->error('Could not reach GitHub. Please check your internet connection.');
+
+                return null;
+            }
+
+            if ($response->failed()) {
+                $this->error(sprintf('Version %s not found on GitHub.', $tag));
+
+                return null;
+            }
+
+            $tagName = $response->json('tag_name');
+
+            return is_string($tagName) ? $tagName : $tag;
+        }
+
+        // No version specified — fetch latest
+        try {
+            $request = Http::timeout(10)
+                ->retry(3, 100)
+                ->withUserAgent('clonio-cli')
+                ->accept('application/vnd.github.v3+json');
+
+            if ($skipSsl) {
+                $request = $request->withoutVerifying();
+            }
+
+            $response = $request->get(self::RELEASES_API.'/latest');
+        } catch (Throwable) {
+            $this->error('Could not reach GitHub. Please check your internet connection.');
+
+            return null;
+        }
+
+        if ($response->failed()) {
+            $this->error('Could not reach GitHub. Please check your internet connection.');
+
+            return null;
+        }
+
+        $latestTag = $response->json('tag_name');
+
+        if (! is_string($latestTag)) {
+            $this->error('Unexpected response from GitHub API.');
+
+            return null;
+        }
+
+        return $latestTag;
     }
 
     private function normalizeVersion(string $version): string
