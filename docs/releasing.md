@@ -24,6 +24,8 @@ make major   # v0.2.0 → v1.0.0
 
 Run `make` with no arguments to see the current version and a preview of what each command would produce.
 
+Each `make` target creates a git tag on the current commit and pushes it to `origin`. It does **not** modify any files — the version is resolved at runtime from the tag (see [Version resolution](#version-resolution) below).
+
 Or tag manually if needed:
 
 ```bash
@@ -31,16 +33,17 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The tag must follow the `v*` pattern (e.g. `v0.1.0`, `v1.2.3`). This is what triggers the build workflow.
+The tag must follow the `v*` pattern (e.g. `v0.1.0`, `v1.2.3`). This is what triggers the `build` workflow.
 
 **3. Watch the workflow**
 
-Go to `https://github.com/clonio-dev/clonio-cli/actions` and open the `build` run. It has two stages:
+Go to `https://github.com/clonio-dev/clonio-cli/actions` and open the `build` run. It has three stages:
 
 | Stage | What happens |
 |-------|-------------|
-| **Tests** | Full test suite runs on Ubuntu. If this fails, no binaries are built. |
-| **Build** | Four jobs run in parallel — one per platform. Each compiles a standalone binary and uploads it to the release. |
+| **Tests** | Full test suite runs on Ubuntu. If this fails, nothing else runs. |
+| **Build** | Three jobs run in parallel — one per platform. Each compiles a standalone binary, builds the PHAR, and uploads both as artifacts. |
+| **Release** | Downloads all artifacts and publishes a GitHub release with binaries, PHAR, and an auto-generated changelog. |
 
 The full run takes roughly 15–30 minutes on a cold cache (SPC compiles PHP from source). Subsequent runs with a warm cache are much faster.
 
@@ -49,15 +52,30 @@ The full run takes roughly 15–30 minutes on a cold cache (SPC compiles PHP fro
 Once the workflow completes, the release appears at:
 `https://github.com/clonio-dev/clonio-cli/releases/latest`
 
-It will contain three binaries:
+It will contain four files:
 
-| File | Platform |
-|------|----------|
-| `clonio-linux-x86_64` | Linux (Intel/AMD) |
-| `clonio-linux-aarch64` | Linux (ARM64) |
-| `clonio-macos-aarch64` | macOS Apple Silicon |
+| File | Platform | Requires |
+|------|----------|----------|
+| `clonio-linux-x86_64` | Linux (Intel/AMD) | nothing |
+| `clonio-linux-aarch64` | Linux (ARM64) | nothing |
+| `clonio-macos-aarch64` | macOS Apple Silicon | nothing |
+| `clonio.phar` | Any platform | PHP 8.5 |
 
-The version embedded in each binary matches the tag name and is resolved automatically from git — no manual version bump required.
+The version embedded in each binary matches the tag name (see below).
+
+## Version resolution
+
+The app version is resolved at runtime in `AppServiceProvider` using this priority:
+
+1. **`VERSION` file** — during CI, the build workflow writes the tag name (e.g. `v1.2.3`) into `VERSION` before building the PHAR. This file is baked into the PHAR/binary.
+2. **`git describe --tags`** — used during local development when the `VERSION` file contains `unreleased`.
+3. **Composer `InstalledVersions`** — final fallback.
+
+No manual version bump in `composer.json` or any other file is required. The Makefile targets only create and push git tags.
+
+## Branch protection
+
+Direct pushes to `main` are forbidden. All changes must go through a pull request. The `tests` workflow must pass before merging.
 
 ## Deleting a bad release
 
@@ -73,4 +91,4 @@ Then delete the draft/broken release on GitHub manually, fix the issue, and re-t
 
 ## Cache invalidation
 
-If you change the PHP version or extensions list in `build.yml`, bump the `-v1` suffix in the two SPC cache keys (`spc-downloads-*` and `spc-build-*`) so the old compiled PHP is not reused.
+If you change the PHP version or extensions list in `build.yml`, bump the `-v2` suffix in the two SPC cache keys (`spc-downloads-*` and `spc-build-*`) so the old compiled PHP is not reused.
