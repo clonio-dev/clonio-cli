@@ -26,7 +26,7 @@ class InitCommand extends Command
 
     public function handle(AsciiArtService $asciiArtService, ConfigService $config): int
     {
-        $asciiArtService->clonioLogoWithShadow($this->output, '  ');
+        $asciiArtService->clonioLogoWithClaim($this->output, '  ');
         $this->line('  Checking for APP_KEY ...');
 
         $keyInEnv = $this->keyInSystemEnv();

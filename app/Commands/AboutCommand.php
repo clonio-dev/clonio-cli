@@ -19,14 +19,11 @@ class AboutCommand extends Command
 
     public function handle(AsciiArtService $asciiArtService): int
     {
-        $asciiArtService->clonioLogoWithShadow($this->output);
+        $asciiArtService->clonioLogoWithClaim($this->output, '  ');
 
-        $this->info('Clonio transfers your production database to your test and dev environments');
-        $this->info('with automatic anonymization, fake data generation and full audit trails.');
+        $this->info('  It is open source software. It is free for individuals and NGOs.');
         $this->newLine();
-        $this->info('It is open source software. It is free for individuals and NGOs.');
-        $this->newLine();
-        $this->warn('See https://clonio.io for more information.');
+        $this->warn('  See https://clonio.io for more information.');
 
         return Command::SUCCESS;
     }

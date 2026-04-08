@@ -7,3 +7,4 @@
 .env
 /storage/framework/testing/*
 /storage/logs/*.log
+/clonio.json
