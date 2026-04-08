@@ -20,13 +20,11 @@ The installed version matches the Composer package version (i.e. the git tag use
 
 ## How It Works
 
-The `bin` entry in `composer.json` points to `builds/clonio` — the compiled PHAR binary that is committed to the repository for each release. When Composer installs the package it creates a `vendor/bin/clonio` stub that executes this PHAR.
-
-The PHAR is self-contained: it bundles the application source and all runtime dependencies. PHP 8.5 on the host machine is required.
+The `bin` entry in `composer.json` points to `clonio`. When Composer installs the package it creates a `vendor/bin/clonio` stub that executes this file.
 
 ## PHP Version Requirement
 
-The PHAR requires PHP ≥ 8.5. Verify your PHP version:
+Clonio CLI requires PHP ≥ 8.5. Verify your PHP version:
 
 ```bash
 php --version
@@ -47,6 +45,5 @@ php --version
 
 ## Notes
 
-- The PHAR is committed to the repository at `builds/clonio` and included in each release tag. It is **not** built on the consumer machine.
 - Platform-specific standalone binaries (`clonio-linux-x86_64`, etc.) are built via GitHub Actions and attached to releases; they are **not** committed to git and are not available via Composer.
 - For global installation or use without Composer, download a binary from the [latest release](https://github.com/clonio-dev/clonio-cli/releases/latest).

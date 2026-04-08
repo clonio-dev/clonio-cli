@@ -1,6 +1,5 @@
 {
     "name": "clonio-dev/clonio-cli",
-    "version": "0.4.0",
     "description": "The clonio application",
     "homepage": "https://clonio.dev",
     "type": "project",
@@ -76,5 +75,5 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "bin": ["builds/clonio"]
+    "bin": ["clonio"]
 }

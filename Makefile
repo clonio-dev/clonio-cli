@@ -35,16 +35,10 @@ patch:
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
 	PATCH=$$(echo "$$VERSION" | cut -d. -f3); \
 	NEW="v$$MAJOR.$$MINOR.$$((PATCH+1))"; \
-	VERSION_NO_V=$$(echo "$$NEW" | sed 's/^v//'); \
-	echo "Releasing $$NEW..."; \
-	echo "$$NEW" > VERSION; \
-	sed -i 's/"version": ".*"/"version": "'"$$VERSION_NO_V"'"/' composer.json; \
-	git add VERSION composer.json; \
-	git commit -m "chore: release $$NEW"; \
+	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin main; \
 	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. CI will build the PHAR and standalone binaries automatically."
+	echo "Done — $$NEW pushed. CI will build the release automatically."
 
 minor:
 	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
@@ -53,16 +47,10 @@ minor:
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	MINOR=$$(echo "$$VERSION" | cut -d. -f2); \
 	NEW="v$$MAJOR.$$((MINOR+1)).0"; \
-	VERSION_NO_V=$$(echo "$$NEW" | sed 's/^v//'); \
-	echo "Releasing $$NEW..."; \
-	echo "$$NEW" > VERSION; \
-	sed -i 's/"version": ".*"/"version": "'"$$VERSION_NO_V"'"/' composer.json; \
-	git add VERSION composer.json; \
-	git commit -m "chore: release $$NEW"; \
+	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin main; \
 	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. CI will build the PHAR and standalone binaries automatically."
+	echo "Done — $$NEW pushed. CI will build the release automatically."
 
 major:
 	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | head -1); \
@@ -70,13 +58,7 @@ major:
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	NEW="v$$((MAJOR+1)).0.0"; \
-	VERSION_NO_V=$$(echo "$$NEW" | sed 's/^v//'); \
-	echo "Releasing $$NEW..."; \
-	echo "$$NEW" > VERSION; \
-	sed -i 's/"version": ".*"/"version": "'"$$VERSION_NO_V"'"/' composer.json; \
-	git add VERSION composer.json; \
-	git commit -m "chore: release $$NEW"; \
+	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin main; \
 	git push origin "$$NEW"; \
-	echo "Done — $$NEW pushed. CI will build the PHAR and standalone binaries automatically."
+	echo "Done — $$NEW pushed. CI will build the release automatically."

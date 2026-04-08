@@ -1,8 +1,4 @@
-/builds/clonio-linux-x86_64
-/builds/clonio-linux-aarch64
-/builds/clonio-macos-aarch64
-/builds/*
-!/builds/clonio
+/builds
 /vendor
 /.idea
 /.vscode
