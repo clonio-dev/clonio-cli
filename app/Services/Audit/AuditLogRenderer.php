@@ -99,7 +99,7 @@ class AuditLogRenderer
         <th>Strategy</th>
         <th>Rows Transferred</th>
         <th>Rows Skipped</th>
-        <th>Duration (s)</th>
+        <th>Duration</th>
       </tr>
     </thead>
     <tbody>
@@ -130,11 +130,26 @@ class AuditLogRenderer
 HTML;
     }
 
+    /**
+     * Format seconds into HH:MM:SS,mmm (e.g. 00:07:25,757).
+     */
+    public static function formatDuration(float $seconds): string
+    {
+        $totalSeconds = (int) floor($seconds);
+        $milliseconds = (int) round(($seconds - $totalSeconds) * 1000);
+
+        $hours = intdiv($totalSeconds, 3600);
+        $minutes = intdiv($totalSeconds % 3600, 60);
+        $secs = $totalSeconds % 60;
+
+        return sprintf('%02d:%02d:%02d,%03d', $hours, $minutes, $secs, $milliseconds);
+    }
+
     private function renderTableRow(AuditTableRecordData $table): string
     {
         $existed = $table->existed ? 'Yes' : 'No';
         $skipped = $table->skippedByFlag ? 'Yes' : 'No';
-        $duration = number_format($table->durationSeconds, 3);
+        $duration = self::formatDuration($table->durationSeconds);
 
         return sprintf(
             '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%d</td><td>%s</td></tr>',
