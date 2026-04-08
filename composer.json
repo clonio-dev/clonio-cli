@@ -4,6 +4,22 @@
     "homepage": "https://clonio.dev",
     "type": "project",
     "license": "MIT",
+    "keywords": [
+        "cli",
+        "database",
+        "anonymization",
+        "gdpr",
+        "data-privacy",
+        "database-transfer",
+        "fake-data",
+        "production-to-dev",
+        "laravel-zero",
+        "devops",
+        "database-cloning",
+        "data-masking",
+        "dev",
+        "testing"
+    ],
     "support": {
         "issues": "https://github.com/clonio-dev/clonio-cli/issues",
         "source": "https://github.com/clonio-dev/clonio-cli"
