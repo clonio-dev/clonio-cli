@@ -189,7 +189,7 @@ class AddCommand extends Command
 
         // --- Production warning ---
         if ($isProduction) {
-            $this->components->warn('This connection is marked as production. Destructive operations will require confirmation.');
+            $this->warn('This connection is marked as production. Destructive operations will require confirmation.');
         }
 
         // --- Summary table ---
