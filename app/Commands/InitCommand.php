@@ -103,9 +103,12 @@ class InitCommand extends Command
             'stderr' => ['type' => 'stderr'],
         ];
 
+        $created = [];
+
         foreach ($defaults as $name => $channelConfig) {
             if (! $config->hasAuditChannel($name)) {
                 $config->setAuditChannel($name, $channelConfig);
+                $created[] = $name;
             }
         }
 
@@ -116,6 +119,17 @@ class InitCommand extends Command
                 $config->setAuditDeliverTo($logType, array_merge($current, ['local']));
             }
         }
+
+        if ($created !== []) {
+            $this->info(sprintf(
+                '  ✓  Created clonio.json with default audit channels: %s',
+                implode(', ', $created),
+            ));
+        } else {
+            $this->info('  ✓  Audit channels in clonio.json — ready.');
+        }
+
+        $this->line('');
     }
 
     private function keyInSystemEnv(): bool
