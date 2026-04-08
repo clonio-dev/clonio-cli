@@ -12,6 +12,7 @@ use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableDumpData;
 use App\Data\ConnectionData;
 use App\Data\Pii\PiiMatcherData;
+use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
 use App\Enums\ExitCode;
 use App\Enums\KeyRemappingStrategy;
@@ -277,15 +278,26 @@ class DumpCommand extends Command
 
     private function buildKeyRemapping(DatabaseSchemaData $schema): ?KeyRemappingConfigData
     {
-        // Collect tables that have an integer primary key
+        // Collect tables that have a single integer primary key.
+        // Tables with composite primary keys (e.g. N:M pivot tables) are
+        // skipped — their FK columns are remapped automatically via the
+        // parent tables' foreign_keys entries.
         $intPkByTable = [];
 
         foreach ($schema->tables as $table) {
-            foreach ($table->columns as $column) {
-                if ($column->isPrimary && $this->isIntegerType($column->type)) {
-                    $intPkByTable[$table->name] = $column->name;
-                    break;
-                }
+            $pkColumns = array_filter(
+                $table->columns,
+                static fn (ColumnSchemaData $col): bool => $col->isPrimary
+            );
+
+            if (count($pkColumns) !== 1) {
+                continue;
+            }
+
+            $pkColumn = reset($pkColumns);
+
+            if ($this->isIntegerType($pkColumn->type)) {
+                $intPkByTable[$table->name] = $pkColumn->name;
             }
         }
 

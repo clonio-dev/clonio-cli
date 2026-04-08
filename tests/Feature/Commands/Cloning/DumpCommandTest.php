@@ -310,6 +310,79 @@ it('includes key_remapping section for tables with integer primary keys', functi
     expect($yaml)->toContain('self_referential: false');
 });
 
+it('skips composite primary key tables from key remapping', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'mydb',
+        tables: [
+            new TableSchemaData(
+                name: 'posts',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'title', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'tags',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'name', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'post_tag',
+                columns: [
+                    new ColumnSchemaData(name: 'post_id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'tag_id', type: 'int', nullable: false, default: null, isPrimary: true),
+                ],
+                foreignKeys: [
+                    new ForeignKeyData(columnName: 'post_id', referencedTable: 'posts', referencedColumn: 'id'),
+                    new ForeignKeyData(columnName: 'tag_id', referencedTable: 'tags', referencedColumn: 'id'),
+                ],
+            ),
+        ],
+    );
+
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->toBeString();
+
+    // posts and tags should have remapping (single integer PK)
+    expect($yaml)->toContain('strategy: remapping');
+
+    // post_tag (composite PK) should NOT have remapping
+    // Its FK columns are listed in the parent tables' foreign_keys instead
+    expect($yaml)->toContain('column: post_id');
+    expect($yaml)->toContain('column: tag_id');
+
+    // The pivot table should not have its own remapping entry
+    // Count remapping occurrences — should be exactly 2 (posts.id + tags.id)
+    expect(substr_count($yaml, 'strategy: remapping'))->toBe(2);
+});
+
 it('omits key_remapping section when no integer primary keys exist', function (): void {
     Storage::fake('local');
 
