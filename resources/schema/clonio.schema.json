@@ -1,0 +1,215 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://clonio.dev/schema/v1/clonio.schema.json",
+  "title": "Clonio Configuration",
+  "description": "Project-level configuration file for the Clonio CLI tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URI for editor auto-complete and validation."
+    },
+    "connections": {
+      "type": "object",
+      "description": "Named database connections.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9_-]+$": {
+          "$ref": "#/definitions/connection"
+        }
+      }
+    },
+    "mappings": {
+      "type": "object",
+      "description": "User overrides on top of built-in config.",
+      "additionalProperties": false,
+      "properties": {
+        "pii": {
+          "type": "object",
+          "description": "PII class definitions and overrides.",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z0-9_]+$": {
+              "$ref": "#/definitions/piiClass"
+            }
+          }
+        },
+        "types": {
+          "type": "object",
+          "description": "Database type mappings per driver pair.",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^(mysql|mariadb|pgsql|sqlsrv|sqlite)_to_(mysql|mariadb|pgsql|sqlsrv|sqlite)$": {
+              "$ref": "#/definitions/typeMapping"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "connection": {
+      "type": "object",
+      "required": ["type", "database"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "sqlite" }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": ["type", "database"],
+            "properties": {
+              "type": { "const": "sqlite" },
+              "database": {
+                "type": "string",
+                "description": "Absolute path to the SQLite database file."
+              },
+              "is_production": {
+                "type": "boolean",
+                "description": "Whether this is a production database.",
+                "default": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["mysql", "mariadb", "pgsql", "sqlsrv"] }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": ["type", "host", "port", "database", "username", "password"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["mysql", "mariadb", "pgsql", "sqlsrv"]
+              },
+              "host": {
+                "type": "string",
+                "description": "Database server hostname or IP address."
+              },
+              "port": {
+                "type": "integer",
+                "description": "Database server port.",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "database": {
+                "type": "string",
+                "description": "Database name."
+              },
+              "schema": {
+                "type": "string",
+                "description": "Database schema (e.g. for PostgreSQL)."
+              },
+              "username": {
+                "type": "string",
+                "description": "Database username."
+              },
+              "password": {
+                "type": "string",
+                "description": "Encrypted password. Must start with 'encrypted:'.",
+                "pattern": "^encrypted:.+"
+              },
+              "is_production": {
+                "type": "boolean",
+                "description": "Whether this is a production database.",
+                "default": false
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["mysql", "mariadb", "pgsql", "sqlsrv", "sqlite"],
+          "description": "Database driver type."
+        },
+        "host": { "type": "string" },
+        "port": { "type": "integer" },
+        "database": { "type": "string" },
+        "schema": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "is_production": { "type": "boolean" }
+      }
+    },
+    "piiClass": {
+      "type": "object",
+      "required": ["patterns"],
+      "additionalProperties": false,
+      "properties": {
+        "patterns": {
+          "type": "array",
+          "description": "Column name patterns that identify this PII class. Matched case-insensitively. Supports glob-style wildcards.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "default_transformation": {
+          "$ref": "#/definitions/transformation",
+          "description": "Transformation applied unless overridden per-column."
+        },
+        "transformations": {
+          "type": "array",
+          "description": "Full list of allowed transformations for this PII class.",
+          "items": {
+            "$ref": "#/definitions/transformation"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "transformation": {
+      "type": "string",
+      "description": "A transformation key. Either a known built-in or a static:<value> pattern.",
+      "oneOf": [
+        {
+          "enum": [
+            "fake_email",
+            "fake_first_name",
+            "fake_last_name",
+            "fake_full_name",
+            "fake_phone",
+            "fake_address",
+            "fake_city",
+            "fake_postcode",
+            "fake_country",
+            "fake_username",
+            "fake_date_of_birth",
+            "mask",
+            "mask_ip",
+            "mask_credit_card",
+            "mask_iban",
+            "hash",
+            "static_hash",
+            "nullify",
+            "truncate"
+          ]
+        },
+        {
+          "pattern": "^static:.+"
+        }
+      ]
+    },
+    "typeMapping": {
+      "type": "object",
+      "description": "Maps source column types to target column types. Keys are source types, values are target types.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
