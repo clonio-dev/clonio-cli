@@ -131,6 +131,21 @@ jobs:
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
         run: ./spc build --build-micro "${{ env.EXTENSIONS }}"
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+      - name: Stamp version from tag
+        run: echo "${{ github.ref_name }}" > VERSION
+
+      - name: Build PHAR
+        run: php clonio app:build clonio --no-interaction
+
       - name: Combine PHAR + micro into standalone binary
         run: |
           ./spc micro:combine builds/clonio --output ${{ matrix.output }}
