@@ -294,3 +294,25 @@ jobs:
             ```bash
             php clonio.phar --version
             ```
+
+            ### Composer (dev dependency)
+
+            ```bash
+            composer require --dev clonio-dev/clonio-cli
+            vendor/bin/clonio --version
+            ```
+
+  notify-packagist:
+    name: Notify Packagist
+    needs: release
+    runs-on: ubuntu-latest
+    if: always() && needs.release.result == 'success'
+    steps:
+      - name: Ping Packagist
+        env:
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_API_TOKEN: ${{ secrets.PACKAGIST_API_TOKEN }}
+        run: |
+          curl -fsS -X POST "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            -d '{"repository":{"url":"https://packagist.org/packages/clonio-dev/clonio-cli"}}'
