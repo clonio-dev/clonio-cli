@@ -8,3 +8,4 @@
 /storage/framework/testing/*
 /storage/logs/*.log
 /clonio.json
+.DS_Store

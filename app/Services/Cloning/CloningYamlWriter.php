@@ -54,6 +54,15 @@ class CloningYamlWriter
                     static fn (ColumnDumpData $col): bool => $col->strategy !== 'keep'
                 );
 
+            // Exclude the primary key column when key remapping handles it,
+            // to avoid duplicate entries in the YAML output.
+            if ($krTable instanceof KeyRemappingTableData) {
+                $nonKeepColumns = array_filter(
+                    $nonKeepColumns,
+                    static fn (ColumnDumpData $col): bool => $col->name !== $krTable->primaryKey
+                );
+            }
+
             if ($nonKeepColumns === [] && ! $krTable instanceof KeyRemappingTableData) {
                 $lines[] = '    # no PII detected — no columns listed; all kept as-is';
             } else {

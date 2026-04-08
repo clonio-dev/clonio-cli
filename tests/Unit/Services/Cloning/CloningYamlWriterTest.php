@@ -326,3 +326,40 @@ it('writes remapping strategy as inline column not key_remapping section', funct
     // The old top-level section must NOT appear
     expect($yaml)->not->toContain('key_remapping:');
 });
+
+it('does not duplicate primary key column when key remapping is active', function (): void {
+    $writer = new CloningYamlWriter;
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [makeKeepColumn('id'), makeFakeColumn('email')],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+    $keyRemapping = new KeyRemappingConfigData(tables: [
+        new KeyRemappingTableData(
+            table: 'users',
+            primaryKey: 'id',
+            strategy: KeyRemappingStrategy::RandomInteger,
+            rangeMin: 100000,
+            rangeMax: 9999999,
+            foreignKeys: [],
+        ),
+    ]);
+    $result = new DumpResultData(
+        connectionName: 'prod',
+        tables: [$table],
+        totalColumns: 2,
+        piiColumnsDetected: 1,
+        outputPath: 'prod.cloning.yaml',
+        fakerLocale: 'en_US',
+        keyRemapping: $keyRemapping,
+        includeKeepColumns: true,
+    );
+
+    $yaml = $writer->write($result);
+
+    // The primary key should appear exactly once as a remapping entry
+    expect(substr_count($yaml, 'id:'))->toBe(1)
+        ->and($yaml)->toContain('strategy: remapping');
+});
