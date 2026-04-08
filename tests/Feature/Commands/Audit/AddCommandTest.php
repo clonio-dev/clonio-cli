@@ -63,8 +63,7 @@ it('successfully adds a local channel with all options', function (): void {
     $this->artisan('audit:add', [
         'name' => 'my-local',
         '--type' => 'local',
-        '--local-audit-log-path' => './audit-logs/{year}',
-        '--local-run-log-path' => './run-logs/{year}',
+        '--local-path' => './clonio-logs/{year}',
         '--deliver-audit-log' => true,
         '--deliver-run-log' => true,
     ])
@@ -83,8 +82,7 @@ it('cancels when the user declines the save confirmation', function (): void {
     $this->artisan('audit:add', [
         'name' => 'my-local',
         '--type' => 'local',
-        '--local-audit-log-path' => './audit-logs/{year}',
-        '--local-run-log-path' => './run-logs/{year}',
+        '--local-path' => './clonio-logs/{year}',
         '--no-deliver-audit-log' => true,
         '--no-deliver-run-log' => true,
     ])

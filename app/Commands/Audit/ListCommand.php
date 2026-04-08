@@ -59,8 +59,7 @@ class ListCommand extends Command
     private function getDetails(?AuditChannelType $type, array $channel): string
     {
         if ($type === AuditChannelType::Local) {
-            $auditLog = $channel['audit_log'] ?? null;
-            $path = is_array($auditLog) ? ($auditLog['path'] ?? null) : null;
+            $path = is_string($channel['path'] ?? null) ? $channel['path'] : null;
 
             return is_string($path) ? $path : '—';
         }

@@ -20,8 +20,7 @@ it('lists a local channel with type label in output', function (): void {
     $config->shouldReceive('getAuditChannels')->andReturn([
         'my-local' => [
             'type' => 'local',
-            'audit_log' => ['path' => './logs/'],
-            'run_log' => ['path' => './run-logs/'],
+            'path' => './clonio-logs/',
         ],
     ]);
     $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn(['my-local']);

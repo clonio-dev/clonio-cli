@@ -176,7 +176,7 @@ it('returns empty audit channels when none are configured', function (): void {
 
 it('saves and retrieves an audit channel', function (): void {
     $config = new ConfigService;
-    $channelConfig = ['type' => 'local', 'audit_log' => ['path' => './logs']];
+    $channelConfig = ['type' => 'local', 'path' => './clonio-logs'];
 
     $config->setAuditChannel('my-local', $channelConfig);
 

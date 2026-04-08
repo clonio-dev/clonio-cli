@@ -26,7 +26,7 @@ it('errors when the given channel name is not found', function (): void {
 });
 
 it('deletes channel after user confirms', function (): void {
-    $channel = ['type' => 'local', 'audit_log' => ['path' => './logs']];
+    $channel = ['type' => 'local', 'path' => './clonio-logs'];
 
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);

@@ -42,8 +42,7 @@ it('delivers to local channel when configured', function (): void {
         'channels' => [
             'local-main' => [
                 'type' => 'local',
-                'audit_log' => ['path' => 'audit-logs'],
-                'run_log' => ['path' => 'run-logs'],
+                'path' => 'clonio-logs',
             ],
         ],
     ];
@@ -70,7 +69,7 @@ it('skips unsupported channel types', function (): void {
         'channels' => [
             's3-bucket' => [
                 'type' => 's3',
-                'audit_log' => ['bucket' => 'my-bucket'],
+                'bucket' => 'my-bucket',
             ],
         ],
     ];
@@ -98,13 +97,11 @@ it('applies channel override to filter channels', function (): void {
         'channels' => [
             'local-main' => [
                 'type' => 'local',
-                'audit_log' => ['path' => 'audit-logs'],
-                'run_log' => ['path' => 'run-logs'],
+                'path' => 'clonio-logs',
             ],
             'local-secondary' => [
                 'type' => 'local',
-                'audit_log' => ['path' => 'audit-logs-2'],
-                'run_log' => ['path' => 'run-logs-2'],
+                'path' => 'clonio-logs-2',
             ],
         ],
     ];

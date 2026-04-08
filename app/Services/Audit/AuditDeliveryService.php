@@ -62,20 +62,15 @@ class AuditDeliveryService
             $type = $channelConfig['type'] ?? null;
 
             if ($type === 'local') {
-                /** @var array<string, mixed> $auditLogConfig */
-                $auditLogConfig = is_array($channelConfig['audit_log'] ?? null) ? $channelConfig['audit_log'] : [];
-                /** @var array<string, mixed> $runLogConfig */
-                $runLogConfig = is_array($channelConfig['run_log'] ?? null) ? $channelConfig['run_log'] : [];
+                $path = is_string($channelConfig['path'] ?? null) ? $channelConfig['path'] : 'clonio-logs';
 
                 // Deliver audit artefacts
-                $auditPath = is_string($auditLogConfig['path'] ?? null) ? $auditLogConfig['path'] : 'audit-logs';
-                $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $auditPath, $templateVars));
+                $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $path, $templateVars));
 
                 // Deliver run log
-                $runLogPath = is_string($runLogConfig['path'] ?? null) ? $runLogConfig['path'] : 'run-logs';
                 $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
 
-                $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$runLogFilename => $runLogContent], $runLogPath, $templateVars));
+                $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$runLogFilename => $runLogContent], $path, $templateVars));
             } elseif ($type === 'stdout') {
                 $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
 

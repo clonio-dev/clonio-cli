@@ -128,20 +128,12 @@ class UpdateCommand extends Command
      */
     private function updateLocalFields(array $current): array
     {
-        $auditLogSection = $current['audit_log'] ?? null;
-        $auditLogPath2 = is_array($auditLogSection) ? ($auditLogSection['path'] ?? null) : null;
-        $currentAuditPath = is_string($auditLogPath2) ? $auditLogPath2 : './audit-logs/{year}/{month}';
+        $currentPath = is_string($current['path'] ?? null) ? $current['path'] : './clonio-logs/{year}/{month}';
 
-        $runLogSection = $current['run_log'] ?? null;
-        $runLogPath2 = is_array($runLogSection) ? ($runLogSection['path'] ?? null) : null;
-        $currentRunPath = is_string($runLogPath2) ? $runLogPath2 : './run-logs/{year}/{month}';
-
-        $auditLogPath = $this->askString('Audit log path', $currentAuditPath);
-        $runLogPath = $this->askString('Run log path', $currentRunPath);
+        $path = $this->askString('Log path', $currentPath);
 
         return [
-            'audit_log' => ['path' => $auditLogPath],
-            'run_log' => ['path' => $runLogPath],
+            'path' => $path,
         ];
     }
 
