@@ -39,6 +39,7 @@ class InitCommand extends Command
                 $this->info('  ✓  APP_KEY found in .env — ready.');
             }
 
+            $this->ensureGitignoreEntries();
             $this->ensureDefaultAuditChannels($config);
 
             return ExitCode::Success->value;
@@ -56,6 +57,7 @@ class InitCommand extends Command
                 $this->line('  Cancelled.');
                 $this->line('');
 
+                $this->ensureGitignoreEntries();
                 $this->ensureDefaultAuditChannels($config);
 
                 return ExitCode::Success->value;
@@ -84,8 +86,7 @@ class InitCommand extends Command
         $this->info(sprintf('  ✓  Created .env with APP_KEY in %s', $cwdDisplay));
         $this->line('');
 
-        $this->showGitignoreHint();
-
+        $this->ensureGitignoreEntries();
         $this->ensureDefaultAuditChannels($config);
 
         return ExitCode::Success->value;
@@ -192,9 +193,14 @@ class InitCommand extends Command
         chmod(Storage::path('.env'), 0600);
     }
 
-    private function showGitignoreHint(): void
+    private function ensureGitignoreEntries(): void
     {
+        $entries = ['.env', 'clonio.json'];
+
         if (! Storage::exists('.gitignore')) {
+            $this->line('  ℹ  No .gitignore found. Add .env and clonio.json to avoid committing secrets.');
+            $this->line('');
+
             return;
         }
 
@@ -204,11 +210,16 @@ class InitCommand extends Command
             return;
         }
 
-        if (preg_match('/^\.env$/m', $content)) {
-            return;
-        }
+        foreach ($entries as $entry) {
+            $escaped = preg_quote($entry, '/');
 
-        $this->line('  ℹ  Remember to add .env to your .gitignore to avoid committing your APP_KEY.');
-        $this->line('');
+            if (preg_match('/^\\/?'.$escaped.'\\s*$/m', $content)) {
+                continue;
+            }
+
+            $content = rtrim($content)."\n".$entry."\n";
+            Storage::put('.gitignore', $content);
+            $this->info(sprintf('  ✓  Added to .gitignore: %s', $entry));
+        }
     }
 }

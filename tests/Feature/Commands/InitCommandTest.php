@@ -63,25 +63,63 @@ it('appends APP_KEY to existing .env that has no key', function (): void {
         ->toContain('APP_KEY=base64:');
 });
 
-it('shows gitignore hint when .gitignore exists without .env entry', function (): void {
+it('auto-appends .env and clonio.json to .gitignore when both are missing', function (): void {
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
 
     Storage::put('.gitignore', "/vendor\n/builds\n");
 
     $this->artisan('init')
-        ->expectsOutputToContain('Remember to add .env to your .gitignore')
+        ->expectsOutputToContain('Added to .gitignore: .env')
+        ->expectsOutputToContain('Added to .gitignore: clonio.json')
         ->assertExitCode(0);
+
+    $content = Storage::get('.gitignore');
+    expect($content)->toContain('.env')->toContain('clonio.json');
 });
 
-it('does not show gitignore hint when .env is already in .gitignore', function (): void {
+it('only appends clonio.json when .env is already in .gitignore', function (): void {
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
 
     Storage::put('.gitignore', "/vendor\n.env\n");
 
     $this->artisan('init')
-        ->doesntExpectOutputToContain('Remember to add .env')
+        ->doesntExpectOutputToContain('Added to .gitignore: .env')
+        ->expectsOutputToContain('Added to .gitignore: clonio.json')
+        ->assertExitCode(0);
+
+    $content = Storage::get('.gitignore');
+    expect($content)->toContain('clonio.json');
+});
+
+it('appends nothing when both .env and clonio.json are already in .gitignore', function (): void {
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    Storage::put('.gitignore', "/vendor\n.env\nclonio.json\n");
+
+    $this->artisan('init')
+        ->doesntExpectOutputToContain('Added to .gitignore')
+        ->assertExitCode(0);
+});
+
+it('prints a note when no .gitignore exists', function (): void {
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    $this->artisan('init')
+        ->expectsOutputToContain('No .gitignore found')
+        ->assertExitCode(0);
+});
+
+it('auto-appends to .gitignore even when APP_KEY already exists in environment', function (): void {
+    // APP_KEY already in env from beforeEach
+    Storage::put('.gitignore', "/vendor\n");
+
+    $this->artisan('init')
+        ->expectsOutputToContain('Added to .gitignore: .env')
+        ->expectsOutputToContain('Added to .gitignore: clonio.json')
         ->assertExitCode(0);
 });
 
