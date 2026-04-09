@@ -189,3 +189,46 @@ it('cancels when user declines confirmation', function (): void {
     // File should be unchanged
     expect(Storage::disk('local')->get('test.cloning.yaml'))->toBe($original);
 });
+
+it('shows no-arguments hint and skips faker_arguments prompt for no-arg methods', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTestCloningYaml());
+
+    // firstName takes no arguments — the hint should appear and no argument prompt shown
+    $this->artisan('cloning:column:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--column' => 'email',
+        '--strategy' => 'fake',
+        '--faker-method' => 'firstName',
+        // No --faker-arguments flag: the command should skip asking for them
+    ])
+        ->expectsOutputToContain('firstName() takes no arguments')
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    $content = Storage::disk('local')->get('test.cloning.yaml');
+    expect($content)->toContain('faker_method: firstName');
+    // faker_arguments should be written as an empty collection ([] or {})
+    expect($content)->toMatch('/faker_arguments:\s*(\[\]|\{.*\})/');
+});
+
+it('shows argument hint for methods that accept arguments', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTestCloningYaml());
+
+    $this->artisan('cloning:column:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--column' => 'email',
+        '--strategy' => 'fake',
+        '--faker-method' => 'numberBetween',
+        '--faker-arguments' => '1,100',
+    ])
+        ->expectsOutputToContain('numberBetween() arguments:')
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    $content = Storage::disk('local')->get('test.cloning.yaml');
+    expect($content)->toContain('faker_method: numberBetween');
+});

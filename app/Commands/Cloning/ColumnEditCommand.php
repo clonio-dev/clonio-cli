@@ -90,6 +90,39 @@ class ColumnEditCommand extends Command
         'uuid', 'word', 'numberBetween', 'randomFloat',
     ];
 
+    /**
+     * Arguments each faker method accepts, as human-readable hints.
+     * Methods with an empty list take no arguments.
+     *
+     * @var array<string, list<string>>
+     */
+    private const array FAKER_METHOD_ARGS = [
+        'safeEmail' => [],
+        'userName' => [],
+        'name' => [],
+        'firstName' => [],
+        'lastName' => [],
+        'phoneNumber' => [],
+        'address' => [],
+        'city' => [],
+        'postcode' => [],
+        'countryCode' => [],
+        'company' => [],
+        'jobTitle' => [],
+        'date' => ['format (string, e.g. "Y-m-d")', 'max (string|null, e.g. "now")'],
+        'latitude' => ['min (float, default -90)', 'max (float, default 90)'],
+        'longitude' => ['min (float, default -180)', 'max (float, default 180)'],
+        'buildingNumber' => [],
+        'text' => ['maxNbChars (int, default 200)'],
+        'sentence' => ['nbWords (int, default 6)', 'variableNbWords (bool, default true)'],
+        'url' => [],
+        'ipv4' => [],
+        'uuid' => [],
+        'word' => [],
+        'numberBetween' => ['min (int, default 0)', 'max (int, default 2147483647)'],
+        'randomFloat' => ['nbMaxDecimals (int|null)', 'min (float, default 0)', 'max (float, default 100)'],
+    ];
+
     /** @var list<string> */
     private const array HASH_ALGORITHMS = ['sha256', 'sha512', 'md5', 'sha1'];
 
@@ -244,6 +277,19 @@ class ColumnEditCommand extends Command
         $newConfig = ['strategy' => $strategyKey];
 
         foreach ($definition['parameters'] as $param) {
+            // Skip faker_arguments when the chosen faker method takes no arguments
+            if ($param['name'] === 'faker_arguments') {
+                $chosenMethod = is_string($newConfig['faker_method'] ?? null) ? $newConfig['faker_method'] : '';
+                $argHints = self::FAKER_METHOD_ARGS[$chosenMethod] ?? null;
+
+                if ($argHints === []) {
+                    // No arguments for this method — store empty array and skip prompt
+                    $newConfig[$param['name']] = [];
+
+                    continue;
+                }
+            }
+
             $value = $this->collectParameter($param);
             if ($value !== null) {
                 $newConfig[$param['name']] = $value;
@@ -329,6 +375,11 @@ class ColumnEditCommand extends Command
         }
 
         if (is_string($opt)) {
+            // When faker_method is supplied via flag, still show the argument hint
+            if ($param['name'] === 'faker_method') {
+                $this->showFakerMethodHint($opt);
+            }
+
             return $opt;
         }
 
@@ -340,6 +391,17 @@ class ColumnEditCommand extends Command
         };
     }
 
+    private function showFakerMethodHint(string $method): void
+    {
+        $argHints = self::FAKER_METHOD_ARGS[$method] ?? null;
+
+        if ($argHints === []) {
+            $this->line(sprintf('  <comment>ℹ</comment>  %s() takes no arguments — leave faker arguments blank.', $method));
+        } elseif ($argHints !== null) {
+            $this->line(sprintf('  <comment>ℹ</comment>  %s() arguments: %s', $method, implode(', ', $argHints)));
+        }
+    }
+
     /**
      * @param  array{name: string, label: string, type: string, default: string}  $param
      */
@@ -349,8 +411,11 @@ class ColumnEditCommand extends Command
             $methods = self::FAKER_METHODS;
             $defaultIdx = (int) array_search($param['default'], $methods, true);
             $chosen = $this->choice($param['label'], $methods, $defaultIdx);
+            $method = is_string($chosen) ? $chosen : $param['default'];
 
-            return is_string($chosen) ? $chosen : $param['default'];
+            $this->showFakerMethodHint($method);
+
+            return $method;
         }
 
         if ($param['name'] === 'algorithm') {
