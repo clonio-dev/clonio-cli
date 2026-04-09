@@ -41,6 +41,34 @@ When run without flags, the command walks through each step interactively:
 
 Available faker methods in the interactive picker: `safeEmail`, `userName`, `name`, `firstName`, `lastName`, `phoneNumber`, `address`, `city`, `postcode`, `countryCode`, `company`, `jobTitle`, `date`, `latitude`, `longitude`, `buildingNumber`, `text`, `sentence`, `url`, `ipv4`, `uuid`, `word`, `numberBetween`, `randomFloat`.
 
+#### Argument hints
+
+After a faker method is selected (interactively or via `--faker-method`), Clonio prints a hint showing what arguments the method accepts:
+
+```
+  ℹ  numberBetween() arguments: min (int, default 0), max (int, default 2147483647)
+```
+
+Methods that take no arguments display:
+
+```
+  ℹ  safeEmail() takes no arguments — leave faker arguments blank.
+```
+
+The argument prompt is skipped automatically for methods with no arguments; the YAML will contain `faker_arguments: []`.
+
+Argument reference for methods that accept parameters:
+
+| Method | Arguments |
+|--------|-----------|
+| `date` | `format` (string, e.g. `"Y-m-d"`), `max` (string\|null, e.g. `"now"`) |
+| `latitude` | `min` (float, default -90), `max` (float, default 90) |
+| `longitude` | `min` (float, default -180), `max` (float, default 180) |
+| `text` | `maxNbChars` (int, default 200) |
+| `sentence` | `nbWords` (int, default 6), `variableNbWords` (bool, default true) |
+| `numberBetween` | `min` (int, default 0), `max` (int, default 2147483647) |
+| `randomFloat` | `nbMaxDecimals` (int\|null), `min` (float, default 0), `max` (float, default 100) |
+
 ### `hash` Parameters
 
 | Parameter | Option | Description |

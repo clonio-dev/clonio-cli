@@ -26,6 +26,9 @@ clonio cloning:run <file> [options]
 | `--skip-tables=<list>` | Comma-separated list of table names to exclude from this run |
 | `--only-tables=<list>` | Comma-separated list of table names to include; all others are skipped |
 | `--audit-channel=<list>` | Comma-separated list of channel names to use for this run (overrides `deliver_to` in `clonio.json`) |
+| `--skip-remapping-keys` | Skip key mapping generation and FK rewriting |
+| `--no-memory-limit` | Remove PHP's memory limit before generating key mappings. Useful for very large databases when `--file-based` is not viable. |
+| `--file-based` | Store key mappings in AES-256-CBC encrypted temporary files instead of RAM. Keeps memory usage bounded to the size of the largest single table's mapping. |
 
 `--skip-tables` and `--only-tables` are mutually exclusive. Verbosity flags `-v` / `-vv` / `-vvv` are also supported (see [Output Modes](#output-modes)).
 
@@ -246,6 +249,25 @@ clonio cloning:run production-db.cloning.yaml --target staging --skip-remapping-
 
 Bypasses all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined.
 
+### Memory management for large databases
+
+By default, all PK mappings are held in RAM simultaneously (one entry per row per remapped table). For most databases this is fast and adequate. For very large datasets two flags are available:
+
+| Flag | Description |
+|------|-------------|
+| `--no-memory-limit` | Removes PHP's `memory_limit` constraint before generating mappings. Useful when the dataset fits on the server but exceeds the configured PHP limit. |
+| `--file-based` | Writes each table's mappings to an AES-256-CBC encrypted temporary file instead of RAM. Only one table's mappings are loaded at a time, keeping peak memory usage bounded to the largest single table. Files are deleted automatically on completion or crash. |
+
+Both flags can be used together if needed. When `--skip-remapping-keys` is set, both flags are silently ignored.
+
+```bash
+# Remove memory cap (dataset fits in RAM, just over the PHP limit)
+clonio cloning:run prod.cloning.yaml --target staging --no-memory-limit
+
+# Encrypt mappings to disk (dataset too large for RAM)
+clonio cloning:run prod.cloning.yaml --target staging --file-based
+```
+
 ### Legacy format (still supported)
 
 The original top-level `key_remapping:` section is still parsed. Existing YAML files do not need to be updated. When both formats are present in the same file, the inline column format takes priority.
@@ -263,7 +285,7 @@ Phase 5  — Dependency Resolution
 Phase 5b — Key Mapping Generation (when remapping columns are defined)
 Phase 6  — Data Transfer
 Phase 7  — Key Mapping Cleanup   (when remapping columns are defined)
-Phase 8  — Audit Log & Run Log
+Phase 8  — Audit Log & Process Log
 Phase 9  — Summary
 ```
 
@@ -317,9 +339,9 @@ The `rows.clear` setting in the YAML config controls whether the target table is
 
 Clearing happens **after** FK checks are disabled, so `TRUNCATE` does not fail on FK-constrained tables (on databases that enforce this restriction at the statement level).
 
-### Phase 7 — Audit Log & Run Log
+### Phase 7 — Audit Log & Process Log
 
-Assembles and signs the HTML audit log and JSONL run log, then delivers both to the configured channels. Skipped silently when `audit` is absent from `clonio.json`.
+Assembles and signs the HTML audit log and JSONL process log, then delivers them to the configured channels according to each channel's delivery settings. Skipped silently when `audit` is absent from `clonio.json`.
 
 ### Phase 8 — Summary
 
@@ -432,12 +454,12 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |
 
-## Audit & Run Logs
+## Audit & Process Logs
 
-At the end of every successful run, Clonio produces two artefacts:
+At the end of every successful run, Clonio produces two types of artefacts:
 
 - **Audit log** (`*_audit.html` + `*_audit.sig`) — a signed, human-readable document listing all tables, transformations, and transfer counts. Suitable for compliance auditors.
-- **Run log** (`*_run.jsonl`) — a structured, machine-readable execution log with per-table, per-chunk, and per-skipped-row events.
+- **Process log** (`*_process.jsonl`) — a structured, machine-readable JSONL execution log with per-table, per-chunk, and per-skipped-row events recorded during the run.
 
 Files are named using the pattern:
 ```
@@ -448,10 +470,41 @@ For example:
 ```
 production-db_staging_2026-04-01T14-32-00Z_audit.html
 production-db_staging_2026-04-01T14-32-00Z_audit.sig
-production-db_staging_2026-04-01T14-32-00Z_run.jsonl
+production-db_staging_2026-04-01T14-32-00Z_process.jsonl
 ```
 
-Delivery channels (local filesystem, S3-compatible storage, email) are configured in the `audit` block of `clonio.json`. Use `--audit-channel=<name>` to override the configured channels for a single run. If `audit` is absent from `clonio.json`, all delivery is silently skipped.
+### What each channel delivers
+
+Each channel delivers artefacts based on its type and any per-channel overrides in `clonio.json`:
+
+| Channel type | Audit log (default) | Process log (default) |
+|---|---|---|
+| `local` | Yes | Yes |
+| `s3` | Yes | Yes |
+| `email` | Yes | No |
+| `ms_teams` | Yes | No |
+| `slack` | Yes | No |
+| `ntfy` | Yes | No |
+| `stdout` / `stderr` | Yes | No |
+
+Override the defaults for any individual channel with two optional boolean keys in its `clonio.json` entry:
+
+```json
+{
+  "audit": {
+    "channels": {
+      "my-channel": {
+        "type": "local",
+        "path": "./clonio-logs/{year}/{month}",
+        "delivers_audit": true,
+        "delivers_process_log": false
+      }
+    }
+  }
+}
+```
+
+Delivery channels are configured in the `audit` block of `clonio.json`. Use `--audit-channel=<name>` to override which channels are used for a single run. If `audit` is absent from `clonio.json`, all delivery is silently skipped.
 
 Verify the integrity of a stored audit log with `clonio cloning:verify-audit`.
 
