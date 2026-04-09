@@ -53,12 +53,10 @@ class SchemaReplicator
                 if (! $targetTable instanceof TableSchemaData) {
                     // For same DB type, fetch native DDL from source to preserve exact column types
                     if ($sameDbType) {
-                        $nativeSql = $this->fetchNativeCreateTableDdl($source, $tableName, $target->type);
+                        $nativeSql = $this->fetchNativeCreateTableDdl($source, $tableName);
                     }
 
-                    $sql = isset($nativeSql)
-                        ? $nativeSql
-                        : $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
+                    $sql = $nativeSql ?? $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
 
                     DB::connection($targetConnName)->statement($sql);
                     unset($nativeSql);
@@ -242,7 +240,7 @@ class SchemaReplicator
                 DatabaseConnectionType::SqlServer => 'VARBINARY(MAX)',
                 default => 'BLOB',
             },
-            in_array($type, ['varbinary'], true) => match ($driver) {
+            $type === 'varbinary' => match ($driver) {
                 DatabaseConnectionType::SqlServer => 'VARBINARY(255)',
                 default => 'BLOB',
             },
@@ -290,7 +288,7 @@ class SchemaReplicator
      * FK constraints and AUTO_INCREMENT counters are stripped so the statement
      * is safe to run on a target that may not yet have all referenced tables.
      */
-    private function fetchNativeCreateTableDdl(ConnectionData $source, string $tableName, DatabaseConnectionType $targetDriver): ?string
+    private function fetchNativeCreateTableDdl(ConnectionData $source, string $tableName): ?string
     {
         if (! in_array($source->type, [DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB], true)) {
             return null;
