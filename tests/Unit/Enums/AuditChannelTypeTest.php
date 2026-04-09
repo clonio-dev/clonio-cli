@@ -31,15 +31,15 @@ it('throws ValueError for an unknown label', function (): void {
     expect(fn () => AuditChannelType::fromLabel('Unknown'))->toThrow(ValueError::class);
 });
 
-it('defaultDeliversRunLog returns true only for local and s3', function (): void {
-    expect(AuditChannelType::Local->defaultDeliversRunLog())->toBeTrue()
-        ->and(AuditChannelType::S3->defaultDeliversRunLog())->toBeTrue()
-        ->and(AuditChannelType::Email->defaultDeliversRunLog())->toBeFalse()
-        ->and(AuditChannelType::MsTeams->defaultDeliversRunLog())->toBeFalse()
-        ->and(AuditChannelType::Slack->defaultDeliversRunLog())->toBeFalse()
-        ->and(AuditChannelType::Ntfy->defaultDeliversRunLog())->toBeFalse()
-        ->and(AuditChannelType::Stdout->defaultDeliversRunLog())->toBeFalse()
-        ->and(AuditChannelType::Stderr->defaultDeliversRunLog())->toBeFalse();
+it('defaultDeliversProcessLog returns true only for local and s3', function (): void {
+    expect(AuditChannelType::Local->defaultDeliversProcessLog())->toBeTrue()
+        ->and(AuditChannelType::S3->defaultDeliversProcessLog())->toBeTrue()
+        ->and(AuditChannelType::Email->defaultDeliversProcessLog())->toBeFalse()
+        ->and(AuditChannelType::MsTeams->defaultDeliversProcessLog())->toBeFalse()
+        ->and(AuditChannelType::Slack->defaultDeliversProcessLog())->toBeFalse()
+        ->and(AuditChannelType::Ntfy->defaultDeliversProcessLog())->toBeFalse()
+        ->and(AuditChannelType::Stdout->defaultDeliversProcessLog())->toBeFalse()
+        ->and(AuditChannelType::Stderr->defaultDeliversProcessLog())->toBeFalse();
 });
 
 it('hasSecrets returns false only for local, stdout, and stderr', function (): void {
