@@ -166,7 +166,7 @@ it('applies channel override to filter channels', function (): void {
 
     $auditConfig = [
         'channels' => [
-            'local-main'      => ['type' => 'local', 'path' => 'clonio-logs'],
+            'local-main' => ['type' => 'local', 'path' => 'clonio-logs'],
             'local-secondary' => ['type' => 'local', 'path' => 'clonio-logs-2'],
         ],
     ];
