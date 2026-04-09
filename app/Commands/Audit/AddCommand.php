@@ -118,7 +118,7 @@ class AddCommand extends Command
         // ─── Step 5: Deliver run log? ──────────────────────────────────────────
         $deliverRunLog = $this->option('deliver-run-log') ? true : ($this->option('no-deliver-run-log') ? false : null);
         if ($deliverRunLog === null) {
-            $deliverRunLog = $this->confirm('Deliver run log via this channel?', $type->defaultDeliversRunLog());
+            $deliverRunLog = $this->confirm('Deliver run log via this channel?', $type->defaultDeliversProcessLog());
         }
 
         // ─── Step 6: Summary ───────────────────────────────────────────────────

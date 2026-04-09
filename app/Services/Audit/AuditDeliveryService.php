@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Audit;
 
+use App\Enums\AuditChannelType;
 use App\Services\Cloning\RunLogWriter;
 use Illuminate\Support\Sleep;
 use Throwable;
@@ -18,18 +19,23 @@ class AuditDeliveryService
     ) {}
 
     /**
-     * Deliver audit and run log artefacts per channel configuration.
+     * Deliver audit artefacts and process log per channel configuration.
+     *
+     * Each channel can be configured with optional booleans:
+     *   delivers_audit       — whether to send the audit HTML/sig files (default: true for all channels)
+     *   delivers_process_log — whether to send the JSONL process log
+     *                          (default: true for local/s3, false for stdout/stderr and notification channels)
      *
      * @param  array<string, mixed>|null  $auditConfig  the 'audit' key from clonio.json (or null if absent)
      * @param  array<string, string>  $auditArtefacts  filename => content pairs (html, sig)
-     * @param  string  $runLogContent  the JSONL run log content
+     * @param  string  $processLogContent  the JSONL process log content
      * @param  list<string>  $channelOverride  if non-empty, use only these channels
      * @param  array<string, string>  $templateVars
      */
     public function deliver(
         ?array $auditConfig,
         array $auditArtefacts,
-        string $runLogContent,
+        string $processLogContent,
         array $channelOverride,
         array $templateVars,
     ): void {
@@ -41,7 +47,6 @@ class AuditDeliveryService
         $channels = is_array($auditConfig['channels'] ?? null) ? $auditConfig['channels'] : [];
 
         if ($channelOverride !== []) {
-            // Filter channels to only the overridden ones
             $filteredChannels = [];
 
             foreach ($channelOverride as $name) {
@@ -59,36 +64,101 @@ class AuditDeliveryService
             }
 
             /** @var array<string, mixed> $channelConfig */
-            $type = $channelConfig['type'] ?? null;
+            $typeValue = $channelConfig['type'] ?? null;
 
-            if ($type === 'local') {
-                $path = is_string($channelConfig['path'] ?? null) ? $channelConfig['path'] : 'clonio-logs';
+            if (! is_string($typeValue)) {
+                continue;
+            }
 
-                // Deliver audit artefacts
-                $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $path, $templateVars));
+            $channelType = AuditChannelType::tryFrom($typeValue);
 
-                // Deliver run log
-                $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
-
-                $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$runLogFilename => $runLogContent], $path, $templateVars));
-            } elseif ($type === 'stdout') {
-                $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
-
-                $this->deliverWithRetry(fn () => $this->stdoutAdapter->deliver($auditArtefacts));
-                $this->deliverWithRetry(fn () => $this->stdoutAdapter->deliver([$runLogFilename => $runLogContent]));
-            } elseif ($type === 'stderr') {
-                $runLogFilename = ($templateVars['source'] ?? 'source').'_'.($templateVars['target'] ?? 'target').'_'.($templateVars['timestamp'] ?? date('Y-m-d')).'_run.jsonl';
-
-                $this->deliverWithRetry(fn () => $this->stderrAdapter->deliver($auditArtefacts));
-                $this->deliverWithRetry(fn () => $this->stderrAdapter->deliver([$runLogFilename => $runLogContent]));
-            } else {
+            if ($channelType === null) {
                 $this->runLog->log('warning', 'audit_channel_unsupported', [
                     'channel' => $channelName,
-                    'type' => $type,
+                    'type' => $typeValue,
                 ]);
 
                 continue;
             }
+
+            // Resolve what this channel should deliver.
+            // Per-channel config keys override the channel-type defaults.
+            $deliversAudit = isset($channelConfig['delivers_audit'])
+                ? (bool) $channelConfig['delivers_audit']
+                : true;
+
+            $deliversProcessLog = isset($channelConfig['delivers_process_log'])
+                ? (bool) $channelConfig['delivers_process_log']
+                : $channelType->defaultDeliversProcessLog();
+
+            $processLogFilename = ($templateVars['source'] ?? 'source')
+                .'_'.($templateVars['target'] ?? 'target')
+                .'_'.($templateVars['timestamp'] ?? date('Y-m-d'))
+                .'_process.jsonl';
+
+            match ($channelType) {
+                AuditChannelType::Local => $this->deliverLocal(
+                    $channelConfig, $auditArtefacts, $processLogContent,
+                    $processLogFilename, $templateVars, $deliversAudit, $deliversProcessLog,
+                ),
+                AuditChannelType::Stdout => $this->deliverOutput(
+                    $this->stdoutAdapter, $auditArtefacts, $processLogContent,
+                    $processLogFilename, $deliversAudit, $deliversProcessLog,
+                ),
+                AuditChannelType::Stderr => $this->deliverOutput(
+                    $this->stderrAdapter, $auditArtefacts, $processLogContent,
+                    $processLogFilename, $deliversAudit, $deliversProcessLog,
+                ),
+                default => $this->runLog->log('warning', 'audit_channel_unsupported', [
+                    'channel' => $channelName,
+                    'type' => $typeValue,
+                ]),
+            };
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $channelConfig
+     * @param  array<string, string>  $auditArtefacts
+     * @param  array<string, string>  $templateVars
+     */
+    private function deliverLocal(
+        array $channelConfig,
+        array $auditArtefacts,
+        string $processLogContent,
+        string $processLogFilename,
+        array $templateVars,
+        bool $deliversAudit,
+        bool $deliversProcessLog,
+    ): void {
+        $path = is_string($channelConfig['path'] ?? null) ? $channelConfig['path'] : 'clonio-logs';
+
+        if ($deliversAudit) {
+            $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $path, $templateVars));
+        }
+
+        if ($deliversProcessLog) {
+            $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$processLogFilename => $processLogContent], $path, $templateVars));
+        }
+    }
+
+    /**
+     * @param  array<string, string>  $auditArtefacts
+     */
+    private function deliverOutput(
+        StdoutDeliveryAdapter|StderrDeliveryAdapter $adapter,
+        array $auditArtefacts,
+        string $processLogContent,
+        string $processLogFilename,
+        bool $deliversAudit,
+        bool $deliversProcessLog,
+    ): void {
+        if ($deliversAudit) {
+            $this->deliverWithRetry(fn () => $adapter->deliver($auditArtefacts));
+        }
+
+        if ($deliversProcessLog) {
+            $this->deliverWithRetry(fn () => $adapter->deliver([$processLogFilename => $processLogContent]));
         }
     }
 

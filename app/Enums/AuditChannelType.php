@@ -54,8 +54,12 @@ enum AuditChannelType: string
         throw new ValueError(sprintf("'%s' is not a valid label for ", $label).self::class);
     }
 
-    /** Default: should this type deliver run logs? */
-    public function defaultDeliversRunLog(): bool
+    /**
+     * Default: should this channel type deliver the JSONL process log?
+     * Local and S3 store everything; output/notification channels deliver
+     * process log only when explicitly configured with delivers_process_log: true.
+     */
+    public function defaultDeliversProcessLog(): bool
     {
         return match ($this) {
             self::Local, self::S3 => true,
