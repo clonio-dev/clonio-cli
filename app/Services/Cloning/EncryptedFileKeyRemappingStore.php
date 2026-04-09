@@ -27,6 +27,7 @@ use RuntimeException;
 class EncryptedFileKeyRemappingStore
 {
     private const string CIPHER = 'aes-256-cbc';
+
     private const int IV_LENGTH = 16;
 
     /** Per-run encryption key (32 bytes, never written to disk). */
@@ -77,9 +78,7 @@ class EncryptedFileKeyRemappingStore
 
         $tmpFile = tempnam(sys_get_temp_dir(), 'clonio-km-');
 
-        if ($tmpFile === false) {
-            throw new RuntimeException('Failed to create temporary file for key mapping store.');
-        }
+        throw_if($tmpFile === false, RuntimeException::class, 'Failed to create temporary file for key mapping store.');
 
         chmod($tmpFile, 0600);
         file_put_contents($tmpFile, $iv.$encrypted);

@@ -105,7 +105,7 @@ class KeyRemappingService
                 $tableMappings[$oldValue] = $newValue;
             }
 
-            if ($this->fileStore !== null) {
+            if ($this->fileStore instanceof EncryptedFileKeyRemappingStore) {
                 // Persist to encrypted temp file; do not hold in RAM
                 $this->fileStore->storeTable($table, $tableMappings);
             } else {
@@ -163,7 +163,7 @@ class KeyRemappingService
             if (array_key_exists($pkCol, $row)) {
                 $rawPk = $row[$pkCol];
                 $oldPk = is_scalar($rawPk) ? (string) $rawPk : '';
-                $newPk = $this->fileStore !== null
+                $newPk = $this->fileStore instanceof EncryptedFileKeyRemappingStore
                     ? ($this->fileStore->lookup($tableName, $oldPk) ?? $row[$pkCol])
                     : ($this->mappings[$tableName][$oldPk] ?? $row[$pkCol]);
                 $row[$pkCol] = $newPk;
@@ -183,7 +183,7 @@ class KeyRemappingService
 
                 $rawFk = $row[$fk->column];
                 $fkValue = is_scalar($rawFk) ? (string) $rawFk : '';
-                $newFk = $this->fileStore !== null
+                $newFk = $this->fileStore instanceof EncryptedFileKeyRemappingStore
                     ? ($this->fileStore->lookup($remappedTable->table, $fkValue) ?? $row[$fk->column])
                     : ($this->mappings[$remappedTable->table][$fkValue] ?? $row[$fk->column]);
                 $row[$fk->column] = $newFk;
