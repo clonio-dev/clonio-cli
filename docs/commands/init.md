@@ -85,15 +85,26 @@ Defaults to `no`. If confirmed, the `.env` file is updated with the new key.
 | `.env` exists, no `APP_KEY` line     | Appends `APP_KEY=base64:...` without touching other entries |
 | `.env` exists with `APP_KEY`         | Does nothing (unless `--force` is passed)              |
 
-### `.gitignore` Hint
+### `.gitignore` Management
 
-After writing `.env`, if a `.gitignore` exists in the current directory but does not include `.env`, Clonio displays a reminder:
+After any successful initialisation, Clonio checks whether `.env` and `clonio.json` are protected by `.gitignore`. Both files contain secrets (the encryption key and encrypted database passwords) and must never be committed.
+
+**When `.gitignore` exists:** Clonio automatically appends any missing entries and reports what it added:
 
 ```
-  ℹ  Remember to add .env to your .gitignore to avoid committing your APP_KEY.
+  ✓  Added to .gitignore: clonio.json
+  ✓  Added to .gitignore: .env
 ```
 
-Clonio does **not** modify `.gitignore` automatically.
+If both entries are already present, nothing is printed and the file is not modified.
+
+**When no `.gitignore` exists:** Clonio prints a note without creating the file:
+
+```
+  ℹ  No .gitignore found. Add .env and clonio.json to avoid committing secrets.
+```
+
+This check runs on every `init` invocation — regardless of whether a key was newly generated or already present.
 
 ## Production Environments
 
