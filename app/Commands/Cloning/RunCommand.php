@@ -396,12 +396,12 @@ class RunCommand extends Command
                 'timestamp' => $timestamp,
             ];
 
-            $runLogContent = $runLog->flush();
+            $processLogContent = $runLog->flush();
 
             $deliveryService->deliver(
                 auditConfig: $auditConfig,
                 auditArtefacts: $auditArtefacts,
-                runLogContent: $runLogContent,
+                processLogContent: $processLogContent,
                 channelOverride: $auditChannels,
                 templateVars: $templateVars,
             );
