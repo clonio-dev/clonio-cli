@@ -540,3 +540,106 @@ it('only-pii: only includes PII columns and tables', function (): void {
     expect($yaml)->toContain('email:');
     expect($yaml)->not->toContain('id:');
 });
+
+it('writes enforce_column_types: true when --enforce-column-types flag is set', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+    $schema = makeSimpleSchema();
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', [
+        '--connection' => 'production-db',
+        '--enforce-column-types' => true,
+        '--drop-unknown-tables' => true,
+        '--drop-extra-columns' => true,
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)
+        ->toContain('enforce_column_types: true')
+        ->toContain('drop_unknown_tables: true')
+        ->toContain('drop_extra_columns: true')
+        ->toContain('disable_foreign_key_checks: true');
+});
+
+it('writes disable_foreign_key_checks: false when --no-disable-fk-checks flag is set', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+    $schema = makeSimpleSchema();
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', [
+        '--connection' => 'production-db',
+        '--no-disable-fk-checks' => true,
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->toContain('disable_foreign_key_checks: false');
+});
+
+it('prompts for transfer options interactively and writes the chosen values', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+    $schema = makeSimpleSchema();
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db'])
+        ->expectsConfirmation('    Enforce column types on target?', 'yes')
+        ->expectsConfirmation('    Drop unknown tables on target?', 'no')
+        ->expectsConfirmation('    Drop extra columns on target?', 'no')
+        ->expectsConfirmation('    Disable foreign key checks?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)
+        ->toContain('enforce_column_types: true')
+        ->toContain('drop_unknown_tables: false')
+        ->toContain('disable_foreign_key_checks: true');
+});

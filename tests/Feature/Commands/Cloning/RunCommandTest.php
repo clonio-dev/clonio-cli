@@ -873,3 +873,61 @@ YAML;
         ->expectsOutputToContain('target matches source')
         ->assertExitCode(ExitCode::Success->value);
 });
+
+it('applies --enforce-column-types override from CLI flags', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $capturedConfig = null;
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')
+        ->withArgs(function (CloningConfigData $cfg) use (&$capturedConfig): bool {
+            $capturedConfig = $cfg;
+
+            return true;
+        })
+        ->andReturn(makeRunResult());
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--enforce-column-types' => true,
+        '--no-disable-fk-checks' => true,
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::Success->value);
+
+    expect($capturedConfig)->not->toBeNull();
+    expect($capturedConfig->options->enforceColumnTypes)->toBeTrue();
+    expect($capturedConfig->options->disableForeignKeyChecks)->toBeFalse();
+    // Unchanged from YAML
+    expect($capturedConfig->options->dropUnknownTables)->toBeFalse();
+});

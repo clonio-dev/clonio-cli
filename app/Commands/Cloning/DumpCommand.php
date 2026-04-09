@@ -30,13 +30,17 @@ class DumpCommand extends Command
      * @var string
      */
     protected $signature = 'cloning:dump
-        {--connection=  : Name of the saved connection to inspect}
-        {--output=      : Output file path (default: <connection-name>.cloning.yaml)}
-        {--force        : Overwrite an existing file without asking}
-        {--only-pii     : Omit tables/columns with no PII match}
-        {--all-columns  : Include all columns in the YAML, not just PII-detected ones}
-        {--locale=      : FakerPHP locale for options.faker_locale (default: en_US)}
-        {--ci           : CI mode — suppress non-error output}';
+        {--connection=           : Name of the saved connection to inspect}
+        {--output=               : Output file path (default: <connection-name>.cloning.yaml)}
+        {--force                 : Overwrite an existing file without asking}
+        {--only-pii              : Omit tables/columns with no PII match}
+        {--all-columns           : Include all columns in the YAML, not just PII-detected ones}
+        {--locale=               : FakerPHP locale for options.faker_locale (default: en_US)}
+        {--enforce-column-types  : Set enforce_column_types: true in the generated YAML}
+        {--drop-unknown-tables   : Set drop_unknown_tables: true in the generated YAML}
+        {--drop-extra-columns    : Set drop_extra_columns: true in the generated YAML}
+        {--no-disable-fk-checks  : Set disable_foreign_key_checks: false in the generated YAML}
+        {--ci                    : CI mode — suppress non-error output}';
 
     /**
      * @var string
@@ -235,7 +239,22 @@ class DumpCommand extends Command
             );
         }
 
-        // 10. Build result
+        // 10. Collect transfer options
+        $enforceColumnTypes = (bool) $this->option('enforce-column-types');
+        $dropUnknownTables = (bool) $this->option('drop-unknown-tables');
+        $dropExtraColumns = (bool) $this->option('drop-extra-columns');
+        $disableForeignKeyChecks = ! $this->option('no-disable-fk-checks');
+
+        if (! $ci) {
+            $this->line('  Transfer options:');
+            $enforceColumnTypes = $this->confirm('    Enforce column types on target?', $enforceColumnTypes);
+            $dropUnknownTables = $this->confirm('    Drop unknown tables on target?', $dropUnknownTables);
+            $dropExtraColumns = $this->confirm('    Drop extra columns on target?', $dropExtraColumns);
+            $disableForeignKeyChecks = $this->confirm('    Disable foreign key checks?', $disableForeignKeyChecks);
+            $this->line('');
+        }
+
+        // 11. Build result
         $result = new DumpResultData(
             connectionName: $connectionName,
             tables: $tableDumps,
@@ -245,12 +264,16 @@ class DumpCommand extends Command
             fakerLocale: $fakerLocale,
             keyRemapping: $onlyPii ? null : $this->buildKeyRemapping($schema),
             includeKeepColumns: $allColumns,
+            enforceColumnTypes: $enforceColumnTypes,
+            dropUnknownTables: $dropUnknownTables,
+            dropExtraColumns: $dropExtraColumns,
+            disableForeignKeyChecks: $disableForeignKeyChecks,
         );
 
-        // 11. Write YAML
+        // 12. Write YAML
         $yamlWriter->writeToFile($result, $outputPath);
 
-        // 12. Print summary
+        // 13. Print summary
         if (! $ci) {
             $keepColumns = $totalColumns - $piiColumnsDetected;
 

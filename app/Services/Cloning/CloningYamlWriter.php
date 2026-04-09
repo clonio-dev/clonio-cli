@@ -23,10 +23,10 @@ class CloningYamlWriter
         $lines[] = '';
         $lines[] = 'options:';
         $lines[] = '  chunk_size: 1000';
-        $lines[] = '  enforce_column_types: false';
-        $lines[] = '  drop_unknown_tables: false';
-        $lines[] = '  drop_extra_columns: false';
-        $lines[] = '  disable_foreign_key_checks: true';
+        $lines[] = sprintf('  enforce_column_types: %s', $result->enforceColumnTypes ? 'true' : 'false');
+        $lines[] = sprintf('  drop_unknown_tables: %s', $result->dropUnknownTables ? 'true' : 'false');
+        $lines[] = sprintf('  drop_extra_columns: %s', $result->dropExtraColumns ? 'true' : 'false');
+        $lines[] = sprintf('  disable_foreign_key_checks: %s', $result->disableForeignKeyChecks ? 'true' : 'false');
         $lines[] = sprintf('  faker_locale: %s', $result->fakerLocale);
         $lines[] = '';
         $lines[] = 'tables:';
