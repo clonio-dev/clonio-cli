@@ -119,6 +119,29 @@ it('writes options block with all required fields', function (): void {
     expect($yaml)->toContain('faker_locale: en_US');
 });
 
+it('writes non-default options when overridden in DumpResultData', function (): void {
+    $writer = new CloningYamlWriter;
+    $result = new DumpResultData(
+        connectionName: 'prod',
+        tables: [],
+        totalColumns: 0,
+        piiColumnsDetected: 0,
+        outputPath: 'prod.cloning.yaml',
+        enforceColumnTypes: true,
+        dropUnknownTables: true,
+        dropExtraColumns: true,
+        disableForeignKeyChecks: false,
+    );
+
+    $yaml = $writer->write($result);
+
+    expect($yaml)
+        ->toContain('enforce_column_types: true')
+        ->toContain('drop_unknown_tables: true')
+        ->toContain('drop_extra_columns: true')
+        ->toContain('disable_foreign_key_checks: false');
+});
+
 it('writes fake strategy column with faker_method and arguments', function (): void {
     $writer = new CloningYamlWriter;
     $table = new TableDumpData(

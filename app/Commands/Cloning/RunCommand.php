@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
+use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
@@ -56,9 +57,17 @@ class RunCommand extends Command
         {--skip-tables=        : Comma-separated list of table names to exclude}
         {--only-tables=        : Comma-separated list of table names to include}
         {--audit-channel=      : Comma-separated list of channel names}
-        {--skip-remapping-keys : Skip key mapping generation and FK rewriting}
-        {--no-memory-limit     : Remove PHP memory limit before generating key mappings (useful for very large databases when --file-based is not an option)}
-        {--file-based          : Store key mappings in AES-256-CBC encrypted temp files instead of RAM; keeps memory usage bounded to the largest single table}';
+        {--skip-remapping-keys      : Skip key mapping generation and FK rewriting}
+        {--no-memory-limit          : Remove PHP memory limit before generating key mappings (useful for very large databases when --file-based is not an option)}
+        {--file-based               : Store key mappings in AES-256-CBC encrypted temp files instead of RAM; keeps memory usage bounded to the largest single table}
+        {--enforce-column-types     : Override: enforce_column_types true for this run}
+        {--no-enforce-column-types  : Override: enforce_column_types false for this run}
+        {--drop-unknown-tables      : Override: drop_unknown_tables true for this run}
+        {--no-drop-unknown-tables   : Override: drop_unknown_tables false for this run}
+        {--drop-extra-columns       : Override: drop_extra_columns true for this run}
+        {--no-drop-extra-columns    : Override: drop_extra_columns false for this run}
+        {--disable-fk-checks        : Override: disable_foreign_key_checks true for this run}
+        {--no-disable-fk-checks     : Override: disable_foreign_key_checks false for this run}';
 
     /**
      * @var string
@@ -152,6 +161,30 @@ class RunCommand extends Command
         $auditChannels = ($auditChannelOpt !== null && $auditChannelOpt !== '')
             ? array_values(array_filter(array_map(trim(...), explode(',', (string) $auditChannelOpt))))
             : [];
+
+        // ─── Option overrides ──────────────────────────────────────────────────
+        $enforceOverride = $this->option('enforce-column-types') ? true : ($this->option('no-enforce-column-types') ? false : null);
+        $dropUnkOverride = $this->option('drop-unknown-tables') ? true : ($this->option('no-drop-unknown-tables') ? false : null);
+        $dropExtOverride = $this->option('drop-extra-columns') ? true : ($this->option('no-drop-extra-columns') ? false : null);
+        $fkChecksOverride = $this->option('no-disable-fk-checks') ? false : ($this->option('disable-fk-checks') ? true : null);
+
+        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $fkChecksOverride !== null) {
+            $opts = $config->options;
+            $config = new CloningConfigData(
+                version: $config->version,
+                connectionName: $config->connectionName,
+                options: new CloningOptionsData(
+                    chunkSize: $opts->chunkSize,
+                    enforceColumnTypes: $enforceOverride ?? $opts->enforceColumnTypes,
+                    dropUnknownTables: $dropUnkOverride ?? $opts->dropUnknownTables,
+                    dropExtraColumns: $dropExtOverride ?? $opts->dropExtraColumns,
+                    disableForeignKeyChecks: $fkChecksOverride ?? $opts->disableForeignKeyChecks,
+                    fakerLocale: $opts->fakerLocale,
+                ),
+                tables: $config->tables,
+                keyRemapping: $config->keyRemapping,
+            );
+        }
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 

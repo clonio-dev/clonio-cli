@@ -16,5 +16,9 @@ final readonly class DumpResultData
         public string $fakerLocale = 'en_US',
         public ?KeyRemappingConfigData $keyRemapping = null,
         public bool $includeKeepColumns = false,
+        public bool $enforceColumnTypes = false,
+        public bool $dropUnknownTables = false,
+        public bool $dropExtraColumns = false,
+        public bool $disableForeignKeyChecks = true,
     ) {}
 }
