@@ -234,3 +234,158 @@ it('does not drop extra columns when drop_extra_columns is false', function (): 
 
     expect(true)->toBeTrue(); // no exception thrown
 });
+
+it('maps mediumint primary key to MEDIUMINT for MySQL target', function (): void {
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $sourceSchema = new DatabaseSchemaData(
+        databaseName: 'sourcedb',
+        tables: [
+            new TableSchemaData(
+                name: 'orders',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'mediumint', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'total', type: 'decimal', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    // open() called twice: once for native DDL fetch from source, once to open target
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $capturedSql = null;
+
+    // source connection for SHOW CREATE TABLE (returns nothing → falls back to generic)
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->with(Mockery::pattern('/SHOW CREATE TABLE/i'))->andReturn([]);
+    DB::shouldReceive('purge')->with('source_conn')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->with('target_conn')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['orders'], false, false);
+
+    expect($capturedSql)->toContain('MEDIUMINT');
+});
+
+it('uses native DDL from source when same DB type and SHOW CREATE TABLE succeeds', function (): void {
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $sourceSchema = new DatabaseSchemaData(
+        databaseName: 'sourcedb',
+        tables: [
+            new TableSchemaData(
+                name: 'products',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'mediumint', nullable: false, default: null, isPrimary: true),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+
+    $nativeDdl = "CREATE TABLE `products` (\n  `id` mediumint unsigned NOT NULL AUTO_INCREMENT,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4";
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $capturedSql = null;
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = $nativeDdl;
+
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->with(Mockery::pattern('/SHOW CREATE TABLE/i'))->andReturn([$showRow]);
+    DB::shouldReceive('purge')->with('source_conn')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->with('target_conn')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['products'], false, false);
+
+    // Native DDL should be used — contains original mediumint unsigned type
+    expect($capturedSql)
+        ->toContain('IF NOT EXISTS')
+        ->toContain('mediumint unsigned')
+        ->not->toContain('AUTO_INCREMENT=42')
+        ->not->toContain('CONSTRAINT')
+        ->not->toContain('FOREIGN KEY');
+});
+
+it('strips FOREIGN KEY constraints from native DDL', function (): void {
+    $ddl = <<<'SQL'
+CREATE TABLE `orders` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `orders_user_id_foreign` (`user_id`),
+  CONSTRAINT `orders_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB
+SQL;
+
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = new DatabaseSchemaData(databaseName: 'sourcedb', tables: [
+        new TableSchemaData(
+            name: 'orders',
+            columns: [new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true)],
+            foreignKeys: [],
+        ),
+    ]);
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = $ddl;
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $capturedSql = null;
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['orders'], false, false);
+
+    expect($capturedSql)
+        ->not->toContain('FOREIGN KEY')
+        ->not->toContain('CONSTRAINT')
+        ->toContain('IF NOT EXISTS');
+});
