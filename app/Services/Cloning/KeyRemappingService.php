@@ -16,15 +16,9 @@ use Throwable;
 
 class KeyRemappingService
 {
-    /**
-     * In-memory maps: [tableName => [oldValue => newValue]]
-     *
-     * @var array<string, array<string, string>>
-     */
-    private array $mappings = [];
-
     public function __construct(
         private readonly DatabaseConnectionService $connector,
+        private readonly KeyRemappingStoreInterface $store = new InMemoryKeyRemappingStore,
     ) {}
 
     /**
@@ -41,7 +35,6 @@ class KeyRemappingService
     ): array {
         $counts = [];
 
-        // Process in dependency order
         foreach ($orderedTables as $tableName) {
             $tableConfig = $config->getTable($tableName);
             if (! $tableConfig instanceof KeyRemappingTableData) {
@@ -81,7 +74,8 @@ class KeyRemappingService
                 sprintf('SELECT %s FROM %s', $quotedCol, $quotedTable)
             );
 
-            $this->mappings[$table] = [];
+            /** @var array<string, string> $tableMappings */
+            $tableMappings = [];
             $usedIntegers = [];
 
             foreach ($rows as $row) {
@@ -99,10 +93,12 @@ class KeyRemappingService
                     ),
                 };
 
-                $this->mappings[$table][$oldValue] = $newValue;
+                $tableMappings[$oldValue] = $newValue;
             }
 
-            return count($this->mappings[$table]);
+            $this->store->storeTable($table, $tableMappings);
+
+            return count($tableMappings);
         } catch (Throwable) {
             return 0;
         } finally {
@@ -153,7 +149,7 @@ class KeyRemappingService
             if (array_key_exists($pkCol, $row)) {
                 $rawPk = $row[$pkCol];
                 $oldPk = is_scalar($rawPk) ? (string) $rawPk : '';
-                $row[$pkCol] = $this->mappings[$tableName][$oldPk] ?? $row[$pkCol];
+                $row[$pkCol] = $this->store->lookup($tableName, $oldPk) ?? $row[$pkCol];
             }
         }
 
@@ -170,7 +166,7 @@ class KeyRemappingService
 
                 $rawFk = $row[$fk->column];
                 $fkValue = is_scalar($rawFk) ? (string) $rawFk : '';
-                $row[$fk->column] = $this->mappings[$remappedTable->table][$fkValue] ?? $row[$fk->column];
+                $row[$fk->column] = $this->store->lookup($remappedTable->table, $fkValue) ?? $row[$fk->column];
             }
         }
 
@@ -178,18 +174,10 @@ class KeyRemappingService
     }
 
     /**
-     * Phase 7: Release in-memory mappings.
+     * Phase 7: Release all mappings via the store.
      */
     public function cleanup(): void
     {
-        $this->mappings = [];
-    }
-
-    /**
-     * @return array<string, array<string, string>>
-     */
-    public function getMappings(): array
-    {
-        return $this->mappings;
+        $this->store->cleanup();
     }
 }

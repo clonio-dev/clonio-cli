@@ -6,14 +6,17 @@ use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\Cloning\KeyRemappingTableData;
 use App\Enums\KeyRemappingStrategy;
+use App\Services\Cloning\InMemoryKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Database\DatabaseConnectionService;
 
-function makeKeyRemappingService(): KeyRemappingService
+function makeKeyRemappingService(?InMemoryKeyRemappingStore $store = null): KeyRemappingService
 {
     $connector = Mockery::mock(DatabaseConnectionService::class);
 
-    return new KeyRemappingService($connector);
+    return $store !== null
+        ? new KeyRemappingService($connector, $store)
+        : new KeyRemappingService($connector);
 }
 
 function makeKeyRemappingTable(string $table, string $pk = 'id', array $fks = []): KeyRemappingTableData
@@ -28,31 +31,30 @@ function makeKeyRemappingTable(string $table, string $pk = 'id', array $fks = []
     );
 }
 
-it('getMappings returns empty array initially', function (): void {
+it('applyToRow does not modify row when store has no mappings', function (): void {
     $service = makeKeyRemappingService();
-    expect($service->getMappings())->toBeEmpty();
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
+
+    $row = ['id' => 1, 'name' => 'Alice'];
+
+    expect($service->applyToRow($row, 'users', $config))->toBe($row);
 });
 
-it('cleanup resets mappings to empty', function (): void {
-    $service = makeKeyRemappingService();
+it('cleanup resets store mappings', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['1' => 'new-uuid']);
 
-    // Set mappings via reflection
-    $ref = new ReflectionProperty(KeyRemappingService::class, 'mappings');
-    $ref->setValue($service, ['users' => ['1' => 'new-uuid']]);
-
-    expect($service->getMappings())->not->toBeEmpty();
-
+    $service = makeKeyRemappingService($store);
     $service->cleanup();
 
-    expect($service->getMappings())->toBeEmpty();
+    expect($store->lookup('users', '1'))->toBeNull();
 });
 
 it('applyToRow remaps the primary key for a configured table', function (): void {
-    $service = makeKeyRemappingService();
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['42' => 'new-uuid-for-42']);
 
-    $ref = new ReflectionProperty(KeyRemappingService::class, 'mappings');
-    $ref->setValue($service, ['users' => ['42' => 'new-uuid-for-42']]);
-
+    $service = makeKeyRemappingService($store);
     $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
 
     $row = ['id' => 42, 'name' => 'Alice'];
@@ -63,11 +65,10 @@ it('applyToRow remaps the primary key for a configured table', function (): void
 });
 
 it('applyToRow keeps original PK value when no mapping exists', function (): void {
-    $service = makeKeyRemappingService();
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', []);
 
-    $ref = new ReflectionProperty(KeyRemappingService::class, 'mappings');
-    $ref->setValue($service, ['users' => []]);
-
+    $service = makeKeyRemappingService($store);
     $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
 
     $row = ['id' => 99, 'name' => 'Bob'];
@@ -77,12 +78,10 @@ it('applyToRow keeps original PK value when no mapping exists', function (): voi
 });
 
 it('applyToRow remaps foreign key columns referencing another remapped table', function (): void {
-    $service = makeKeyRemappingService();
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['10' => 'uuid-10']);
 
-    $ref = new ReflectionProperty(KeyRemappingService::class, 'mappings');
-    $ref->setValue($service, [
-        'users' => ['10' => 'uuid-10'],
-    ]);
+    $service = makeKeyRemappingService($store);
 
     $fk = new KeyRemappingForeignKeyData(table: 'orders', column: 'user_id', selfReferential: false);
     $usersTable = new KeyRemappingTableData(
@@ -103,16 +102,15 @@ it('applyToRow remaps foreign key columns referencing another remapped table', f
 });
 
 it('applyToRow skips FK column that does not exist on the row', function (): void {
-    $service = makeKeyRemappingService();
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['1' => 'uuid-1']);
 
-    $ref = new ReflectionProperty(KeyRemappingService::class, 'mappings');
-    $ref->setValue($service, ['users' => ['1' => 'uuid-1']]);
+    $service = makeKeyRemappingService($store);
 
     $fk = new KeyRemappingForeignKeyData(table: 'orders', column: 'user_id', selfReferential: false);
     $usersTable = makeKeyRemappingTable('users', 'id', [$fk]);
     $config = new KeyRemappingConfigData([$usersTable]);
 
-    // Row doesn't have 'user_id'
     $row = ['id' => 5, 'name' => 'test'];
     $result = $service->applyToRow($row, 'orders', $config);
 
