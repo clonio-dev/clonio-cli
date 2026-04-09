@@ -24,6 +24,7 @@ class AboutCommand extends Command
         $this->info('  It is open source software. It is free for individuals and NGOs.');
         $this->newLine();
         $this->warn('  See https://clonio.dev for more information.');
+        $this->newLine();
 
         return Command::SUCCESS;
     }
