@@ -1,6 +1,6 @@
 # Audit Channel Commands
 
-Manage audit delivery channels in `clonio.json`. Channels define where Clonio sends audit logs and run logs after each operation.
+Manage audit delivery channels in `clonio.json`. Channels define where Clonio sends audit logs and process logs after each operation.
 
 ## Commands
 
@@ -32,8 +32,8 @@ When run without flags the command walks through each field in order:
 1. **Name** — A unique identifier for the channel. Must match `[a-z0-9_-]+` (max 64 chars).
 2. **Type** — Selected from a list of supported channel types.
 3. **Type-specific fields** — Prompted based on the chosen type (see below).
-4. **Deliver audit log** — Whether to add this channel to `audit_log.deliver_to` (default: yes).
-5. **Deliver run log** — Whether to add this channel to `run_log.deliver_to` (default depends on type).
+4. **Deliver audit log** — Whether this channel should deliver the signed HTML audit artefacts (default: yes).
+5. **Deliver process log** — Whether this channel should deliver the JSONL process log (default: yes for `local` and `s3`; no for all other types).
 
 A summary table is displayed before writing. The operation can be cancelled at the final confirmation prompt.
 
@@ -56,10 +56,10 @@ A summary table is displayed before writing. The operation can be cancelled at t
 |---|---|
 | `name` | Channel name (argument, optional) |
 | `--type=` | Channel type: `local`, `s3`, `email`, `ms_teams`, `slack`, `ntfy` |
-| `--deliver-audit-log` | Add channel to `audit_log.deliver_to` |
-| `--no-deliver-audit-log` | Do not add channel to `audit_log.deliver_to` |
-| `--deliver-run-log` | Add channel to `run_log.deliver_to` |
-| `--no-deliver-run-log` | Do not add channel to `run_log.deliver_to` |
+| `--deliver-audit-log` | Enable delivery of the signed HTML audit artefacts via this channel |
+| `--no-deliver-audit-log` | Disable delivery of the signed HTML audit artefacts via this channel |
+| `--deliver-run-log` | Enable delivery of the JSONL process log via this channel |
+| `--no-deliver-run-log` | Disable delivery of the JSONL process log via this channel |
 
 #### Local (`--type=local`)
 
@@ -240,7 +240,7 @@ Lists all configured audit delivery channels and their delivery assignments.
 clonio audit:list
 ```
 
-Outputs a table with columns: **Name**, **Type**, **Audit Log** (✓/✗), **Run Log** (✓/✗), **Details**.
+Outputs a table with columns: **Name**, **Type**, **Audit Log** (✓/✗), **Process Log** (✓/✗), **Details**.
 
 The Details column shows a summary appropriate to the channel type:
 - **Local**: audit log path
@@ -274,6 +274,45 @@ encrypted:<base64-encoded-ciphertext>
 ```
 
 This requires `APP_KEY` to be set in the environment (`.env` or exported). Passing secrets via CLI flags (`--secret-key=`, `--password=`, `--webhook-url=`, `--token=`) is supported but may expose them in shell history — use the interactive prompt instead.
+
+### What each channel delivers
+
+Each channel has independent control over whether it delivers the audit artefacts and the process log:
+
+| Channel type | Audit log (default) | Process log (default) |
+|---|---|---|
+| `local` | Yes | Yes |
+| `s3` | Yes | Yes |
+| `email` | Yes | No |
+| `ms_teams` | Yes | No |
+| `slack` | Yes | No |
+| `ntfy` | Yes | No |
+| `stdout` / `stderr` | Yes | No |
+
+These defaults can be overridden per channel using the `delivers_audit` and `delivers_process_log` boolean keys directly in `clonio.json`:
+
+```json
+{
+  "audit": {
+    "channels": {
+      "local-store": {
+        "type": "local",
+        "path": "./clonio-logs/{year}/{month}",
+        "delivers_audit": true,
+        "delivers_process_log": false
+      },
+      "slack-alerts": {
+        "type": "slack",
+        "webhook_url": "encrypted:...",
+        "delivers_audit": true,
+        "delivers_process_log": true
+      }
+    }
+  }
+}
+```
+
+The `--deliver-audit-log` / `--deliver-run-log` flags in `audit:add` set the delivery assignments at channel-creation time; they cannot yet be changed via `audit:update`. Edit `clonio.json` directly to adjust `delivers_audit` or `delivers_process_log` on an existing channel.
 
 ### clonio.json location
 
