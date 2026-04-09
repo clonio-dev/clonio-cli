@@ -29,6 +29,14 @@ clonio cloning:run <file> [options]
 | `--skip-remapping-keys` | Skip key mapping generation and FK rewriting |
 | `--no-memory-limit` | Remove PHP's memory limit before generating key mappings. Useful for very large databases when `--file-based` is not viable. |
 | `--file-based` | Store key mappings in AES-256-CBC encrypted temporary files instead of RAM. Keeps memory usage bounded to the size of the largest single table's mapping. |
+| `--enforce-column-types` | Override: set `enforce_column_types: true` for this run |
+| `--no-enforce-column-types` | Override: set `enforce_column_types: false` for this run |
+| `--drop-unknown-tables` | Override: set `drop_unknown_tables: true` for this run |
+| `--no-drop-unknown-tables` | Override: set `drop_unknown_tables: false` for this run |
+| `--drop-extra-columns` | Override: set `drop_extra_columns: true` for this run |
+| `--no-drop-extra-columns` | Override: set `drop_extra_columns: false` for this run |
+| `--disable-fk-checks` | Override: set `disable_foreign_key_checks: true` for this run |
+| `--no-disable-fk-checks` | Override: set `disable_foreign_key_checks: false` for this run |
 
 `--skip-tables` and `--only-tables` are mutually exclusive. Verbosity flags `-v` / `-vv` / `-vvv` are also supported (see [Output Modes](#output-modes)).
 
@@ -109,13 +117,14 @@ clonio cloning:run production-db.cloning.yaml --target staging --ci
 
 ## Schema Synchronization
 
-Before transferring data, Clonio can synchronize the target schema to match the source. Three options in the `options:` block of the YAML file control this behaviour:
+Before transferring data, Clonio synchronizes the target schema to match the source. Four options in the `options:` block of the YAML file control this behaviour. These values are set interactively by `cloning:dump` and can be overridden at run time via CLI flags.
 
-| Option | Default | Effect |
-|--------|---------|--------|
-| `enforce_column_types` | `false` | Add columns to existing target tables that are present in the source but missing from the target |
-| `drop_extra_columns` | `false` | Drop columns from existing target tables that exist in the target but not in the source |
-| `drop_unknown_tables` | `false` | Drop tables from the target that do not exist in the source |
+| YAML option | Default | CLI override (on / off) | Effect |
+|-------------|---------|------------------------|--------|
+| `enforce_column_types` | `false` | `--enforce-column-types` / `--no-enforce-column-types` | Add columns to existing target tables that are present in the source but missing from the target |
+| `drop_unknown_tables` | `false` | `--drop-unknown-tables` / `--no-drop-unknown-tables` | Drop tables from the target that do not exist in the source |
+| `drop_extra_columns` | `false` | `--drop-extra-columns` / `--no-drop-extra-columns` | Drop columns from existing target tables that are absent from the source |
+| `disable_foreign_key_checks` | `true` | `--disable-fk-checks` / `--no-disable-fk-checks` | Disable FK constraint checks during data transfer |
 
 ```yaml
 options:
@@ -127,16 +136,37 @@ options:
   faker_locale: en_US
 ```
 
-All three options are applied during **Phase 4 — Schema Replication**, which runs before any data is transferred. Schema replication is skipped entirely when `--skip-schema` is passed on the command line.
+All schema-sync options are applied during **Phase 4 — Schema Replication**, which runs before any data is transferred. Schema replication is skipped entirely when `--skip-schema` is passed on the command line.
 
-### Behaviour matrix
+### Table creation
 
-| Source table | Target table | Action |
+**Missing tables are always created**, regardless of any option setting. If a table exists in the source but not on the target, Clonio creates it during Phase 4. No option needs to be enabled for this — it is unconditional.
+
+The following options control what happens to columns and tables that diverge from the source:
+
+| Source table | Target table | What triggers the action |
 |---|---|---|
-| Exists | Missing | Always created (regardless of `enforce_column_types`) |
+| Exists | **Missing** | **Always created** — no option required |
 | Exists | Exists, missing columns | Columns added when `enforce_column_types: true` |
 | Exists | Exists, extra columns | Columns dropped when `drop_extra_columns: true` |
 | Missing | Exists | Table dropped when `drop_unknown_tables: true` |
+
+### Overriding options at run time
+
+CLI flags override the YAML `options:` values for a single run without modifying the file:
+
+```bash
+# Force table-creation safety net even if YAML says false
+clonio cloning:run prod.cloning.yaml --target staging --enforce-column-types
+
+# Tear down stale tables on a throwaway CI database
+clonio cloning:run prod.cloning.yaml --target ci-db --drop-unknown-tables --drop-extra-columns
+
+# Disable a destructive option set in the YAML for this run only
+clonio cloning:run prod.cloning.yaml --target staging --no-drop-unknown-tables
+```
+
+Both the `--<option>` and `--no-<option>` variants are always available, so you can force either direction regardless of what the YAML contains.
 
 ### Schema diff in dry-run
 
@@ -305,12 +335,14 @@ Only runs when `--dry-run` is set. Fetches both the source and target schemas, c
 
 ### Phase 4 — Schema Replication
 
-Synchronizes the target schema with the source. Controlled by three options in the YAML `options` block (see [Schema Synchronization](#schema-synchronization)):
+Synchronizes the target schema with the source. Controlled by four options in the YAML `options` block (see [Schema Synchronization](#schema-synchronization)):
 
-- Always creates tables that exist in the source but not in the target.
+- **Always** creates tables that exist in the source but not in the target.
 - `enforce_column_types: true` — adds missing columns to existing target tables.
 - `drop_extra_columns: true` — drops columns from existing target tables that are absent in the source.
 - `drop_unknown_tables: true` — drops tables from the target that are not present in the source.
+
+Each option can be overridden for a single run via CLI flags (`--enforce-column-types`, `--drop-unknown-tables`, `--drop-extra-columns`, `--disable-fk-checks` and their `--no-*` counterparts) without modifying the YAML file.
 
 Skipped entirely when `--skip-schema` is set.
 

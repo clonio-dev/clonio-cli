@@ -16,7 +16,12 @@ clonio cloning:dump [options]
 | `--output=<path>` | Output file path (default: `<connection-name>.cloning.yaml`) |
 | `--force` | Overwrite an existing file without asking |
 | `--only-pii` | Omit tables and columns with no PII match |
+| `--all-columns` | Include all columns in the YAML, not just PII-detected ones |
 | `--locale=<locale>` | FakerPHP locale for `options.faker_locale` (default: `en_US`) |
+| `--enforce-column-types` | Set `enforce_column_types: true` in the generated YAML |
+| `--drop-unknown-tables` | Set `drop_unknown_tables: true` in the generated YAML |
+| `--drop-extra-columns` | Set `drop_extra_columns: true` in the generated YAML |
+| `--no-disable-fk-checks` | Set `disable_foreign_key_checks: false` in the generated YAML |
 | `--ci` | CI mode — suppress non-error output and require `--connection` |
 
 ## Description
@@ -67,6 +72,12 @@ clonio cloning:dump
 
   Schema fetched: 24 tables, 187 columns
 
+  Transfer options:
+    Enforce column types on target? (no)
+    Drop unknown tables on target? (no)
+    Drop extra columns on target? (no)
+    Disable foreign key checks? (yes)
+
   PII auto-detection:
     ✓  12 columns matched across 5 tables
     ○  175 columns set to keep
@@ -96,6 +107,27 @@ Use `--only-pii` to generate a minimal config that only lists tables and columns
 ```bash
 clonio cloning:dump --connection production-db --only-pii
 ```
+
+### Setting transfer options at dump time
+
+After inspecting the schema, Clonio prompts for four schema-transfer options that control how `cloning:run` synchronizes the target schema. In interactive mode you answer yes/no at the prompt; defaults match the recommended safe settings:
+
+| Prompt | Flag | Default | Effect on target |
+|--------|------|---------|-----------------|
+| Enforce column types on target? | `--enforce-column-types` | `false` | Add columns to existing tables that are present in the source but missing from the target |
+| Drop unknown tables on target? | `--drop-unknown-tables` | `false` | Drop tables from the target that do not exist in the source |
+| Drop extra columns on target? | `--drop-extra-columns` | `false` | Drop columns from existing target tables that are absent from the source |
+| Disable foreign key checks? | `--no-disable-fk-checks` to disable | `true` | Disable FK constraint checks during data transfer |
+
+In `--ci` mode the prompts are skipped and only the flags apply:
+
+```bash
+clonio cloning:dump --connection production-db --ci \
+  --enforce-column-types \
+  --drop-unknown-tables
+```
+
+The chosen values are written directly into the `options:` block of the generated YAML and serve as the baseline for every `cloning:run` against that file. Individual run-time overrides are available via `cloning:run` flags (see [cloning:run — Schema Synchronization](cloning-run.md#schema-synchronization)).
 
 ### CI mode
 
