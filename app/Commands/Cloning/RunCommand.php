@@ -25,6 +25,7 @@ use App\Services\Audit\StdoutDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
+use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\RunLogWriter;
 use App\Services\Config\ConfigService;
@@ -55,7 +56,9 @@ class RunCommand extends Command
         {--skip-tables=        : Comma-separated list of table names to exclude}
         {--only-tables=        : Comma-separated list of table names to include}
         {--audit-channel=      : Comma-separated list of channel names}
-        {--skip-remapping-keys : Skip key mapping generation and FK rewriting}';
+        {--skip-remapping-keys : Skip key mapping generation and FK rewriting}
+        {--no-memory-limit     : Remove PHP memory limit before generating key mappings (useful for very large databases when --file-based is not an option)}
+        {--file-based          : Store key mappings in AES-256-CBC encrypted temp files instead of RAM; keeps memory usage bounded to the largest single table}';
 
     /**
      * @var string
@@ -254,11 +257,16 @@ class RunCommand extends Command
         $keyRemappingConfig = $config->keyRemapping;
 
         if ($keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive() && ! $skipRemapping) {
+            if ((bool) $this->option('no-memory-limit')) {
+                ini_set('memory_limit', '-1');
+            }
+
             if ($verbose) {
                 $this->line('  <info>✓</info>  Generating key mappings ...');
             }
 
-            $keyRemappingService = new KeyRemappingService($connector);
+            $fileStore = (bool) $this->option('file-based') ? new EncryptedFileKeyRemappingStore : null;
+            $keyRemappingService = new KeyRemappingService($connector, $fileStore);
             $sortedForMapping = array_map(
                 static fn (TableCloningConfigData $t): string => $t->tableName,
                 $config->tables
