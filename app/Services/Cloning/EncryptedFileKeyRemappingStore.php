@@ -24,7 +24,7 @@ use RuntimeException;
  * - A shutdown handler and (when available) POSIX signal handlers ensure
  *   temp files are deleted even if Clonio crashes or is interrupted.
  */
-class EncryptedFileKeyRemappingStore
+class EncryptedFileKeyRemappingStore implements KeyRemappingStoreInterface
 {
     private const string CIPHER = 'aes-256-cbc';
 

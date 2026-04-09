@@ -265,8 +265,9 @@ class RunCommand extends Command
                 $this->line('  <info>✓</info>  Generating key mappings ...');
             }
 
-            $fileStore = (bool) $this->option('file-based') ? new EncryptedFileKeyRemappingStore : null;
-            $keyRemappingService = new KeyRemappingService($connector, $fileStore);
+            $keyRemappingService = (bool) $this->option('file-based')
+                ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
+                : new KeyRemappingService($connector);
             $sortedForMapping = array_map(
                 static fn (TableCloningConfigData $t): string => $t->tableName,
                 $config->tables

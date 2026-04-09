@@ -16,17 +16,9 @@ use Throwable;
 
 class KeyRemappingService
 {
-    /**
-     * In-memory maps: [tableName => [oldValue => newValue]]
-     * Only populated when $fileStore is null (default in-memory mode).
-     *
-     * @var array<string, array<string, string>>
-     */
-    private array $mappings = [];
-
     public function __construct(
         private readonly DatabaseConnectionService $connector,
-        private readonly ?EncryptedFileKeyRemappingStore $fileStore = null,
+        private readonly KeyRemappingStoreInterface $store = new InMemoryKeyRemappingStore,
     ) {}
 
     /**
@@ -43,7 +35,6 @@ class KeyRemappingService
     ): array {
         $counts = [];
 
-        // Process in dependency order
         foreach ($orderedTables as $tableName) {
             $tableConfig = $config->getTable($tableName);
             if (! $tableConfig instanceof KeyRemappingTableData) {
@@ -105,12 +96,7 @@ class KeyRemappingService
                 $tableMappings[$oldValue] = $newValue;
             }
 
-            if ($this->fileStore instanceof EncryptedFileKeyRemappingStore) {
-                // Persist to encrypted temp file; do not hold in RAM
-                $this->fileStore->storeTable($table, $tableMappings);
-            } else {
-                $this->mappings[$table] = $tableMappings;
-            }
+            $this->store->storeTable($table, $tableMappings);
 
             return count($tableMappings);
         } catch (Throwable) {
@@ -163,10 +149,7 @@ class KeyRemappingService
             if (array_key_exists($pkCol, $row)) {
                 $rawPk = $row[$pkCol];
                 $oldPk = is_scalar($rawPk) ? (string) $rawPk : '';
-                $newPk = $this->fileStore instanceof EncryptedFileKeyRemappingStore
-                    ? ($this->fileStore->lookup($tableName, $oldPk) ?? $row[$pkCol])
-                    : ($this->mappings[$tableName][$oldPk] ?? $row[$pkCol]);
-                $row[$pkCol] = $newPk;
+                $row[$pkCol] = $this->store->lookup($tableName, $oldPk) ?? $row[$pkCol];
             }
         }
 
@@ -183,10 +166,7 @@ class KeyRemappingService
 
                 $rawFk = $row[$fk->column];
                 $fkValue = is_scalar($rawFk) ? (string) $rawFk : '';
-                $newFk = $this->fileStore instanceof EncryptedFileKeyRemappingStore
-                    ? ($this->fileStore->lookup($remappedTable->table, $fkValue) ?? $row[$fk->column])
-                    : ($this->mappings[$remappedTable->table][$fkValue] ?? $row[$fk->column]);
-                $row[$fk->column] = $newFk;
+                $row[$fk->column] = $this->store->lookup($remappedTable->table, $fkValue) ?? $row[$fk->column];
             }
         }
 
@@ -194,19 +174,10 @@ class KeyRemappingService
     }
 
     /**
-     * Phase 7: Release in-memory mappings and encrypted temp files.
+     * Phase 7: Release all mappings via the store.
      */
     public function cleanup(): void
     {
-        $this->mappings = [];
-        $this->fileStore?->cleanup();
-    }
-
-    /**
-     * @return array<string, array<string, string>>
-     */
-    public function getMappings(): array
-    {
-        return $this->mappings;
+        $this->store->cleanup();
     }
 }
