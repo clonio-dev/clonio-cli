@@ -390,3 +390,57 @@ SQL;
         ->not->toContain('REFERENCES')
         ->toContain('IF NOT EXISTS');
 });
+
+it('strips FOREIGN KEY constraints with ON DELETE and multiple columns from native DDL', function (): void {
+    $ddl = <<<'SQL'
+CREATE TABLE `order_items` (
+  `order_id` int NOT NULL,
+  `product_id` int NOT NULL,
+  PRIMARY KEY (`order_id`,`product_id`),
+  CONSTRAINT `order_items_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `order_items_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB
+SQL;
+
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = new DatabaseSchemaData(databaseName: 'sourcedb', tables: [
+        new TableSchemaData(
+            name: 'order_items',
+            columns: [new ColumnSchemaData(name: 'order_id', type: 'int', nullable: false, default: null, isPrimary: true)],
+            foreignKeys: [],
+        ),
+    ]);
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = $ddl;
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $capturedSql = null;
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['order_items'], false, false);
+
+    expect($capturedSql)
+        ->not->toContain('FOREIGN KEY')
+        ->not->toContain('CONSTRAINT')
+        ->not->toContain('REFERENCES')
+        ->not->toContain('ON DELETE')
+        ->toContain('IF NOT EXISTS');
+});
