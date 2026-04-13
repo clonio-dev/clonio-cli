@@ -331,8 +331,8 @@ class SchemaReplicator
      */
     private function sanitiseNativeDdl(string $ddl): string
     {
-        // Remove CONSTRAINT ... FOREIGN KEY lines
-        $ddl = preg_replace('/,?\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN KEY[^,)]+(?:REFERENCES[^,)]+)?/i', '', $ddl) ?? $ddl;
+        // Remove CONSTRAINT ... FOREIGN KEY lines (entire line, including REFERENCES clause)
+        $ddl = preg_replace('/,?\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN\s+KEY.*$/im', '', $ddl) ?? $ddl;
 
         // Remove dangling commas before the closing parenthesis
         $ddl = preg_replace('/,(\s*\))/m', '$1', $ddl) ?? $ddl;

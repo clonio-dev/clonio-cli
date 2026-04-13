@@ -387,5 +387,6 @@ SQL;
     expect($capturedSql)
         ->not->toContain('FOREIGN KEY')
         ->not->toContain('CONSTRAINT')
+        ->not->toContain('REFERENCES')
         ->toContain('IF NOT EXISTS');
 });
