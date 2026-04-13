@@ -326,7 +326,8 @@ class SchemaReplicator
             );
 
             $row = (array) ($rows[0] ?? new \stdClass);
-            $nextVal = max(1, (int) ($row['next_val'] ?? 1));
+            $rawVal = $row['next_val'] ?? 1;
+            $nextVal = max(1, is_numeric($rawVal) ? (int) $rawVal : 1);
 
             DB::connection($connName)->statement(
                 'ALTER TABLE '.$quotedTable.' AUTO_INCREMENT = '.$nextVal
