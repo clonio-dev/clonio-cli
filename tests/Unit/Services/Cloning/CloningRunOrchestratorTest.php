@@ -79,7 +79,7 @@ function makeOrchestrator(): CloningRunOrchestrator
     $connector->shouldReceive('open')->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn');
 
     $replicator = Mockery::mock(SchemaReplicator::class);
-    $replicator->shouldReceive('replicate')->andReturnNull();
+    $replicator->shouldReceive('replicate')->andReturn([]);
 
     $resolver = Mockery::mock(DependencyResolver::class);
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);

@@ -24,7 +24,8 @@ class SchemaReplicator
     /**
      * Replicate source schema tables to target.
      *
-     * @param  list<string>  $tables  table names to replicate
+     * @param  list<string>  $tables
+     * @return array<string, string>  Map of tableName => errorMessage for tables that could not be created
      */
     public function replicate(
         ConnectionData $source,
@@ -34,9 +35,12 @@ class SchemaReplicator
         bool $enforceColumnTypes,
         bool $dropUnknownTables,
         bool $dropExtraColumns = false,
-    ): void {
+    ): array {
         $targetConnName = $this->connector->open($target);
         $sameDbType = $source->type === $target->type;
+
+        /** @var array<string, string> $failedTables */
+        $failedTables = [];
 
         try {
             $targetSchema = $this->inspector->inspect($target);
@@ -51,15 +55,29 @@ class SchemaReplicator
                 $targetTable = $targetSchema->getTable($tableName);
 
                 if (! $targetTable instanceof TableSchemaData) {
-                    // For same DB type, fetch native DDL from source to preserve exact column types
+                    $created = false;
+
                     if ($sameDbType) {
                         $nativeSql = $this->fetchNativeCreateTableDdl($source, $tableName);
+
+                        if ($nativeSql !== null) {
+                            try {
+                                DB::connection($targetConnName)->statement($nativeSql);
+                                $created = true;
+                            } catch (Throwable) {
+                                // native DDL failed — fall through to inspector-based fallback
+                            }
+                        }
                     }
 
-                    $sql = $nativeSql ?? $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
-
-                    DB::connection($targetConnName)->statement($sql);
-                    unset($nativeSql);
+                    if (! $created) {
+                        try {
+                            $fallbackSql = $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
+                            DB::connection($targetConnName)->statement($fallbackSql);
+                        } catch (Throwable $e) {
+                            $failedTables[$tableName] = $e->getMessage();
+                        }
+                    }
                 } else {
                     $sourceColNames = array_map(static fn (ColumnSchemaData $c): string => $c->name, $sourceTable->columns);
                     $targetColNames = array_map(static fn (ColumnSchemaData $c): string => $c->name, $targetTable->columns);
@@ -99,6 +117,8 @@ class SchemaReplicator
         } finally {
             DB::purge($targetConnName);
         }
+
+        return $failedTables;
     }
 
     /**

@@ -444,3 +444,74 @@ SQL;
         ->not->toContain('ON DELETE')
         ->toContain('IF NOT EXISTS');
 });
+
+it('falls back to buildCreateTableSql when native DDL execution fails on target', function (): void {
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = makeSimpleSourceSchema(); // has 'users' table with id (int) column
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = "CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB";
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $fallbackCalled = false;
+
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->with('source_conn')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    // First statement call (native DDL) throws; second (fallback) succeeds
+    DB::shouldReceive('statement')
+        ->once()->andThrow(new RuntimeException('syntax error'));
+    DB::shouldReceive('statement')
+        ->once()->withArgs(static function (string $sql) use (&$fallbackCalled): bool {
+            if (str_contains($sql, 'CREATE TABLE IF NOT EXISTS') && str_contains($sql, 'INT')) {
+                $fallbackCalled = true;
+            }
+            return true;
+        })->andReturnTrue();
+    DB::shouldReceive('purge')->with('target_conn')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failures = $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['users'], false, false);
+
+    expect($fallbackCalled)->toBeTrue();
+    expect($failures)->toBeEmpty();
+});
+
+it('returns table name in failure map when both native DDL and fallback fail', function (): void {
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = makeSimpleSourceSchema();
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = "CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB";
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    // Both native and fallback throw
+    DB::shouldReceive('statement')->andThrow(new RuntimeException('table engine not supported'));
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failures = $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['users'], false, false);
+
+    expect($failures)->toHaveKey('users');
+    expect($failures['users'])->toContain('table engine not supported');
+});
