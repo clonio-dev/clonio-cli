@@ -12,6 +12,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
 use Illuminate\Support\Facades\DB;
+use stdClass;
 use Throwable;
 
 class SchemaReplicator
@@ -25,7 +26,7 @@ class SchemaReplicator
      * Replicate source schema tables to target.
      *
      * @param  list<string>  $tables
-     * @return array<string, string>  Map of tableName => errorMessage for tables that could not be created
+     * @return array<string, string> Map of tableName => errorMessage for tables that could not be created
      */
     public function replicate(
         ConnectionData $source,
@@ -325,7 +326,7 @@ class SchemaReplicator
                 'SELECT COALESCE(MAX('.$quotedCol.'), 0) + 1 AS next_val FROM '.$quotedTable
             );
 
-            $row = (array) ($rows[0] ?? new \stdClass);
+            $row = (array) ($rows[0] ?? new stdClass);
             $rawVal = $row['next_val'] ?? 1;
             $nextVal = max(1, is_numeric($rawVal) ? (int) $rawVal : 1);
 

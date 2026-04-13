@@ -452,7 +452,7 @@ it('falls back to buildCreateTableSql when native DDL execution fails on target'
 
     $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
     $showRow = new stdClass;
-    $showRow->{'Create Table'} = "CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB";
+    $showRow->{'Create Table'} = 'CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB';
 
     $inspector = Mockery::mock(SchemaInspector::class);
     $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
@@ -475,6 +475,7 @@ it('falls back to buildCreateTableSql when native DDL execution fails on target'
             if (str_contains($sql, 'CREATE TABLE IF NOT EXISTS') && str_contains($sql, 'INT')) {
                 $fallbackCalled = true;
             }
+
             return true;
         })->andReturnTrue();
     DB::shouldReceive('purge')->with('target_conn')->andReturnNull();
@@ -493,7 +494,7 @@ it('returns table name in failure map when both native DDL and fallback fail', f
 
     $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
     $showRow = new stdClass;
-    $showRow->{'Create Table'} = "CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB";
+    $showRow->{'Create Table'} = 'CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB';
 
     $inspector = Mockery::mock(SchemaInspector::class);
     $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
