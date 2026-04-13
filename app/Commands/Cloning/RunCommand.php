@@ -184,6 +184,7 @@ class RunCommand extends Command
                 ),
                 tables: $config->tables,
                 keyRemapping: $config->keyRemapping,
+                skipTables: $config->skipTables,
             );
         }
 
@@ -355,6 +356,9 @@ class RunCommand extends Command
 
         /** @var list<string> $schemaFailureTables */
         $schemaFailureTables = [];
+
+        // Merge YAML-level skipTables with CLI --skip-tables (additive, deduplicated)
+        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
 
         $result = $orchestrator->run(
             config: $config,
