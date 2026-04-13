@@ -442,6 +442,7 @@ SQL;
         ->not->toContain('CONSTRAINT')
         ->not->toContain('REFERENCES')
         ->not->toContain('ON DELETE')
+        ->not->toContain('ON UPDATE')
         ->toContain('IF NOT EXISTS');
 });
 

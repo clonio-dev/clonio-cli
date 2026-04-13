@@ -389,7 +389,7 @@ class SchemaReplicator
     {
         // Remove CONSTRAINT ... FOREIGN KEY definitions (full definition including REFERENCES and ON clauses).
         // MySQL SHOW CREATE TABLE outputs each FK on its own line, but we match broadly for safety.
-        $ddl = preg_replace('/,?\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN\s+KEY\s*\([^)]+\)\s*REFERENCES\s+`[^`]+`\s*\([^)]+\)(?:\s+ON\s+(?:DELETE|UPDATE)\s+\w+(?:\s+\w+)?)*/i', '', $ddl) ?? $ddl;
+        $ddl = preg_replace('/,?\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN\s+KEY\s*\([^)]+\)\s*REFERENCES\s+`[^`]+`\s*\([^)]+\)(?:\s+ON\s+(?:DELETE|UPDATE)\s+\w+(?:\s+(?!ON\b)\w+)?)*/i', '', $ddl) ?? $ddl;
 
         // Remove dangling commas before the closing parenthesis
         $ddl = preg_replace('/,(\s*\))/m', '$1', $ddl) ?? $ddl;
