@@ -422,6 +422,38 @@ When a table is excluded, all tables with a foreign key dependency on it — dir
 
 Cascaded tables appear in the audit log with status `skipped_by_cascade`.
 
+### Skipping tables in YAML
+
+Instead of passing `--skip-tables` on every invocation, you can declare tables to skip permanently inside `cloning.yaml`. Two syntaxes are supported and can be combined:
+
+**Top-level `skip:` list** — for tables that need no anonymisation config:
+
+```yaml
+skip:
+  - audit_logs
+  - telescope_entries
+  - failed_jobs
+```
+
+**`rows.strategy: skip`** — for tables already present in `tables:`:
+
+```yaml
+tables:
+  audit_logs:
+    rows:
+      strategy: skip
+  users:
+    rows:
+      strategy: full
+    columns:
+      email:
+        strategy: fake
+        faker_method: safeEmail
+        faker_arguments: []
+```
+
+YAML-level skips and `--skip-tables` are **additive**: both lists are merged at runtime. The same cascade rules apply — tables with FK dependencies on a skipped table are also skipped automatically.
+
 ## Table Run Statuses
 
 Each table in a run is recorded with one of the following statuses in the audit and process logs:
