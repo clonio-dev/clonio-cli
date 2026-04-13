@@ -9,3 +9,4 @@
 /storage/logs/*.log
 /clonio.json
 .DS_Store
+/.worktrees

@@ -37,8 +37,22 @@ clonio cloning:run <file> [options]
 | `--no-drop-extra-columns` | Override: set `drop_extra_columns: false` for this run |
 | `--disable-fk-checks` | Override: set `disable_foreign_key_checks: true` for this run |
 | `--no-disable-fk-checks` | Override: set `disable_foreign_key_checks: false` for this run |
+| `--break-on-failure` | Abort the run immediately on the first table failure (schema or data) |
 
 `--skip-tables` and `--only-tables` are mutually exclusive. Verbosity flags `-v` / `-vv` / `-vvv` are also supported (see [Output Modes](#output-modes)).
+
+### `--break-on-failure`
+
+By default, Clonio continues processing all tables even when one fails — every table gets a chance to transfer and the full results are reported at the end. Pass `--break-on-failure` to abort the run immediately the first time a table fails (either at schema creation or at data transfer).
+
+| Scenario | Without flag | With `--break-on-failure` |
+|---|---|---|
+| Schema failure on table A | Continue, skip A's data | Abort run |
+| Data failure on table B | Continue | Abort run |
+| All tables OK | `success: true` | `success: true` |
+| Partial failure | `success: false`, full results | `success: false`, partial results |
+
+The audit log is always written, even on early abort.
 
 ## Prerequisites
 
@@ -408,6 +422,19 @@ When a table is excluded, all tables with a foreign key dependency on it — dir
 
 Cascaded tables appear in the audit log with status `skipped_by_cascade`.
 
+## Table Run Statuses
+
+Each table in a run is recorded with one of the following statuses in the audit and process logs:
+
+| Status | Meaning |
+|--------|---------|
+| `transferred` | Table was transferred successfully |
+| `skipped_by_flag` | Table was excluded via `--skip-tables` or `--only-tables` |
+| `skipped_by_cascade` | Table was excluded because it has a FK dependency on a skipped table |
+| `skipped_by_schema_failure` | Table's schema could not be created in the target database (native DDL and fallback both failed); the data transfer step was skipped. Overall `success` is `false`. |
+| `not_found` | Table is listed in the YAML but does not exist in the source database |
+| `failed` | Table transfer was attempted but encountered an unrecoverable error |
+
 ## Output Modes
 
 ### `--ci` (CI mode)
@@ -434,6 +461,7 @@ Dot-style progress per table, with a summary at the end:
 | `F` | Table had skipped or failed rows |
 | `E` | Table aborted with an unrecoverable error |
 | `?` | Table not found in source (skipped) |
+| `S` | Table was skipped because schema creation failed |
 
 ### `-v` (verbose)
 

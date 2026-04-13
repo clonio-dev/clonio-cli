@@ -6,6 +6,7 @@ use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
+use App\Data\Cloning\TableRunResultData;
 use App\Data\ConnectionData;
 use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
@@ -79,7 +80,7 @@ function makeOrchestrator(): CloningRunOrchestrator
     $connector->shouldReceive('open')->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn');
 
     $replicator = Mockery::mock(SchemaReplicator::class);
-    $replicator->shouldReceive('replicate')->andReturnNull();
+    $replicator->shouldReceive('replicate')->andReturn([]);
 
     $resolver = Mockery::mock(DependencyResolver::class);
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
@@ -348,4 +349,161 @@ it('reports table failure when SELECT throws', function (): void {
 
     expect($result->success)->toBeFalse();
     expect($result->failureReason)->not->toBeNull();
+});
+
+function makeOrchestratorWithSchemaFailures(array $schemaFailures): CloningRunOrchestrator
+{
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn');
+
+    $replicator = Mockery::mock(SchemaReplicator::class);
+    $replicator->shouldReceive('replicate')->andReturn($schemaFailures);
+    $replicator->shouldReceive('correctAutoIncrement')->andReturnNull();
+
+    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
+    $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
+
+    $runLog = new RunLogWriter;
+
+    return new CloningRunOrchestrator($connector, $replicator, $resolver, $runLog);
+}
+
+it('marks table as skipped_by_schema_failure when schema could not be created', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $orchestrator = makeOrchestratorWithSchemaFailures(['users' => 'syntax error']);
+    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (): null => null);
+
+    expect($result->tables)->toHaveCount(1);
+    expect($result->tables[0]->status->value)->toBe('skipped_by_schema_failure');
+    expect($result->success)->toBeFalse();
+});
+
+it('continues with other tables after a schema failure', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(
+                name: 'orders',
+                columns: [new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true)],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'users',
+                columns: [new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true)],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'source',
+        options: new CloningOptionsData(
+            chunkSize: 1000,
+            enforceColumnTypes: false,
+            dropUnknownTables: false,
+            dropExtraColumns: false,
+            disableForeignKeyChecks: false,
+            fakerLocale: 'en_US',
+        ),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'orders',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+        ],
+    );
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([(object) ['id' => 1]], []);
+    DB::shouldReceive('table')->andReturnSelf();
+    DB::shouldReceive('insert')->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    // orders fails schema; users succeeds
+    $orchestrator = makeOrchestratorWithSchemaFailures(['orders' => 'syntax error']);
+    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (): null => null);
+
+    $statusByTable = [];
+    foreach ($result->tables as $tableResult) {
+        $statusByTable[$tableResult->tableName] = $tableResult->status->value;
+    }
+
+    expect($statusByTable['orders'])->toBe('skipped_by_schema_failure');
+    expect($statusByTable['users'])->toBe('transferred');
+    expect($result->success)->toBeFalse();
+});
+
+it('aborts after first schema failure when breakOnFailure is true', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(
+                name: 'orders',
+                columns: [new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true)],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'users',
+                columns: [new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true)],
+                foreignKeys: [],
+            ),
+        ],
+    );
+
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'source',
+        options: new CloningOptionsData(
+            chunkSize: 1000,
+            enforceColumnTypes: false,
+            dropUnknownTables: false,
+            dropExtraColumns: false,
+            disableForeignKeyChecks: false,
+            fakerLocale: 'en_US',
+        ),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'orders',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+        ],
+    );
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $orchestrator = makeOrchestratorWithSchemaFailures(['orders' => 'syntax error']);
+    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (): null => null, breakOnFailure: true);
+
+    $tableNames = array_map(static fn (TableRunResultData $t): string => $t->tableName, $result->tables);
+    expect($tableNames)->toContain('orders');
+    expect($tableNames)->not->toContain('users');
+    expect($result->success)->toBeFalse();
 });

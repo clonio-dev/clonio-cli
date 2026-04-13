@@ -12,6 +12,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
 use Illuminate\Support\Facades\DB;
+use stdClass;
 use Throwable;
 
 class SchemaReplicator
@@ -24,7 +25,8 @@ class SchemaReplicator
     /**
      * Replicate source schema tables to target.
      *
-     * @param  list<string>  $tables  table names to replicate
+     * @param  list<string>  $tables
+     * @return array<string, string> Map of tableName => errorMessage for tables that could not be created
      */
     public function replicate(
         ConnectionData $source,
@@ -34,9 +36,12 @@ class SchemaReplicator
         bool $enforceColumnTypes,
         bool $dropUnknownTables,
         bool $dropExtraColumns = false,
-    ): void {
+    ): array {
         $targetConnName = $this->connector->open($target);
         $sameDbType = $source->type === $target->type;
+
+        /** @var array<string, string> $failedTables */
+        $failedTables = [];
 
         try {
             $targetSchema = $this->inspector->inspect($target);
@@ -51,15 +56,29 @@ class SchemaReplicator
                 $targetTable = $targetSchema->getTable($tableName);
 
                 if (! $targetTable instanceof TableSchemaData) {
-                    // For same DB type, fetch native DDL from source to preserve exact column types
+                    $created = false;
+
                     if ($sameDbType) {
                         $nativeSql = $this->fetchNativeCreateTableDdl($source, $tableName);
+
+                        if ($nativeSql !== null) {
+                            try {
+                                DB::connection($targetConnName)->statement($nativeSql);
+                                $created = true;
+                            } catch (Throwable) {
+                                // native DDL failed — fall through to inspector-based fallback
+                            }
+                        }
                     }
 
-                    $sql = $nativeSql ?? $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
-
-                    DB::connection($targetConnName)->statement($sql);
-                    unset($nativeSql);
+                    if (! $created) {
+                        try {
+                            $fallbackSql = $this->buildCreateTableSql($tableName, $sourceTable->columns, $target->type);
+                            DB::connection($targetConnName)->statement($fallbackSql);
+                        } catch (Throwable $e) {
+                            $failedTables[$tableName] = $e->getMessage();
+                        }
+                    }
                 } else {
                     $sourceColNames = array_map(static fn (ColumnSchemaData $c): string => $c->name, $sourceTable->columns);
                     $targetColNames = array_map(static fn (ColumnSchemaData $c): string => $c->name, $targetTable->columns);
@@ -99,6 +118,8 @@ class SchemaReplicator
         } finally {
             DB::purge($targetConnName);
         }
+
+        return $failedTables;
     }
 
     /**
@@ -283,6 +304,41 @@ class SchemaReplicator
     }
 
     /**
+     * Set AUTO_INCREMENT on a MySQL/MariaDB table to MAX(pkColumn)+1.
+     * No-op for non-MySQL/MariaDB targets.
+     *
+     * @throws Throwable if the query or ALTER statement fails
+     */
+    public function correctAutoIncrement(ConnectionData $target, string $tableName, string $pkColumn): void
+    {
+        if (! in_array($target->type, [DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB], true)) {
+            return;
+        }
+
+        $connName = $this->connector->open($target);
+
+        try {
+            $quotedTable = '`'.$tableName.'`';
+            $quotedCol = '`'.$pkColumn.'`';
+
+            /** @var list<object> $rows */
+            $rows = DB::connection($connName)->select(
+                'SELECT COALESCE(MAX('.$quotedCol.'), 0) + 1 AS next_val FROM '.$quotedTable
+            );
+
+            $row = (array) ($rows[0] ?? new stdClass);
+            $rawVal = $row['next_val'] ?? 1;
+            $nextVal = max(1, is_numeric($rawVal) ? (int) $rawVal : 1);
+
+            DB::connection($connName)->statement(
+                'ALTER TABLE '.$quotedTable.' AUTO_INCREMENT = '.$nextVal
+            );
+        } finally {
+            DB::purge($connName);
+        }
+    }
+
+    /**
      * Fetch native CREATE TABLE DDL from source and adapt it for the target.
      * Only called when source and target are the same DB type.
      * FK constraints and AUTO_INCREMENT counters are stripped so the statement
@@ -331,8 +387,9 @@ class SchemaReplicator
      */
     private function sanitiseNativeDdl(string $ddl): string
     {
-        // Remove CONSTRAINT ... FOREIGN KEY lines
-        $ddl = preg_replace('/,?\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN KEY[^,)]+(?:REFERENCES[^,)]+)?/i', '', $ddl) ?? $ddl;
+        // Remove CONSTRAINT ... FOREIGN KEY definitions (full definition including REFERENCES and ON clauses).
+        // MySQL SHOW CREATE TABLE outputs each FK on its own line, but we match broadly for safety.
+        $ddl = preg_replace('/,?\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN\s+KEY\s*\([^)]+\)\s*REFERENCES\s+`[^`]+`\s*\([^)]+\)(?:\s+ON\s+(?:DELETE|UPDATE)\s+\w+(?:\s+(?!ON\b)\w+)?)*/i', '', $ddl) ?? $ddl;
 
         // Remove dangling commas before the closing parenthesis
         $ddl = preg_replace('/,(\s*\))/m', '$1', $ddl) ?? $ddl;

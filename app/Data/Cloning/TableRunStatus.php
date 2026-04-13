@@ -10,5 +10,6 @@ enum TableRunStatus: string
     case SkippedByFlag = 'skipped_by_flag';
     case SkippedByCascade = 'skipped_by_cascade';
     case NotFound = 'not_found';
+    case SkippedBySchemaFailure = 'skipped_by_schema_failure';
     case Failed = 'failed';
 }

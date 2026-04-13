@@ -387,5 +387,233 @@ SQL;
     expect($capturedSql)
         ->not->toContain('FOREIGN KEY')
         ->not->toContain('CONSTRAINT')
+        ->not->toContain('REFERENCES')
         ->toContain('IF NOT EXISTS');
+});
+
+it('strips FOREIGN KEY constraints with ON DELETE and multiple columns from native DDL', function (): void {
+    $ddl = <<<'SQL'
+CREATE TABLE `order_items` (
+  `order_id` int NOT NULL,
+  `product_id` int NOT NULL,
+  PRIMARY KEY (`order_id`,`product_id`),
+  CONSTRAINT `order_items_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `order_items_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB
+SQL;
+
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = new DatabaseSchemaData(databaseName: 'sourcedb', tables: [
+        new TableSchemaData(
+            name: 'order_items',
+            columns: [new ColumnSchemaData(name: 'order_id', type: 'int', nullable: false, default: null, isPrimary: true)],
+            foreignKeys: [],
+        ),
+    ]);
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = $ddl;
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $capturedSql = null;
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['order_items'], false, false);
+
+    expect($capturedSql)
+        ->not->toContain('FOREIGN KEY')
+        ->not->toContain('CONSTRAINT')
+        ->not->toContain('REFERENCES')
+        ->not->toContain('ON DELETE')
+        ->not->toContain('ON UPDATE')
+        ->toContain('IF NOT EXISTS');
+});
+
+it('falls back to buildCreateTableSql when native DDL execution fails on target', function (): void {
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = makeSimpleSourceSchema(); // has 'users' table with id (int) column
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = 'CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB';
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    $fallbackCalled = false;
+
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->with('source_conn')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    // First statement call (native DDL) throws; second (fallback) succeeds
+    DB::shouldReceive('statement')
+        ->once()->andThrow(new RuntimeException('syntax error'));
+    DB::shouldReceive('statement')
+        ->once()->withArgs(static function (string $sql) use (&$fallbackCalled): bool {
+            if (str_contains($sql, 'CREATE TABLE IF NOT EXISTS') && str_contains($sql, 'INT')) {
+                $fallbackCalled = true;
+            }
+
+            return true;
+        })->andReturnTrue();
+    DB::shouldReceive('purge')->with('target_conn')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failures = $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['users'], false, false);
+
+    expect($fallbackCalled)->toBeTrue();
+    expect($failures)->toBeEmpty();
+});
+
+it('returns table name in failure map when both native DDL and fallback fail', function (): void {
+    $sourceConn = makeReplicatorMysqlConnection('source');
+    $targetConn = makeReplicatorMysqlConnection('target');
+    $sourceSchema = makeSimpleSourceSchema();
+
+    $emptyTargetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: []);
+    $showRow = new stdClass;
+    $showRow->{'Create Table'} = 'CREATE TABLE `users` (`id` int NOT NULL) ENGINE=InnoDB';
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($emptyTargetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$showRow]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    // Both native and fallback throw
+    DB::shouldReceive('statement')->andThrow(new RuntimeException('table engine not supported'));
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failures = $replicator->replicate($sourceConn, $targetConn, $sourceSchema, ['users'], false, false);
+
+    expect($failures)->toHaveKey('users');
+    expect($failures['users'])->toContain('table engine not supported');
+});
+
+it('sets AUTO_INCREMENT to max pk plus one', function (): void {
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    $maxRow = new stdClass;
+    $maxRow->next_val = 51;
+
+    $alterCalled = false;
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('select')->with(Mockery::pattern('/COALESCE.*MAX/i'))->andReturn([$maxRow]);
+    DB::shouldReceive('statement')->withArgs(static function (string $sql) use (&$alterCalled): bool {
+        if (str_contains($sql, 'AUTO_INCREMENT = 51')) {
+            $alterCalled = true;
+        }
+
+        return true;
+    })->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->correctAutoIncrement($targetConn, 'users', 'id');
+
+    expect($alterCalled)->toBeTrue();
+});
+
+it('sets AUTO_INCREMENT to 1 when table is empty', function (): void {
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    $maxRow = new stdClass;
+    $maxRow->next_val = 1;
+
+    $capturedSql = null;
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$maxRow]);
+    DB::shouldReceive('statement')->withArgs(static function (string $sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    })->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->correctAutoIncrement($targetConn, 'users', 'id');
+
+    expect($capturedSql)->toContain('AUTO_INCREMENT = 1');
+});
+
+it('throws when AUTO_INCREMENT correction query fails', function (): void {
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andThrow(new RuntimeException('query failed'));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+
+    expect(fn () => $replicator->correctAutoIncrement($targetConn, 'users', 'id'))
+        ->toThrow(RuntimeException::class, 'query failed');
+});
+
+it('does not connect to target for non-mysql AUTO_INCREMENT correction', function (): void {
+    $targetConn = new ConnectionData(
+        name: 'target',
+        type: DatabaseConnectionType::PostgreSQL,
+        host: 'localhost',
+        port: 5432,
+        database: 'testdb',
+        schema: null,
+        username: 'root',
+        password: 'secret',
+        isProduction: false,
+    );
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->never();
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->correctAutoIncrement($targetConn, 'users', 'id');
+
+    expect(true)->toBeTrue(); // no exception, no connection opened
 });
