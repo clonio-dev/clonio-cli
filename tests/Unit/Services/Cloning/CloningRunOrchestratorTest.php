@@ -268,25 +268,6 @@ it('marks table as skipped when in skip-tables list', function (): void {
     expect($result->tables[0]->status->value)->toBe('skipped_by_flag');
 });
 
-it('excludes tables listed in config skipTables the same as cli skip-tables', function (): void {
-    $source = makeOrchestratorConnection('source');
-    $target = makeOrchestratorConnection('target');
-    $schema = makeOrchestratorSchema();
-    $config = makeOrchestratorConfig();
-
-    DB::shouldReceive('connection')->andReturnSelf();
-    DB::shouldReceive('select')->andReturn([]);
-    DB::shouldReceive('purge')->andReturnNull();
-
-    $orchestrator = makeOrchestrator();
-    // Simulate what RunCommand does: merge config->skipTables with CLI skip list
-    $mergedSkip = array_values(array_unique(array_merge(['users'], [])));
-    $result = $orchestrator->run($config, $source, $target, $schema, true, $mergedSkip, [], static fn (): null => null);
-
-    expect($result->tables)->toHaveCount(1);
-    expect($result->tables[0]->status->value)->toBe('skipped_by_flag');
-});
-
 it('marks table as not-found when missing from schema', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');

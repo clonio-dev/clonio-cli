@@ -188,6 +188,10 @@ class RunCommand extends Command
             );
         }
 
+        // Merge YAML-level skipTables with CLI --skip-tables (additive, deduplicated)
+        // Done here so both the dry-run and full-run paths see the merged list.
+        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
+
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
         // Resolve source connection from config
@@ -356,9 +360,6 @@ class RunCommand extends Command
 
         /** @var list<string> $schemaFailureTables */
         $schemaFailureTables = [];
-
-        // Merge YAML-level skipTables with CLI --skip-tables (additive, deduplicated)
-        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
 
         $result = $orchestrator->run(
             config: $config,
