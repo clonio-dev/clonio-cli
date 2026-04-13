@@ -515,3 +515,103 @@ it('returns table name in failure map when both native DDL and fallback fail', f
     expect($failures)->toHaveKey('users');
     expect($failures['users'])->toContain('table engine not supported');
 });
+
+it('sets AUTO_INCREMENT to max pk plus one', function (): void {
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    $maxRow = new stdClass;
+    $maxRow->next_val = 51;
+
+    $alterCalled = false;
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('select')->with(Mockery::pattern('/COALESCE.*MAX/i'))->andReturn([$maxRow]);
+    DB::shouldReceive('statement')->withArgs(static function (string $sql) use (&$alterCalled): bool {
+        if (str_contains($sql, 'AUTO_INCREMENT = 51')) {
+            $alterCalled = true;
+        }
+
+        return true;
+    })->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->correctAutoIncrement($targetConn, 'users', 'id');
+
+    expect($alterCalled)->toBeTrue();
+});
+
+it('sets AUTO_INCREMENT to 1 when table is empty', function (): void {
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    $maxRow = new stdClass;
+    $maxRow->next_val = 1;
+
+    $capturedSql = null;
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([$maxRow]);
+    DB::shouldReceive('statement')->withArgs(static function (string $sql) use (&$capturedSql): bool {
+        $capturedSql = $sql;
+
+        return true;
+    })->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->correctAutoIncrement($targetConn, 'users', 'id');
+
+    expect($capturedSql)->toContain('AUTO_INCREMENT = 1');
+});
+
+it('throws when AUTO_INCREMENT correction query fails', function (): void {
+    $targetConn = makeReplicatorMysqlConnection('target');
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andThrow(new RuntimeException('query failed'));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+
+    expect(fn () => $replicator->correctAutoIncrement($targetConn, 'users', 'id'))
+        ->toThrow(RuntimeException::class, 'query failed');
+});
+
+it('does not connect to target for non-mysql AUTO_INCREMENT correction', function (): void {
+    $targetConn = new ConnectionData(
+        name: 'target',
+        type: DatabaseConnectionType::PostgreSQL,
+        host: 'localhost',
+        port: 5432,
+        database: 'testdb',
+        schema: null,
+        username: 'root',
+        password: 'secret',
+        isProduction: false,
+    );
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->never();
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->correctAutoIncrement($targetConn, 'users', 'id');
+
+    expect(true)->toBeTrue(); // no exception, no connection opened
+});

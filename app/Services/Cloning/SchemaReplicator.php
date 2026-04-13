@@ -303,6 +303,40 @@ class SchemaReplicator
     }
 
     /**
+     * Set AUTO_INCREMENT on a MySQL/MariaDB table to MAX(pkColumn)+1.
+     * No-op for non-MySQL/MariaDB targets.
+     *
+     * @throws Throwable if the query or ALTER statement fails
+     */
+    public function correctAutoIncrement(ConnectionData $target, string $tableName, string $pkColumn): void
+    {
+        if (! in_array($target->type, [DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB], true)) {
+            return;
+        }
+
+        $connName = $this->connector->open($target);
+
+        try {
+            $quotedTable = '`'.$tableName.'`';
+            $quotedCol = '`'.$pkColumn.'`';
+
+            /** @var list<object> $rows */
+            $rows = DB::connection($connName)->select(
+                'SELECT COALESCE(MAX('.$quotedCol.'), 0) + 1 AS next_val FROM '.$quotedTable
+            );
+
+            $row = (array) ($rows[0] ?? new \stdClass);
+            $nextVal = max(1, (int) ($row['next_val'] ?? 1));
+
+            DB::connection($connName)->statement(
+                'ALTER TABLE '.$quotedTable.' AUTO_INCREMENT = '.$nextVal
+            );
+        } finally {
+            DB::purge($connName);
+        }
+    }
+
+    /**
      * Fetch native CREATE TABLE DDL from source and adapt it for the target.
      * Only called when source and target are the same DB type.
      * FK constraints and AUTO_INCREMENT counters are stripped so the statement
