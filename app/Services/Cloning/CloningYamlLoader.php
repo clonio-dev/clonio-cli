@@ -114,12 +114,25 @@ class CloningYamlLoader
             }
         }
 
+        // Parse top-level skip: list
+        /** @var list<string> $skipTables */
+        $skipTables = [];
+        $skipRaw = $data['skip'] ?? null;
+        if (is_array($skipRaw)) {
+            foreach ($skipRaw as $entry) {
+                if (is_string($entry) && $entry !== '') {
+                    $skipTables[] = $entry;
+                }
+            }
+        }
+
         return new CloningConfigData(
             version: $version,
             connectionName: $connectionName,
             options: $options,
             tables: $tables,
             keyRemapping: $keyRemapping,
+            skipTables: $skipTables,
         );
     }
 

@@ -593,3 +593,85 @@ YAML;
 
     expect($config->options->dropExtraColumns)->toBeFalse();
 });
+
+it('parses top-level skip list into skipTables', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+skip:
+  - audit_logs
+  - telescope_entries
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
+
+    expect($config->skipTables)->toBe(['audit_logs', 'telescope_entries']);
+});
+
+it('returns empty skipTables when skip key is absent', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
+
+    expect($config->skipTables)->toBe([]);
+});
+
+it('ignores non-string entries in the skip list', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+skip:
+  - audit_logs
+  - 42
+  - ""
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
+
+    expect($config->skipTables)->toBe(['audit_logs']);
+});
