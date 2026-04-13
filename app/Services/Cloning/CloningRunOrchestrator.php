@@ -13,7 +13,9 @@ use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
+use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\TableSchemaData;
 use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
@@ -43,6 +45,7 @@ class CloningRunOrchestrator
         array $onlyTables,
         callable $onProgress,
         ?KeyRemappingService $keyRemapping = null,
+        bool $breakOnFailure = false,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -68,20 +71,26 @@ class CloningRunOrchestrator
         $sortedTables = $this->resolver->sort($sourceSchema, $remaining);
 
         // Replicate schema if not skipping
+        /** @var array<string, string> $schemaFailures */
+        $schemaFailures = [];
+
         if (! $skipSchema) {
-            try {
-                $this->replicator->replicate(
-                    $source,
-                    $target,
-                    $sourceSchema,
-                    $sortedTables,
-                    $config->options->enforceColumnTypes,
-                    $config->options->dropUnknownTables,
-                    $config->options->dropExtraColumns,
-                );
+            $schemaFailures = $this->replicator->replicate(
+                $source,
+                $target,
+                $sourceSchema,
+                $sortedTables,
+                $config->options->enforceColumnTypes,
+                $config->options->dropUnknownTables,
+                $config->options->dropExtraColumns,
+            );
+
+            if ($schemaFailures === []) {
                 $this->runLog->log('info', 'schema_replicated', ['tables' => $sortedTables]);
-            } catch (Throwable $e) {
-                $this->runLog->log('error', 'schema_replication_failed', ['error' => $e->getMessage()]);
+            } else {
+                foreach ($schemaFailures as $failedTable => $errorMsg) {
+                    $this->runLog->log('error', 'schema_table_failed', ['table' => $failedTable, 'error' => $errorMsg]);
+                }
             }
         }
 
@@ -111,6 +120,20 @@ class CloningRunOrchestrator
                 continue;
             }
 
+            // Skip data transfer for tables whose schema could not be created
+            if (array_key_exists($tableName, $schemaFailures)) {
+                $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $schemaFailures[$tableName]);
+                $this->runLog->log('warning', 'table_skipped_schema_failure', ['table' => $tableName]);
+                $success = false;
+                ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0);
+
+                if ($breakOnFailure) {
+                    break;
+                }
+
+                continue;
+            }
+
             // Check if table exists in source
             if (! $sourceSchema->hasTable($tableName)) {
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::NotFound, 0, 0, 0.0, null);
@@ -137,6 +160,26 @@ class CloningRunOrchestrator
             $totalRows += $rows;
             $totalSkipped += $skipped;
             ($onProgress)($tableName, $status, $rows, $skipped);
+
+            if ($failed && $breakOnFailure) {
+                break;
+            }
+
+            if (! $failed) {
+                $sourceTable = $sourceSchema->getTable($tableName);
+
+                if ($sourceTable instanceof TableSchemaData) {
+                    $pkColumn = $this->findIntegerPkColumn($target, $sourceTable);
+
+                    if ($pkColumn !== null) {
+                        try {
+                            $this->replicator->correctAutoIncrement($target, $tableName, $pkColumn);
+                        } catch (Throwable $e) {
+                            $this->runLog->log('warning', 'auto_increment_correction_failed', ['table' => $tableName, 'error' => $e->getMessage()]);
+                        }
+                    }
+                }
+            }
         }
 
         $duration = microtime(true) - $start;
@@ -149,6 +192,31 @@ class CloningRunOrchestrator
             durationSeconds: $duration,
             failureReason: $success ? null : 'One or more tables failed to transfer',
         );
+    }
+
+    /**
+     * Return the single integer PK column name, or null if AUTO_INCREMENT correction does not apply.
+     * Only applies to MySQL/MariaDB targets with a single-column integer PK.
+     */
+    private function findIntegerPkColumn(ConnectionData $target, TableSchemaData $table): ?string
+    {
+        if (! in_array($target->type, [DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB], true)) {
+            return null;
+        }
+
+        $pkColumns = array_values(array_filter($table->columns, static fn (ColumnSchemaData $c): bool => $c->isPrimary));
+
+        if (count($pkColumns) !== 1) {
+            return null;
+        }
+
+        $intTypes = ['int', 'bigint', 'mediumint', 'smallint', 'tinyint', 'integer'];
+
+        if (! in_array(strtolower($pkColumns[0]->type), $intTypes, true)) {
+            return null;
+        }
+
+        return $pkColumns[0]->name;
     }
 
     /**
