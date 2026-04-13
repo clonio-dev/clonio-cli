@@ -573,3 +573,76 @@ it('rejects drop_extra_columns when not a boolean', function (): void {
 
     expect($errors)->toContain("Field 'options.drop_extra_columns' must be a boolean");
 });
+
+it('accepts rows.strategy skip as a valid strategy', function (): void {
+    $validator = new CloningYamlValidator;
+
+    $data = [
+        'version' => '1',
+        'connection' => 'production-db',
+        'options' => [
+            'chunk_size' => 1000,
+            'enforce_column_types' => false,
+            'drop_unknown_tables' => false,
+            'disable_foreign_key_checks' => true,
+            'faker_locale' => 'en_US',
+        ],
+        'tables' => [
+            'audit_logs' => [
+                'rows' => ['strategy' => 'skip'],
+            ],
+        ],
+    ];
+
+    expect($validator->validate($data))->toBe([]);
+});
+
+it('accepts a valid top-level skip list', function (): void {
+    $validator = new CloningYamlValidator;
+
+    $data = [
+        'version' => '1',
+        'connection' => 'production-db',
+        'options' => [
+            'chunk_size' => 1000,
+            'enforce_column_types' => false,
+            'drop_unknown_tables' => false,
+            'disable_foreign_key_checks' => true,
+            'faker_locale' => 'en_US',
+        ],
+        'tables' => [
+            'users' => [
+                'rows' => ['strategy' => 'full'],
+            ],
+        ],
+        'skip' => ['audit_logs', 'telescope_entries'],
+    ];
+
+    expect($validator->validate($data))->toBe([]);
+});
+
+it('returns error when skip is not a list', function (): void {
+    $validator = new CloningYamlValidator;
+
+    $data = [
+        'version' => '1',
+        'connection' => 'production-db',
+        'options' => [
+            'chunk_size' => 1000,
+            'enforce_column_types' => false,
+            'drop_unknown_tables' => false,
+            'disable_foreign_key_checks' => true,
+            'faker_locale' => 'en_US',
+        ],
+        'tables' => [
+            'users' => [
+                'rows' => ['strategy' => 'full'],
+            ],
+        ],
+        'skip' => 'audit_logs',
+    ];
+
+    $errors = $validator->validate($data);
+
+    expect($errors)->toContain("Field 'skip' must be a list of table name strings");
+});

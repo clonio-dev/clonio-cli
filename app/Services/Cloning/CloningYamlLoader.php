@@ -126,6 +126,13 @@ class CloningYamlLoader
             }
         }
 
+        // Collect tables with rows.strategy: skip into skipTables (deduplicated)
+        foreach ($tables as $tableData) {
+            if ($tableData->rows->strategy === 'skip' && ! in_array($tableData->tableName, $skipTables, true)) {
+                $skipTables[] = $tableData->tableName;
+            }
+        }
+
         return new CloningConfigData(
             version: $version,
             connectionName: $connectionName,
