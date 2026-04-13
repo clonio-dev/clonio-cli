@@ -8,6 +8,7 @@ final readonly class CloningConfigData
 {
     /**
      * @param  list<TableCloningConfigData>  $tables
+     * @param  list<string>  $skipTables
      */
     public function __construct(
         public string $version,
@@ -15,6 +16,7 @@ final readonly class CloningConfigData
         public CloningOptionsData $options,
         public array $tables,
         public ?KeyRemappingConfigData $keyRemapping = null,
+        public array $skipTables = [],
     ) {}
 
     public function getTable(string $name): ?TableCloningConfigData

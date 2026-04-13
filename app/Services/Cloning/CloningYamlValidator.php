@@ -24,7 +24,7 @@ class CloningYamlValidator
         'ean13', 'ean8', 'isbn10', 'isbn13',
     ];
 
-    private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last'];
+    private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last', 'skip'];
 
     private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'remapping'];
 
@@ -92,6 +92,12 @@ class CloningYamlValidator
                 /** @var array<string, mixed> $keyRemapping */
                 $errors = array_merge($errors, $this->validateKeyRemapping($keyRemapping, is_array($data['tables']) ? array_keys($data['tables']) : []));
             }
+        }
+
+        // 7. skip list validation (optional)
+        $skip = $data['skip'] ?? null;
+        if ($skip !== null && ! is_array($skip)) {
+            $errors[] = "Field 'skip' must be a list of table name strings";
         }
 
         return $errors;

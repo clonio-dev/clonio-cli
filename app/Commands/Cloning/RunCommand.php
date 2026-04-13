@@ -184,8 +184,13 @@ class RunCommand extends Command
                 ),
                 tables: $config->tables,
                 keyRemapping: $config->keyRemapping,
+                skipTables: $config->skipTables,
             );
         }
+
+        // Merge YAML-level skipTables with CLI --skip-tables (additive, deduplicated)
+        // Done here so both the dry-run and full-run paths see the merged list.
+        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
