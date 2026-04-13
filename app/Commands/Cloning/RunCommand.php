@@ -67,7 +67,8 @@ class RunCommand extends Command
         {--drop-extra-columns       : Override: drop_extra_columns true for this run}
         {--no-drop-extra-columns    : Override: drop_extra_columns false for this run}
         {--disable-fk-checks        : Override: disable_foreign_key_checks true for this run}
-        {--no-disable-fk-checks     : Override: disable_foreign_key_checks false for this run}';
+        {--no-disable-fk-checks     : Override: disable_foreign_key_checks false for this run}
+        {--break-on-failure         : Abort the run immediately on the first table failure (schema or data)}';
 
     /**
      * @var string
@@ -352,6 +353,9 @@ class RunCommand extends Command
         /** @var list<string> $notFoundTables */
         $notFoundTables = [];
 
+        /** @var list<string> $schemaFailureTables */
+        $schemaFailureTables = [];
+
         $result = $orchestrator->run(
             config: $config,
             source: $sourceConnection,
@@ -360,7 +364,7 @@ class RunCommand extends Command
             skipSchema: $skipSchema,
             skipTables: $skipTables,
             onlyTables: $onlyTables,
-            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped) use ($verbose, &$notFoundTables): void {
+            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped) use ($verbose, &$notFoundTables, &$schemaFailureTables): void {
                 if ($verbose) {
                     if ($status === TableRunStatus::Transferred) {
                         $this->line(sprintf('  <info>✓</info>  %s  (%d rows)', $tableName, $rows));
@@ -369,6 +373,9 @@ class RunCommand extends Command
                         $notFoundTables[] = $tableName;
                     } elseif ($status === TableRunStatus::Failed) {
                         $this->line(sprintf('  <error>✗</error>  %s  — failed', $tableName));
+                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
+                        $this->line(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
+                        $schemaFailureTables[] = $tableName;
                     }
                 } elseif ($status === TableRunStatus::Transferred) {
                     $indicator = $skipped > 0 ? 'F' : '.';
@@ -378,9 +385,13 @@ class RunCommand extends Command
                 } elseif ($status === TableRunStatus::NotFound) {
                     $this->output->write('?');
                     $notFoundTables[] = $tableName;
+                } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
+                    $this->output->write('S');
+                    $schemaFailureTables[] = $tableName;
                 }
             },
             keyRemapping: $keyRemappingService,
+            breakOnFailure: (bool) $this->option('break-on-failure'),
         );
 
         $finishedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -488,6 +499,23 @@ class RunCommand extends Command
                 count($notFoundTables),
                 count($notFoundTables) === 1 ? '' : 's',
                 implode(', ', $notFoundTables),
+            ));
+        }
+
+        // Collect schema failure tables from result (merge with those caught in onProgress)
+        $schemaFailuresFromResult = array_values(array_map(
+            static fn (TableRunResultData $t): string => $t->tableName,
+            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::SkippedBySchemaFailure)
+        ));
+        $schemaFailureTables = array_values(array_unique(array_merge($schemaFailureTables, $schemaFailuresFromResult)));
+
+        if ($schemaFailureTables !== []) {
+            $this->line('');
+            $this->line(sprintf(
+                '  <error>Error: %d table%s skipped due to schema replication failure (%s)</error>',
+                count($schemaFailureTables),
+                count($schemaFailureTables) === 1 ? '' : 's',
+                implode(', ', $schemaFailureTables),
             ));
         }
 
