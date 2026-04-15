@@ -311,7 +311,23 @@ class RunCommand extends Command
                 static fn (TableCloningConfigData $t): string => $t->tableName,
                 $config->tables
             );
-            $counts = $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sortedForMapping);
+
+            try {
+                $counts = $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sortedForMapping);
+            } catch (Throwable $throwable) {
+                if (str_contains($throwable->getMessage(), 'Allowed memory size') || str_contains($throwable->getMessage(), 'Out of memory')) {
+                    $reRunCommand = $this->getOriginalCommandWithNoMemoryLimit();
+                    $this->error(sprintf(
+                        "Memory exhausted during key mapping generation: %s\n\nHint: Re-run with --no-memory-limit to remove the PHP memory limit:\n\n    %s\n",
+                        $throwable->getMessage(),
+                        $reRunCommand
+                    ));
+                } else {
+                    throw $throwable;
+                }
+
+                return ExitCode::GeneralError->value;
+            }
 
             if ($verbose) {
                 foreach ($counts as $tbl => $cnt) {
@@ -776,5 +792,55 @@ class RunCommand extends Command
         $remaining = $seconds % 60;
 
         return sprintf('%dm %ds', $minutes, $remaining);
+    }
+
+    /**
+     * Reconstruct the original command line, adding --no-memory-limit if not already present.
+     */
+    private function getOriginalCommandWithNoMemoryLimit(): string
+    {
+        $parts = ['clonio', 'cloning:run', (string) $this->argument('file')];
+
+        // Add all options that affect the command behavior
+        $options = [
+            'target' => '--target',
+            'allow-failure' => '--allow-failure',
+            'dry-run' => '--dry-run',
+            'ci' => '--ci',
+            'skip-schema' => '--skip-schema',
+            'skip-tables' => '--skip-tables',
+            'only-tables' => '--only-tables',
+            'audit-channel' => '--audit-channel',
+            'skip-remapping-keys' => '--skip-remapping-keys',
+            'file-based' => '--file-based',
+            'enforce-column-types' => '--enforce-column-types',
+            'no-enforce-column-types' => '--no-enforce-column-types',
+            'drop-unknown-tables' => '--drop-unknown-tables',
+            'no-drop-unknown-tables' => '--no-drop-unknown-tables',
+            'drop-extra-columns' => '--drop-extra-columns',
+            'no-drop-extra-columns' => '--no-drop-extra-columns',
+            'disable-fk-checks' => '--disable-fk-checks',
+            'no-disable-fk-checks' => '--no-disable-fk-checks',
+            'break-on-failure' => '--break-on-failure',
+        ];
+
+        foreach ($options as $option => $flag) {
+            $value = $this->option($option);
+
+            if (in_array($option, ['skip-tables', 'only-tables', 'audit-channel', 'target'], true)) {
+                // Options with values
+                if ($value !== null && $value !== '') {
+                    $parts[] = $flag.'='.$value;
+                }
+            } elseif ((bool) $value) {
+                // Boolean flags
+                $parts[] = $flag;
+            }
+        }
+
+        // Add --no-memory-limit
+        $parts[] = '--no-memory-limit';
+
+        return implode(' ', $parts);
     }
 }
