@@ -129,7 +129,15 @@ jobs:
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
-        run: ./spc build --build-micro "${{ env.EXTENSIONS }}"
+        run: ./spc build --build-micro --debug "${{ env.EXTENSIONS }}"
+
+      - name: Upload SPC logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: spc-logs-${{ matrix.output }}
+          path: log/
+          if-no-files-found: ignore
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
