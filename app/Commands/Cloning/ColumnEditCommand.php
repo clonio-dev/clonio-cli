@@ -138,7 +138,7 @@ class ColumnEditCommand extends Command
             $allFiles = Storage::disk('local')->files('.');
             $files = array_values(array_filter(
                 $allFiles,
-                static fn (string $f): bool => str_ends_with($f, '.cloning.yaml')
+                static fn (string $f): bool => str_ends_with($f, '.cloning.yaml') === true
             ));
 
             if ($files === []) {
