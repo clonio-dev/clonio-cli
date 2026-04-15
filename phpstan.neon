@@ -14,9 +14,3 @@ parameters:
     level: max
 
     tmpDir: /tmp/phpstan
-
-    ignoreErrors:
-        -
-            message: "#^Anonymous function should return bool but returns mixed\\.$#"
-            count: 1
-            path: app/Commands/Cloning/ColumnEditCommand.php
