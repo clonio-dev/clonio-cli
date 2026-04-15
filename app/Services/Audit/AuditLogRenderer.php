@@ -166,8 +166,6 @@ HTML;
 
     /**
      * Render the audit record to a PDF string.
-     *
-     * @return string
      */
     public function renderPdf(AuditRecordData $record, string $canonicalJson): string
     {
