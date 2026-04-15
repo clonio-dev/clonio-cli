@@ -136,7 +136,7 @@ jobs:
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
-        run: ./spc build --build-micro --debug "${{ env.EXTENSIONS }}"
+        run: ./spc build --build-micro ${{ runner.debug == '1' && '--debug' || '' }} "${{ env.EXTENSIONS }}"
 
       - name: Upload SPC logs on failure
         if: failure()
