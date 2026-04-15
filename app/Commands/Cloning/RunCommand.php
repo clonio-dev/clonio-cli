@@ -827,7 +827,7 @@ class RunCommand extends Command
         foreach ($options as $option => $flag) {
             $value = $this->option($option);
 
-            if ($option === 'skip-tables' || $option === 'only-tables' || $option === 'audit-channel' || $option === 'target') {
+            if (in_array($option, ['skip-tables', 'only-tables', 'audit-channel', 'target'], true)) {
                 // Options with values
                 if ($value !== null && $value !== '') {
                     $parts[] = $flag.'='.$value;
