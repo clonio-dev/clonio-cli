@@ -103,13 +103,15 @@ class CloningRunOrchestrator
 
         // Add skipped tables to results
         foreach ($explicitlyExcluded as $tableName) {
-            $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByFlag, 0, 0, 0.0, null);
-            $this->runLog->log('info', 'table_skipped_by_flag', ['table' => $tableName]);
+            $reason = $onlyTables !== [] ? 'excluded by --only filter' : 'explicitly excluded via --skip';
+            $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByFlag, 0, 0, 0.0, $reason);
+            $this->runLog->log('info', 'table_skipped_by_flag', ['table' => $tableName, 'reason' => $reason]);
         }
 
         foreach ($cascadeExclusions as $tableName) {
-            $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByCascade, 0, 0, 0.0, null);
-            $this->runLog->log('info', 'table_skipped_by_cascade', ['table' => $tableName]);
+            $reason = 'excluded due to foreign key dependency';
+            $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByCascade, 0, 0, 0.0, $reason);
+            $this->runLog->log('info', 'table_skipped_by_cascade', ['table' => $tableName, 'reason' => $reason]);
         }
 
         // Transfer each remaining table
@@ -122,8 +124,9 @@ class CloningRunOrchestrator
 
             // Skip data transfer for tables whose schema could not be created
             if (array_key_exists($tableName, $schemaFailures)) {
-                $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $schemaFailures[$tableName]);
-                $this->runLog->log('warning', 'table_skipped_schema_failure', ['table' => $tableName]);
+                $reason = $schemaFailures[$tableName];
+                $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $reason);
+                $this->runLog->log('warning', 'table_skipped_schema_failure', ['table' => $tableName, 'reason' => $reason]);
                 $success = false;
                 ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0);
 
