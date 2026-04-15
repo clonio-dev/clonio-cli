@@ -85,7 +85,9 @@ jobs:
       # Optional gd image libs. libpng + zlib are hard-deps and always built;
       # these add JPEG, WebP, and TrueType font support for mpdf-generated PDFs.
       # libavif intentionally omitted (heavy aom/dav1d toolchain, rarely used in PDFs).
+      # Keep GD_LIBS_SLUG in sync — cache keys cannot contain commas.
       GD_LIBS: 'libjpeg,libwebp,freetype'
+      GD_LIBS_SLUG: 'libjpeg-libwebp-freetype'
       # Pin OpenSSL to 3.x. OpenSSL 4.0.0 removed ERR_NUM_ERRORS, which PHP 8.5's
       # openssl extension still references — fresh downloads otherwise grab 4.x and fail to compile.
       OPENSSL_VERSION: '3.6.2'
@@ -119,7 +121,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./downloads
-          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS }}-v5
+          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-v5
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
@@ -137,7 +139,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS }}-v5
+          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-v5
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
