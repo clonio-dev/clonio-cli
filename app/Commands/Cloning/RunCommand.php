@@ -453,11 +453,13 @@ class RunCommand extends Command
 
             [$canonicalJson, $contentHash, $hmacSignature] = $signer->sign($auditRecord);
             $htmlContent = $renderer->render($auditRecord, $canonicalJson);
+            $pdfContent = $renderer->renderPdf($auditRecord, $canonicalJson);
 
             $timestamp = $startedAt->format('Y-m-d\TH-i-s\Z');
             $baseFilename = sprintf('%s_%s_%s', $config->connectionName, $targetName, $timestamp);
             $auditArtefacts = [
                 $baseFilename.'_audit.html' => $htmlContent,
+                $baseFilename.'_audit.pdf' => $pdfContent,
                 $baseFilename.'_audit.sig' => 'sha256:'.$hmacSignature,
             ];
 

@@ -38,6 +38,7 @@
         "illuminate/http": "^12.56",
         "illuminate/log": "^12.56",
         "laravel-zero/framework": "^12.1.0",
+        "mpdf/mpdf": "^8.3",
         "symfony/yaml": "^8.0.8"
     },
     "require-dev": {
