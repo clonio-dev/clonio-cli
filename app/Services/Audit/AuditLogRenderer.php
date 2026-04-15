@@ -6,6 +6,7 @@ namespace App\Services\Audit;
 
 use App\Data\Audit\AuditRecordData;
 use App\Data\Audit\AuditTableRecordData;
+use Mpdf\Mpdf;
 
 class AuditLogRenderer
 {
@@ -161,5 +162,27 @@ HTML;
             $table->rowsSkipped,
             $duration,
         );
+    }
+
+    /**
+     * Render the audit record to a PDF string.
+     *
+     * @return string
+     */
+    public function renderPdf(AuditRecordData $record, string $canonicalJson): string
+    {
+        $html = $this->render($record, $canonicalJson);
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => 'A4',
+            'margin_top' => 20,
+            'margin_bottom' => 20,
+        ]);
+
+        $mpdf->WriteHTML($html);
+
+        // @phpstan-ignore-next-line
+        return $mpdf->Output('', 'S');
     }
 }
