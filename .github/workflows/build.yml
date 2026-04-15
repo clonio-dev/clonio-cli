@@ -82,6 +82,9 @@ jobs:
     env:
       PHP_VERSION: '8.5'
       EXTENSIONS: ctype,curl,fileinfo,filter,gd,iconv,mbstring,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,session,sqlite3,tokenizer,zlib
+      # Pin OpenSSL to 3.x. OpenSSL 4.0.0 removed ERR_NUM_ERRORS, which PHP 8.5's
+      # openssl extension still references — fresh downloads otherwise grab 4.x and fail to compile.
+      OPENSSL_VERSION: '3.6.2'
 
     steps:
       - name: Checkout
@@ -112,20 +115,24 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./downloads
-          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-v3
+          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-v4
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./spc download --with-php=${{ env.PHP_VERSION }} --for-extensions="${{ env.EXTENSIONS }}"
+        run: |
+          ./spc download \
+            --with-php=${{ env.PHP_VERSION }} \
+            --for-extensions="${{ env.EXTENSIONS }}" \
+            --custom-url="openssl:https://github.com/openssl/openssl/releases/download/openssl-${{ env.OPENSSL_VERSION }}/openssl-${{ env.OPENSSL_VERSION }}.tar.gz"
 
       - name: Cache SPC build output
         id: spc-build-cache
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-v3
+          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-v4
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
