@@ -134,11 +134,10 @@ class ColumnEditCommand extends Command
 
         if ($filePath === null) {
             // Find .cloning.yaml files in cwd
-            /** @var list<string> $allFiles */
             $allFiles = Storage::disk('local')->files('.');
             $files = array_values(array_filter(
                 $allFiles,
-                static fn (string $f): bool => str_ends_with($f, '.cloning.yaml')
+                static fn (mixed $f): bool => is_string($f) && str_ends_with($f, '.cloning.yaml'),
             ));
 
             if ($files === []) {
