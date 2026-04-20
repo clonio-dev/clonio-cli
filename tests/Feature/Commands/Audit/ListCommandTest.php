@@ -7,7 +7,7 @@ use App\Services\Config\ConfigService;
 it('shows message when no channels are configured', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->andReturn([]);
+    $config->shouldReceive('getAuditDefault')->andReturn(null);
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:list')
@@ -23,8 +23,7 @@ it('lists a local channel with type label in output', function (): void {
             'path' => './clonio-logs/',
         ],
     ]);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn(['my-local']);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
+    $config->shouldReceive('getAuditDefault')->andReturn('my-local');
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:list')
@@ -41,8 +40,7 @@ it('lists an s3 channel and exits successfully', function (): void {
             'path_prefix' => 'clonio/logs/',
         ],
     ]);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn(['my-s3']);
+    $config->shouldReceive('getAuditDefault')->andReturn(null);
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:list')
@@ -58,8 +56,7 @@ it('lists an email channel and exits successfully', function (): void {
             'to' => ['admin@example.com', 'ops@example.com'],
         ],
     ]);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
+    $config->shouldReceive('getAuditDefault')->andReturn(null);
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:list')
@@ -75,8 +72,7 @@ it('lists slack channel and exits successfully', function (): void {
             'webhook_url' => 'encrypted:abc',
         ],
     ]);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
+    $config->shouldReceive('getAuditDefault')->andReturn(null);
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:list')
@@ -93,8 +89,7 @@ it('lists ntfy channel and exits successfully', function (): void {
             'topic' => 'my-topic',
         ],
     ]);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
+    $config->shouldReceive('getAuditDefault')->andReturn(null);
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:list')

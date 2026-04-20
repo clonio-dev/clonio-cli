@@ -65,18 +65,13 @@ class DeleteCommand extends Command
         ];
         $this->table(['Field', 'Value'], $rows);
 
-        // Warn if active in deliver_to lists
-        $auditDeliverTo = $config->getAuditDeliverTo('audit_log');
-        $runDeliverTo = $config->getAuditDeliverTo('run_log');
-        $activeCount = (in_array($name, $auditDeliverTo, true) ? 1 : 0)
-                        + (in_array($name, $runDeliverTo, true) ? 1 : 0);
+        // Warn if this is the default channel
+        $default = $config->getAuditDefault();
 
-        if ($activeCount > 0) {
+        if ($name === $default) {
             $this->warn(sprintf(
-                "Channel '%s' is active in %d deliver_to list%s. Deleting it will remove it from all deliver_to entries.",
+                "Channel '%s' is the current default (audit.default). Deleting it will leave audit.default unset.",
                 $name,
-                $activeCount,
-                $activeCount === 1 ? '' : 's',
             ));
         }
 

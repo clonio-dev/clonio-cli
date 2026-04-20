@@ -200,6 +200,28 @@ class ConfigService
         $this->save($data);
     }
 
+    public function getAuditDefault(): ?string
+    {
+        $data = $this->load();
+        $auditSection = $data['audit'] ?? null;
+        $default = is_array($auditSection) ? ($auditSection['default'] ?? null) : null;
+
+        return is_string($default) ? $default : null;
+    }
+
+    public function setAuditDefault(string $channelName): void
+    {
+        $data = $this->load();
+
+        if (! isset($data['audit']) || ! is_array($data['audit'])) {
+            $data['audit'] = ['channels' => [], 'default' => $channelName];
+        } else {
+            $data['audit']['default'] = $channelName;
+        }
+
+        $this->save($data);
+    }
+
     public function deleteAuditChannel(string $name): void
     {
         $data = $this->load();

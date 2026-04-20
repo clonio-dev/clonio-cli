@@ -55,17 +55,14 @@ it('successfully adds a local channel with all options', function (): void {
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-local')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-local', Mockery::type('array'))->once();
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
+    $config->shouldReceive('setAuditDefault')->with('my-local')->once();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
         'name' => 'my-local',
         '--type' => 'local',
         '--local-path' => './clonio-logs/{year}',
-        '--deliver-audit-log' => true,
-        '--deliver-run-log' => true,
+        '--set-default' => true,
     ])
         ->expectsConfirmation('Save this channel?', 'yes')
         ->expectsOutputToContain("Channel 'my-local' added successfully.")
@@ -83,8 +80,6 @@ it('cancels when the user declines the save confirmation', function (): void {
         'name' => 'my-local',
         '--type' => 'local',
         '--local-path' => './clonio-logs/{year}',
-        '--no-deliver-audit-log' => true,
-        '--no-deliver-run-log' => true,
     ])
         ->expectsConfirmation('Save this channel?', 'no')
         ->expectsOutputToContain('Cancelled.')
@@ -96,8 +91,6 @@ it('successfully adds an ntfy channel with token via flag', function (): void {
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-ntfy')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-ntfy', Mockery::type('array'))->once();
-    $config->shouldReceive('getAuditDeliverTo')->andReturn([]);
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     // Provide --tags and --token via flags to avoid secret()/ask() interactive prompts
@@ -109,8 +102,6 @@ it('successfully adds an ntfy channel with token via flag', function (): void {
         '--ntfy-priority' => 'default',
         '--ntfy-tags' => 'alert,ops',
         '--ntfy-token' => 'my-bearer-token',
-        '--no-deliver-audit-log' => true,
-        '--no-deliver-run-log' => true,
     ])
         ->expectsConfirmation('Override retry settings?', 'no')
         ->expectsConfirmation('Save this channel?', 'yes')
@@ -123,16 +114,12 @@ it('successfully adds a ms_teams channel via webhook flag', function (): void {
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-teams')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-teams', Mockery::type('array'))->once();
-    $config->shouldReceive('getAuditDeliverTo')->andReturn([]);
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
         'name' => 'my-teams',
         '--type' => 'ms_teams',
         '--webhook-url' => 'https://outlook.office.com/webhook/test',
-        '--no-deliver-audit-log' => true,
-        '--no-deliver-run-log' => true,
     ])
         ->expectsConfirmation('Override retry settings?', 'no')
         ->expectsConfirmation('Save this channel?', 'yes')
@@ -145,8 +132,6 @@ it('successfully adds an email channel with all options via flags', function ():
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-email')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-email', Mockery::type('array'))->once();
-    $config->shouldReceive('getAuditDeliverTo')->andReturn([]);
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
@@ -160,8 +145,6 @@ it('successfully adds an email channel with all options via flags', function ():
         '--mail-from-address' => 'noreply@example.com',
         '--mail-from-name' => 'Clonio',
         '--mail-to' => 'admin@example.com',
-        '--no-deliver-audit-log' => true,
-        '--no-deliver-run-log' => true,
     ])
         ->expectsConfirmation('Override retry settings?', 'no')
         ->expectsConfirmation('Save this channel?', 'yes')
@@ -174,16 +157,12 @@ it('successfully adds a slack channel via webhook flag', function (): void {
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-slack')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-slack', Mockery::type('array'))->once();
-    $config->shouldReceive('getAuditDeliverTo')->andReturn([]);
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
         'name' => 'my-slack',
         '--type' => 'slack',
         '--webhook-url' => 'https://hooks.slack.com/services/T00/B00/abc123',
-        '--no-deliver-audit-log' => true,
-        '--no-deliver-run-log' => true,
     ])
         ->expectsConfirmation('Override retry settings?', 'no')
         ->expectsConfirmation('Save this channel?', 'yes')
@@ -196,8 +175,7 @@ it('successfully adds an s3 channel with all options via flags', function (): vo
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-s3')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-s3', Mockery::type('array'))->once();
-    $config->shouldReceive('getAuditDeliverTo')->andReturn([]);
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
+    $config->shouldReceive('setAuditDefault')->with('my-s3')->once();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
@@ -209,8 +187,7 @@ it('successfully adds an s3 channel with all options via flags', function (): vo
         '--s3-access-key' => 'AKIA123',
         '--s3-secret-key' => 'my-secret',
         '--s3-path-prefix' => 'clonio/logs/',
-        '--deliver-audit-log' => true,
-        '--no-deliver-run-log' => true,
+        '--set-default' => true,
     ])
         ->expectsConfirmation('Override retry settings?', 'no')
         ->expectsConfirmation('Save this channel?', 'yes')

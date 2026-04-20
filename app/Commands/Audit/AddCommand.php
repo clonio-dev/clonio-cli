@@ -41,10 +41,7 @@ class AddCommand extends Command
         {--ntfy-token=              : (ntfy) ntfy bearer token — stored encrypted}
         {--ntfy-priority=           : (ntfy) Notification priority — min|low|default|high|max}
         {--ntfy-tags=               : (ntfy) Comma-separated tag strings}
-        {--deliver-audit-log        : Add channel to audit_log.deliver_to}
-        {--no-deliver-audit-log     : Do not add channel to audit_log.deliver_to}
-        {--deliver-run-log          : Add channel to run_log.deliver_to}
-        {--no-deliver-run-log       : Do not add channel to run_log.deliver_to}';
+        {--set-default              : Set this channel as audit.default}';
 
     /**
      * @var string
@@ -100,7 +97,7 @@ class AddCommand extends Command
 
         // ─── Step 3: Type-specific fields ─────────────────────────────────────
         try {
-            $channelConfig = $this->promptTypeFields($type);
+            $channelConfig = $this->promptTypeFields($type, $config);
         } catch (Throwable $throwable) {
             $this->error($throwable->getMessage());
 
@@ -109,22 +106,10 @@ class AddCommand extends Command
 
         $channelConfig['type'] = $type->value;
 
-        // ─── Step 4: Deliver audit log? ────────────────────────────────────────
-        $deliverAuditLog = $this->option('deliver-audit-log') ? true : ($this->option('no-deliver-audit-log') ? false : null);
-        if ($deliverAuditLog === null) {
-            $deliverAuditLog = $this->confirm('Deliver audit log via this channel?', true);
-        }
+        // ─── Step 4: Summary ───────────────────────────────────────────────────
+        $this->renderSummary($name, $type, $channelConfig);
 
-        // ─── Step 5: Deliver run log? ──────────────────────────────────────────
-        $deliverRunLog = $this->option('deliver-run-log') ? true : ($this->option('no-deliver-run-log') ? false : null);
-        if ($deliverRunLog === null) {
-            $deliverRunLog = $this->confirm('Deliver run log via this channel?', $type->defaultDeliversProcessLog());
-        }
-
-        // ─── Step 6: Summary ───────────────────────────────────────────────────
-        $this->renderSummary($name, $type, $channelConfig, $deliverAuditLog, $deliverRunLog);
-
-        // ─── Step 7: Confirm ───────────────────────────────────────────────────
+        // ─── Step 5: Confirm ───────────────────────────────────────────────────
         if (! $this->confirm('Save this channel?', true)) {
             $this->line('Cancelled.');
 
@@ -135,18 +120,8 @@ class AddCommand extends Command
         try {
             $config->setAuditChannel($name, $channelConfig);
 
-            if ($deliverAuditLog) {
-                $current = $config->getAuditDeliverTo('audit_log');
-                if (! in_array($name, $current, true)) {
-                    $config->setAuditDeliverTo('audit_log', array_merge($current, [$name]));
-                }
-            }
-
-            if ($deliverRunLog) {
-                $current = $config->getAuditDeliverTo('run_log');
-                if (! in_array($name, $current, true)) {
-                    $config->setAuditDeliverTo('run_log', array_merge($current, [$name]));
-                }
+            if ((bool) $this->option('set-default')) {
+                $config->setAuditDefault($name);
             }
         } catch (RuntimeException $runtimeException) {
             $this->error('Failed to save channel: '.$runtimeException->getMessage());
@@ -162,7 +137,7 @@ class AddCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function promptTypeFields(AuditChannelType $type): array
+    private function promptTypeFields(AuditChannelType $type, ConfigService $config): array
     {
         return match ($type) {
             AuditChannelType::Local => $this->promptLocalFields(),
@@ -171,8 +146,25 @@ class AddCommand extends Command
             AuditChannelType::MsTeams => $this->promptWebhookFields('Teams', 'Create an incoming webhook in Teams under Apps → Incoming Webhook.'),
             AuditChannelType::Slack => $this->promptWebhookFields('Slack', 'Create an incoming webhook at api.slack.com → Your Apps → Incoming Webhooks.'),
             AuditChannelType::Ntfy => $this->promptNtfyFields(),
+            AuditChannelType::Stack => $this->promptStackFields($config),
             AuditChannelType::Stdout, AuditChannelType::Stderr => [],
         };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function promptStackFields(ConfigService $config): array
+    {
+        $existing = array_keys($config->getAuditChannels());
+
+        throw_if($existing === [], RuntimeException::class, 'No channels exist yet. Add individual channels before creating a stack.');
+
+        $this->line('  Available channels: '.implode(', ', $existing));
+        $asked = $this->ask('Channels to include (comma-separated)');
+        $selected = is_string($asked) ? array_values(array_filter(array_map(trim(...), explode(',', $asked)))) : [];
+
+        return ['channels' => $selected];
     }
 
     /**
@@ -378,7 +370,7 @@ class AddCommand extends Command
     /**
      * @param  array<string, mixed>  $channelConfig
      */
-    private function renderSummary(string $name, AuditChannelType $type, array $channelConfig, bool $deliverAuditLog, bool $deliverRunLog): void
+    private function renderSummary(string $name, AuditChannelType $type, array $channelConfig): void
     {
         $rows = [
             ['Name', $name],
@@ -398,9 +390,6 @@ class AddCommand extends Command
                 $rows[] = [str_replace('_', ' ', $key), is_scalar($value) ? (string) $value : ''];
             }
         }
-
-        $rows[] = ['Deliver audit log', $deliverAuditLog ? 'Yes' : 'No'];
-        $rows[] = ['Deliver run log', $deliverRunLog ? 'Yes' : 'No'];
 
         $this->table(['Field', 'Value'], $rows);
     }

@@ -97,7 +97,7 @@ class InitCommand extends Command
         $defaults = [
             'local' => [
                 'type' => 'local',
-                'path' => './clonio-logs/{year}/{month}',
+                'path' => './',
             ],
             'stdout' => ['type' => 'stdout'],
             'stderr' => ['type' => 'stderr'],
@@ -112,12 +112,9 @@ class InitCommand extends Command
             }
         }
 
-        // Ensure audit_log and run_log deliver_to have 'local' by default
-        foreach (['audit_log', 'run_log'] as $logType) {
-            $current = $config->getAuditDeliverTo($logType);
-            if (! in_array('local', $current, true)) {
-                $config->setAuditDeliverTo($logType, array_merge($current, ['local']));
-            }
+        // Ensure default channel is set
+        if ($config->getAuditDefault() === null) {
+            $config->setAuditDefault('local');
         }
 
         if ($created !== []) {

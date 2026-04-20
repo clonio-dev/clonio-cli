@@ -16,6 +16,7 @@ enum AuditChannelType: string
     case Ntfy = 'ntfy';
     case Stdout = 'stdout';
     case Stderr = 'stderr';
+    case Stack = 'stack';
 
     public function label(): string
     {
@@ -28,6 +29,7 @@ enum AuditChannelType: string
             self::Ntfy => 'ntfy.sh / self-hosted ntfy',
             self::Stdout => 'Standard output',
             self::Stderr => 'Standard error',
+            self::Stack => 'Stack (fan-out to multiple channels)',
         };
     }
 
@@ -71,7 +73,7 @@ enum AuditChannelType: string
     public function hasSecrets(): bool
     {
         return match ($this) {
-            self::Local, self::Stdout, self::Stderr => false,
+            self::Local, self::Stdout, self::Stderr, self::Stack => false,
             default => true,
         };
     }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 use App\Enums\AuditChannelType;
 
-it('returns all eight enum values', function (): void {
-    expect(AuditChannelType::values())->toBe(['local', 's3', 'email', 'ms_teams', 'slack', 'ntfy', 'stdout', 'stderr']);
+it('returns all nine enum values', function (): void {
+    expect(AuditChannelType::values())->toBe(['local', 's3', 'email', 'ms_teams', 'slack', 'ntfy', 'stdout', 'stderr', 'stack']);
 });
 
 it('returns labels for all cases', function (): void {
     $labels = AuditChannelType::labels();
-    expect($labels)->toHaveCount(8)
+    expect($labels)->toHaveCount(9)
         ->and($labels)->toContain('Local filesystem')
         ->and($labels)->toContain('S3-compatible storage')
         ->and($labels)->toContain('Email (SMTP)')
@@ -18,7 +18,8 @@ it('returns labels for all cases', function (): void {
         ->and($labels)->toContain('Slack')
         ->and($labels)->toContain('ntfy.sh / self-hosted ntfy')
         ->and($labels)->toContain('Standard output')
-        ->and($labels)->toContain('Standard error');
+        ->and($labels)->toContain('Standard error')
+        ->and($labels)->toContain('Stack (fan-out to multiple channels)');
 });
 
 it('resolves a case from its label', function (): void {
@@ -39,13 +40,15 @@ it('defaultDeliversProcessLog returns true only for local and s3', function (): 
         ->and(AuditChannelType::Slack->defaultDeliversProcessLog())->toBeFalse()
         ->and(AuditChannelType::Ntfy->defaultDeliversProcessLog())->toBeFalse()
         ->and(AuditChannelType::Stdout->defaultDeliversProcessLog())->toBeFalse()
-        ->and(AuditChannelType::Stderr->defaultDeliversProcessLog())->toBeFalse();
+        ->and(AuditChannelType::Stderr->defaultDeliversProcessLog())->toBeFalse()
+        ->and(AuditChannelType::Stack->defaultDeliversProcessLog())->toBeFalse();
 });
 
-it('hasSecrets returns false only for local, stdout, and stderr', function (): void {
+it('hasSecrets returns false only for local, stdout, stderr, and stack', function (): void {
     expect(AuditChannelType::Local->hasSecrets())->toBeFalse()
         ->and(AuditChannelType::Stdout->hasSecrets())->toBeFalse()
         ->and(AuditChannelType::Stderr->hasSecrets())->toBeFalse()
+        ->and(AuditChannelType::Stack->hasSecrets())->toBeFalse()
         ->and(AuditChannelType::S3->hasSecrets())->toBeTrue()
         ->and(AuditChannelType::Email->hasSecrets())->toBeTrue()
         ->and(AuditChannelType::MsTeams->hasSecrets())->toBeTrue()
@@ -61,5 +64,6 @@ it('label returns expected string for each case', function (): void {
         ->and(AuditChannelType::Slack->label())->toBe('Slack')
         ->and(AuditChannelType::Ntfy->label())->toBe('ntfy.sh / self-hosted ntfy')
         ->and(AuditChannelType::Stdout->label())->toBe('Standard output')
-        ->and(AuditChannelType::Stderr->label())->toBe('Standard error');
+        ->and(AuditChannelType::Stderr->label())->toBe('Standard error')
+        ->and(AuditChannelType::Stack->label())->toBe('Stack (fan-out to multiple channels)');
 });

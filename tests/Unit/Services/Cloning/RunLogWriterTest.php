@@ -40,3 +40,18 @@ it('has a startedAt time', function (): void {
     $writer = new RunLogWriter;
     expect($writer->startedAt())->toBeInstanceOf(DateTimeImmutable::class);
 });
+
+it('calls the live output callback on each log event', function (): void {
+    $writer = new RunLogWriter;
+    $captured = [];
+    $writer->setLiveOutput(function (string $level, string $event, array $extra) use (&$captured): void {
+        $captured[] = ['level' => $level, 'event' => $event, 'extra' => $extra];
+    });
+
+    $writer->log('info', 'table_transferred', ['table' => 'users']);
+    $writer->log('error', 'table_failed', ['table' => 'orders']);
+
+    expect($captured)->toHaveCount(2)
+        ->and($captured[0]['event'])->toBe('table_transferred')
+        ->and($captured[1]['level'])->toBe('error');
+});

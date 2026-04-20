@@ -24,8 +24,7 @@ class ListCommand extends Command
     public function handle(ConfigService $config): int
     {
         $channels = $config->getAuditChannels();
-        $auditDeliverTo = $config->getAuditDeliverTo('audit_log');
-        $runDeliverTo = $config->getAuditDeliverTo('run_log');
+        $default = $config->getAuditDefault();
 
         if ($channels === []) {
             $this->line('No audit channels configured. Run `audit:add` to add one.');
@@ -40,15 +39,14 @@ class ListCommand extends Command
             $type = AuditChannelType::tryFrom($typeValue);
             $typeLabel = $type?->label() ?? $typeValue;
 
-            $inAuditLog = in_array($name, $auditDeliverTo, true) ? '✓' : '✗';
-            $inRunLog = in_array($name, $runDeliverTo, true) ? '✓' : '✗';
+            $isDefault = ($name === $default) ? '★' : '';
 
             $details = $this->getDetails($type, $channel);
 
-            $rows[] = [$name, $typeLabel, $inAuditLog, $inRunLog, $details];
+            $rows[] = [$name, $typeLabel, $isDefault, $details];
         }
 
-        $this->table(['Name', 'Type', 'Audit Log', 'Run Log', 'Details'], $rows);
+        $this->table(['Name', 'Type', 'Default', 'Details'], $rows);
 
         return ExitCode::Success->value;
     }
@@ -92,6 +90,12 @@ class ListCommand extends Command
             return $url !== null && $topic !== null
                 ? sprintf('%s / %s', rtrim($url, '/'), $topic)
                 : '—';
+        }
+
+        if ($type === AuditChannelType::Stack) {
+            $children = is_array($channel['channels'] ?? null) ? $channel['channels'] : [];
+
+            return implode(', ', array_filter($children, is_string(...)));
         }
 
         return '—';

@@ -49,15 +49,11 @@ it('cancels when the user declines saving changes', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
     $config->shouldNotReceive('setAuditChannel');
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update', ['name' => 'my-local'])
         ->expectsQuestion('Log path', './clonio-logs')
-        ->expectsConfirmation('Deliver audit log via this channel?', 'no')
-        ->expectsConfirmation('Deliver run log via this channel?', 'no')
         ->expectsConfirmation('Save changes?', 'no')
         ->expectsOutputToContain('Cancelled.')
         ->assertExitCode(0);
@@ -72,16 +68,11 @@ it('auto-selects the only channel when no name is given', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['only-one' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('only-one')->andReturn($channel);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
     $config->shouldReceive('setAuditChannel')->once();
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update')
         ->expectsQuestion('Log path', './clonio-logs')
-        ->expectsConfirmation('Deliver audit log via this channel?', 'no')
-        ->expectsConfirmation('Deliver run log via this channel?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'only-one' updated successfully.")
         ->assertExitCode(0);
@@ -101,10 +92,7 @@ it('updates an s3 channel with pre-filled values', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-s3' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-s3')->andReturn($channel);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn(['my-s3']);
     $config->shouldReceive('setAuditChannel')->with('my-s3', Mockery::type('array'))->once();
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update', ['name' => 'my-s3'])
@@ -114,8 +102,6 @@ it('updates an s3 channel with pre-filled values', function (): void {
         ->expectsQuestion('Access key', 'AKIA123')
         ->expectsQuestion('Secret key (press Enter to keep)', '')
         ->expectsQuestion('Path prefix', 'clonio/{year}/')
-        ->expectsConfirmation('Deliver audit log via this channel?', 'no')
-        ->expectsConfirmation('Deliver run log via this channel?', 'yes')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-s3' updated successfully.")
         ->assertExitCode(0);
@@ -130,16 +116,11 @@ it('updates a webhook channel (slack) with pre-filled values', function (): void
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-slack' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-slack')->andReturn($channel);
-    $config->shouldReceive('getAuditDeliverTo')->with('audit_log')->andReturn([]);
-    $config->shouldReceive('getAuditDeliverTo')->with('run_log')->andReturn([]);
     $config->shouldReceive('setAuditChannel')->with('my-slack', Mockery::type('array'))->once();
-    $config->shouldReceive('setAuditDeliverTo')->zeroOrMoreTimes();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update', ['name' => 'my-slack'])
         ->expectsQuestion('Webhook URL (press Enter to keep)', '')
-        ->expectsConfirmation('Deliver audit log via this channel?', 'no')
-        ->expectsConfirmation('Deliver run log via this channel?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-slack' updated successfully.")
         ->assertExitCode(0);

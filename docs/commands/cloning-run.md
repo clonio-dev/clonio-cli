@@ -25,7 +25,7 @@ clonio cloning:run <file> [options]
 | `--skip-schema` | Skip schema replication; assume the target schema already matches |
 | `--skip-tables=<list>` | Comma-separated list of table names to exclude from this run |
 | `--only-tables=<list>` | Comma-separated list of table names to include; all others are skipped |
-| `--audit-channel=<list>` | Comma-separated list of channel names to use for this run (overrides `deliver_to` in `clonio.json`) |
+| `--audit-channel=<list>` | Comma-separated list of channel names to use for this run (overrides `audit.default` in `clonio.json`) |
 | `--skip-remapping-keys` | Skip key mapping generation and FK rewriting |
 | `--no-memory-limit` | Remove PHP's memory limit before generating key mappings. Useful for very large databases when `--file-based` is not viable. |
 | `--file-based` | Store key mappings in AES-256-CBC encrypted temporary files instead of RAM. Keeps memory usage bounded to the size of the largest single table's mapping. |
@@ -469,7 +469,14 @@ Each table in a run is recorded with one of the following statuses in the audit 
 
 ## Output Modes
 
-### `--ci` (CI mode)
+| Level | Flag | Output |
+|-------|------|--------|
+| quiet | `-q` / `--ci` | No output, exit code only |
+| normal | (default) | Dot indicators (`.FE?S`), 70 chars per line, summary |
+| verbose | `-v` | One line per table with status and row count |
+| very verbose | `-vv` | Live streaming of run log events to stderr |
+
+### `--ci` / `-q` (quiet)
 
 No stdout. Errors written to stderr with `[ERROR]` prefix. Exit code only.
 
@@ -487,17 +494,16 @@ Dot-style progress per table, with a summary at the end:
   Audit log: production-db_staging_2026-04-01T14-32-00Z_audit.html  ✓ delivered
 ```
 
-| Symbol | Meaning |
-|--------|---------|
-| `.` | Table transferred successfully |
-| `F` | Table had skipped or failed rows |
-| `E` | Table aborted with an unrecoverable error |
-| `?` | Table not found in source (skipped) |
-| `S` | Table was skipped because schema creation failed |
+**Dot indicators:**
+- `.` — table transferred successfully
+- `F` — table transferred with skipped rows
+- `E` — table transfer failed
+- `?` — table not found in source
+- `S` — skipped due to schema replication failure
 
 ### `-v` (verbose)
 
-One line per phase and per table:
+One line per table with status and row count:
 
 ```
   ✓  Validating YAML ...
@@ -513,7 +519,7 @@ One line per phase and per table:
 
 ### `-vv` (very verbose)
 
-Same as `-v` plus per-table row counts, skipped counts, and reasons:
+Live streaming of run log events to stderr:
 
 ```
   ✓  users           12 340 rows   0 skipped
@@ -584,10 +590,11 @@ Override the defaults for any individual channel with two optional boolean keys 
 ```json
 {
   "audit": {
+    "default": "local",
     "channels": {
-      "my-channel": {
+      "local": {
         "type": "local",
-        "path": "./clonio-logs/{year}/{month}",
+        "path": "./",
         "delivers_audit": true,
         "delivers_process_log": false
       }
@@ -596,7 +603,7 @@ Override the defaults for any individual channel with two optional boolean keys 
 }
 ```
 
-Delivery channels are configured in the `audit` block of `clonio.json`. Use `--audit-channel=<name>` to override which channels are used for a single run. If `audit` is absent from `clonio.json`, all delivery is silently skipped.
+Delivery channels are configured in the `audit` block of `clonio.json`. The `audit.default` key selects which channel receives artefacts by default. Use `--audit-channel=<name>` to override the default for a single run. If `audit` is absent from `clonio.json`, all delivery is silently skipped.
 
 Verify the integrity of a stored audit log with `clonio cloning:verify-audit`.
 

@@ -12,6 +12,9 @@ final class RunLogWriter
     /** @var list<array<string, mixed>> */
     private array $events = [];
 
+    /** @var (callable(string, string, array<string, mixed>): void)|null */
+    private $liveOutput;
+
     private readonly DateTimeImmutable $startedAt;
 
     public function __construct()
@@ -22,6 +25,12 @@ final class RunLogWriter
     public function startedAt(): DateTimeImmutable
     {
         return $this->startedAt;
+    }
+
+    /** @param callable(string, string, array<string, mixed>): void $callback */
+    public function setLiveOutput(callable $callback): void
+    {
+        $this->liveOutput = $callback;
     }
 
     /** @param array<string, mixed> $extra */
@@ -35,6 +44,10 @@ final class RunLogWriter
             'level' => $level,
             'event' => $event,
         ], $extra);
+
+        if ($this->liveOutput !== null) {
+            ($this->liveOutput)($level, $event, $extra);
+        }
     }
 
     public function flush(): string

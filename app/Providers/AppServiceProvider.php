@@ -2,10 +2,15 @@
 
 namespace App\Providers;
 
+use App\Enums\AuditChannelType;
 use App\Services\Audit\AuditDeliveryService;
+use App\Services\Audit\EmailDeliveryAdapter;
 use App\Services\Audit\LocalDeliveryAdapter;
+use App\Services\Audit\NtfyDeliveryAdapter;
+use App\Services\Audit\S3DeliveryAdapter;
 use App\Services\Audit\StderrDeliveryAdapter;
 use App\Services\Audit\StdoutDeliveryAdapter;
+use App\Services\Audit\WebhookDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\DependencyResolver;
 use App\Services\Cloning\RunLogWriter;
@@ -16,7 +21,6 @@ use Composer\InstalledVersions;
 use Dotenv\Dotenv;
 use Illuminate\Support\Env;
 use Illuminate\Support\ServiceProvider;
-use Phar;
 use Symfony\Component\Process\Process;
 
 class AppServiceProvider extends ServiceProvider
@@ -26,11 +30,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        config([
-            'logging.channels.single.path' => Phar::running() !== '' && Phar::running() !== '0'
-                    ? dirname(Phar::running(false)).'/clonio.log'
-                    : storage_path('logs/clonio.log'),
-        ]);
+        //
     }
 
     /**
@@ -95,10 +95,15 @@ class AppServiceProvider extends ServiceProvider
 
         // Bind AuditDeliveryService
         $this->app->bind(AuditDeliveryService::class, fn (): AuditDeliveryService => new AuditDeliveryService(
+            runLog: $this->app->make(RunLogWriter::class),
             localAdapter: new LocalDeliveryAdapter,
             stdoutAdapter: new StdoutDeliveryAdapter,
             stderrAdapter: new StderrDeliveryAdapter,
-            runLog: $this->app->make(RunLogWriter::class),
+            s3Adapter: new S3DeliveryAdapter,
+            emailAdapter: new EmailDeliveryAdapter,
+            teamsAdapter: new WebhookDeliveryAdapter(AuditChannelType::MsTeams),
+            slackAdapter: new WebhookDeliveryAdapter(AuditChannelType::Slack),
+            ntfyAdapter: new NtfyDeliveryAdapter,
         ));
     }
 }
