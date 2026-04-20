@@ -91,4 +91,4 @@ Then delete the draft/broken release on GitHub manually, fix the issue, and re-t
 
 ## Cache invalidation
 
-If you change the PHP version or extensions list in `build.yml`, bump the `-v2` suffix in the two SPC cache keys (`spc-downloads-*` and `spc-build-*`) so the old compiled PHP is not reused.
+If you change the PHP version, extensions list, or linked libraries in `build.yml`, bump the `-vN` suffix in the two SPC cache keys (`spc-downloads-*` and `spc-build-*`) so the old compiled PHP is not reused.
