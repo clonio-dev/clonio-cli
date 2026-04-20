@@ -47,6 +47,7 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | Microsoft Teams | `ms_teams` | Post notifications via an incoming webhook |
 | Slack | `slack` | Post notifications via an incoming webhook |
 | ntfy.sh / self-hosted ntfy | `ntfy` | Send push notifications via ntfy |
+| Fan-out | `stack` | Deliver to multiple channels simultaneously |
 
 ### Options
 
@@ -55,7 +56,8 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | Option | Description |
 |---|---|
 | `name` | Channel name (argument, optional) |
-| `--type=` | Channel type: `local`, `s3`, `email`, `ms_teams`, `slack`, `ntfy` |
+| `--type=` | Channel type: `local`, `s3`, `email`, `ms_teams`, `slack`, `ntfy`, `stack` |
+| `--set-default` | Set this channel as the value of `audit.default` in `clonio.json` |
 | `--deliver-audit-log` | Enable delivery of the signed HTML audit artefacts via this channel |
 | `--no-deliver-audit-log` | Disable delivery of the signed HTML audit artefacts via this channel |
 | `--deliver-run-log` | Enable delivery of the JSONL process log via this channel |
@@ -108,6 +110,12 @@ Both audit logs and run logs are written to the same directory. Path templates s
 | `--priority=` | Notification priority: `min`, `low`, `default`, `high`, `max` |
 | `--tags=` | Comma-separated tag strings (optional) |
 | `--token=` | Bearer token for authenticated servers (stored encrypted, optional) |
+
+#### Stack (`--type=stack`)
+
+| Option | Description |
+|---|---|
+| `--channels=` | Comma-separated list of child channel names to deliver to |
 
 ### Exit codes
 
@@ -187,7 +195,7 @@ clonio audit:update s3-backup
 
 ## `audit:delete`
 
-Deletes an audit delivery channel from `clonio.json`. The channel is also automatically removed from any `deliver_to` lists it belongs to.
+Deletes an audit delivery channel from `clonio.json`. If the channel is set as `audit.default`, the `default` key is cleared automatically.
 
 ### Usage
 
@@ -197,7 +205,7 @@ clonio audit:delete [<name>] [--force]
 
 If `name` is omitted and only one channel exists, it is selected automatically. With multiple channels, an interactive selection prompt is shown.
 
-A warning is displayed if the channel is currently active in one or more `deliver_to` lists.
+A warning is displayed if the channel is currently set as `audit.default` or is referenced by a `stack` channel.
 
 ### Options
 
@@ -240,7 +248,7 @@ Lists all configured audit delivery channels and their delivery assignments.
 clonio audit:list
 ```
 
-Outputs a table with columns: **Name**, **Type**, **Audit Log** (✓/✗), **Process Log** (✓/✗), **Details**.
+Outputs a table with columns: **Name**, **Type**, **Default** (★ for the default channel), **Audit Log** (✓/✗), **Process Log** (✓/✗), **Details**.
 
 The Details column shows a summary appropriate to the channel type:
 - **Local**: audit log path
@@ -264,6 +272,43 @@ clonio audit:list
 ---
 
 ## Notes
+
+### Stack Channel
+
+The `stack` type fans out delivery to multiple child channels. Use it when you want to deliver audit artefacts to several destinations at once.
+
+| Field | Required | Description |
+|-------|:--------:|-------------|
+| `type` | yes | Must be `"stack"` |
+| `channels` | yes | Array of channel names to deliver to |
+
+**Example:**
+```json
+"production": {
+    "type": "stack",
+    "channels": ["local", "s3-backup", "slack-notify"]
+}
+```
+
+### Default Channel
+
+The `audit.default` key selects which channel receives audit artefacts:
+
+```json
+"audit": {
+    "default": "local",
+    "channels": { ... }
+}
+```
+
+To deliver to multiple channels, set `default` to a `stack` channel.
+The `--audit-channel` CLI flag overrides `default` for a single run.
+
+Use `--set-default` when adding a channel to set it as the default in one step:
+
+```bash
+clonio audit:add logs --type=local --local-path=./ --set-default
+```
 
 ### Secret encryption
 
@@ -294,10 +339,11 @@ These defaults can be overridden per channel using the `delivers_audit` and `del
 ```json
 {
   "audit": {
+    "default": "local",
     "channels": {
-      "local-store": {
+      "local": {
         "type": "local",
-        "path": "./clonio-logs/{year}/{month}",
+        "path": "./",
         "delivers_audit": true,
         "delivers_process_log": false
       },
