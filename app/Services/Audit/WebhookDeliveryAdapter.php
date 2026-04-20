@@ -17,11 +17,9 @@ class WebhookDeliveryAdapter implements DeliveryAdapterInterface
 
     public function deliver(array $artefacts, array $channelConfig, array $templateVars): void
     {
-        $webhookUrl = $this->decryptIfNeeded((string) ($channelConfig['webhook_url'] ?? ''));
+        $webhookUrl = $this->decryptIfNeeded(is_string($channelConfig['webhook_url'] ?? null) ? $channelConfig['webhook_url'] : '');
 
-        if ($webhookUrl === '') {
-            throw new RuntimeException('Webhook URL is empty');
-        }
+        throw_if($webhookUrl === '', RuntimeException::class, 'Webhook URL is empty');
 
         $source = $templateVars['source'] ?? 'unknown';
         $target = $templateVars['target'] ?? 'unknown';
@@ -75,15 +73,11 @@ class WebhookDeliveryAdapter implements DeliveryAdapterInterface
     {
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        if ($json === false) {
-            throw new RuntimeException('Failed to encode webhook payload as JSON');
-        }
+        throw_if($json === false, RuntimeException::class, 'Failed to encode webhook payload as JSON');
 
         $ch = curl_init($url);
 
-        if ($ch === false) {
-            throw new RuntimeException('Failed to initialize cURL for webhook POST');
-        }
+        throw_if($ch === false, RuntimeException::class, 'Failed to initialize cURL for webhook POST');
 
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
@@ -96,7 +90,6 @@ class WebhookDeliveryAdapter implements DeliveryAdapterInterface
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         if ($httpCode < 200 || $httpCode >= 300) {
             throw new RuntimeException(sprintf('Webhook POST failed (HTTP %d): %s', $httpCode, is_string($response) ? $response : $error));

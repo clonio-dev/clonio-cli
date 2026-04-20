@@ -13,7 +13,7 @@ final class RunLogWriter
     private array $events = [];
 
     /** @var (callable(string, string, array<string, mixed>): void)|null */
-    private $liveOutput = null;
+    private $liveOutput;
 
     private readonly DateTimeImmutable $startedAt;
 

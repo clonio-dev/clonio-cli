@@ -13,9 +13,9 @@ class NtfyDeliveryAdapter implements DeliveryAdapterInterface
     public function deliver(array $artefacts, array $channelConfig, array $templateVars): void
     {
         $url = $this->buildUrl($channelConfig);
-        $priority = (string) ($channelConfig['priority'] ?? 'default');
+        $priority = is_string($channelConfig['priority'] ?? null) ? $channelConfig['priority'] : 'default';
         $tags = is_array($channelConfig['tags'] ?? null) ? $channelConfig['tags'] : [];
-        $token = isset($channelConfig['token']) ? $this->decryptIfNeeded((string) $channelConfig['token']) : null;
+        $token = isset($channelConfig['token']) ? $this->decryptIfNeeded(is_string($channelConfig['token']) ? $channelConfig['token'] : '') : null;
 
         $source = $templateVars['source'] ?? 'unknown';
         $target = $templateVars['target'] ?? 'unknown';
@@ -40,9 +40,7 @@ class NtfyDeliveryAdapter implements DeliveryAdapterInterface
 
         $ch = curl_init($url);
 
-        if ($ch === false) {
-            throw new RuntimeException('Failed to initialize cURL for ntfy POST');
-        }
+        throw_if($ch === false, RuntimeException::class, 'Failed to initialize cURL for ntfy POST');
 
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
@@ -55,7 +53,6 @@ class NtfyDeliveryAdapter implements DeliveryAdapterInterface
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         if ($httpCode < 200 || $httpCode >= 300) {
             throw new RuntimeException(sprintf('ntfy POST failed (HTTP %d): %s', $httpCode, is_string($response) ? $response : $error));
@@ -65,8 +62,8 @@ class NtfyDeliveryAdapter implements DeliveryAdapterInterface
     /** @param array<string, mixed> $channelConfig */
     private function buildUrl(array $channelConfig): string
     {
-        $base = rtrim((string) ($channelConfig['url'] ?? 'https://ntfy.sh'), '/');
-        $topic = (string) ($channelConfig['topic'] ?? '');
+        $base = rtrim(is_string($channelConfig['url'] ?? null) ? $channelConfig['url'] : 'https://ntfy.sh', '/');
+        $topic = is_string($channelConfig['topic'] ?? null) ? $channelConfig['topic'] : '';
 
         return $base.'/'.$topic;
     }

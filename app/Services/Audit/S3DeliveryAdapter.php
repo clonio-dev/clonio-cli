@@ -12,12 +12,12 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
 {
     public function deliver(array $artefacts, array $channelConfig, array $templateVars): void
     {
-        $endpoint = (string) ($channelConfig['endpoint'] ?? '');
-        $bucket = (string) ($channelConfig['bucket'] ?? '');
-        $region = (string) ($channelConfig['region'] ?? 'us-east-1');
-        $accessKey = (string) ($channelConfig['access_key'] ?? '');
-        $secretKey = $this->decryptIfNeeded((string) ($channelConfig['secret_key'] ?? ''));
-        $pathPrefix = (string) ($channelConfig['path_prefix'] ?? '');
+        $endpoint = is_string($channelConfig['endpoint'] ?? null) ? $channelConfig['endpoint'] : '';
+        $bucket = is_string($channelConfig['bucket'] ?? null) ? $channelConfig['bucket'] : '';
+        $region = is_string($channelConfig['region'] ?? null) ? $channelConfig['region'] : 'us-east-1';
+        $accessKey = is_string($channelConfig['access_key'] ?? null) ? $channelConfig['access_key'] : '';
+        $secretKey = $this->decryptIfNeeded(is_string($channelConfig['secret_key'] ?? null) ? $channelConfig['secret_key'] : '');
+        $pathPrefix = is_string($channelConfig['path_prefix'] ?? null) ? $channelConfig['path_prefix'] : '';
 
         foreach ($artefacts as $filename => $content) {
             $key = $this->resolveKey($pathPrefix, $filename, $templateVars);
@@ -41,7 +41,8 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
 
     private function putObject(string $endpoint, string $bucket, string $key, string $content, string $region, string $accessKey, string $secretKey): void
     {
-        $host = (string) parse_url($endpoint, PHP_URL_HOST);
+        $parsedHost = parse_url($endpoint, PHP_URL_HOST);
+        $host = is_string($parsedHost) ? $parsedHost : '';
         $url = rtrim($endpoint, '/').'/'.$bucket.'/'.ltrim($key, '/');
         $date = gmdate('Ymd\THis\Z');
         $dateShort = gmdate('Ymd');
@@ -70,9 +71,9 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
             hash_hmac('sha256', 's3',
                 hash_hmac('sha256', $region,
                     hash_hmac('sha256', $dateShort, 'AWS4'.$secretKey, true),
+                    true),
                 true),
-            true),
-        true);
+            true);
 
         $signature = hash_hmac('sha256', $stringToSign, $signingKey);
         $authorization = sprintf(
@@ -82,9 +83,7 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
 
         $ch = curl_init($url);
 
-        if ($ch === false) {
-            throw new RuntimeException('Failed to initialize cURL for S3 upload');
-        }
+        throw_if($ch === false, RuntimeException::class, 'Failed to initialize cURL for S3 upload');
 
         curl_setopt_array($ch, [
             CURLOPT_CUSTOMREQUEST => 'PUT',
@@ -102,7 +101,6 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
 
         if ($httpCode < 200 || $httpCode >= 300) {
             throw new RuntimeException(sprintf('S3 PUT failed (HTTP %d): %s', $httpCode, is_string($response) ? $response : $error));

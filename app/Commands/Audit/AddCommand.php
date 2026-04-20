@@ -158,9 +158,7 @@ class AddCommand extends Command
     {
         $existing = array_keys($config->getAuditChannels());
 
-        if ($existing === []) {
-            throw new RuntimeException('No channels exist yet. Add individual channels before creating a stack.');
-        }
+        throw_if($existing === [], RuntimeException::class, 'No channels exist yet. Add individual channels before creating a stack.');
 
         $this->line('  Available channels: '.implode(', ', $existing));
         $asked = $this->ask('Channels to include (comma-separated)');

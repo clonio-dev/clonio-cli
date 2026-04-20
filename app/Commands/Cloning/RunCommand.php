@@ -15,8 +15,8 @@ use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\SchemaDiffData;
-use App\Enums\ExitCode;
 use App\Enums\AuditChannelType;
+use App\Enums\ExitCode;
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogRenderer;
@@ -97,9 +97,10 @@ class RunCommand extends Command
             $runLog->setLiveOutput(function (string $level, string $event, array $extra): void {
                 $formatted = sprintf('[%s] %s', strtoupper($level), $event);
                 if ($extra !== []) {
-                    $formatted .= ' ' . json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $formatted .= ' '.json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 }
-                fwrite(STDERR, $formatted . "\n");
+
+                fwrite(STDERR, $formatted."\n");
             });
         }
 

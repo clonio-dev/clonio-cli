@@ -17,6 +17,7 @@ class LocalDeliveryAdapter implements DeliveryAdapterInterface
         foreach ($templateVars as $var => $value) {
             $resolvedPath = str_replace('{'.$var.'}', $value, $resolvedPath);
         }
+
         $resolvedPath = rtrim($resolvedPath, '/');
 
         foreach ($artefacts as $filename => $content) {
