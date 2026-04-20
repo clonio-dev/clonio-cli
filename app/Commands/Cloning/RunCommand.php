@@ -16,13 +16,18 @@ use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\SchemaDiffData;
 use App\Enums\ExitCode;
+use App\Enums\AuditChannelType;
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogRenderer;
 use App\Services\Audit\AuditLogSigner;
+use App\Services\Audit\EmailDeliveryAdapter;
 use App\Services\Audit\LocalDeliveryAdapter;
+use App\Services\Audit\NtfyDeliveryAdapter;
+use App\Services\Audit\S3DeliveryAdapter;
 use App\Services\Audit\StderrDeliveryAdapter;
 use App\Services\Audit\StdoutDeliveryAdapter;
+use App\Services\Audit\WebhookDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
@@ -480,8 +485,17 @@ class RunCommand extends Command
             $signer = new AuditLogSigner;
             $builder = new AuditLogBuilder($signer);
             $renderer = new AuditLogRenderer;
-            $localAdapter = new LocalDeliveryAdapter;
-            $deliveryService = new AuditDeliveryService($localAdapter, new StdoutDeliveryAdapter, new StderrDeliveryAdapter, $runLog);
+            $deliveryService = new AuditDeliveryService(
+                runLog: $runLog,
+                localAdapter: new LocalDeliveryAdapter,
+                stdoutAdapter: new StdoutDeliveryAdapter,
+                stderrAdapter: new StderrDeliveryAdapter,
+                s3Adapter: new S3DeliveryAdapter,
+                emailAdapter: new EmailDeliveryAdapter,
+                teamsAdapter: new WebhookDeliveryAdapter(AuditChannelType::MsTeams),
+                slackAdapter: new WebhookDeliveryAdapter(AuditChannelType::Slack),
+                ntfyAdapter: new NtfyDeliveryAdapter,
+            );
 
             $yamlFileName = basename($filePath);
             $auditRecord = $builder->build(

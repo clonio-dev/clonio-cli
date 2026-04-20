@@ -678,6 +678,7 @@ YAML;
     $config->shouldReceive('load')->andReturn([
         'connections' => [],
         'audit' => [
+            'default' => 'local-main',
             'channels' => [
                 'local-main' => [
                     'type' => 'local',
