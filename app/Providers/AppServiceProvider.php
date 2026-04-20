@@ -16,7 +16,6 @@ use Composer\InstalledVersions;
 use Dotenv\Dotenv;
 use Illuminate\Support\Env;
 use Illuminate\Support\ServiceProvider;
-use Phar;
 use Symfony\Component\Process\Process;
 
 class AppServiceProvider extends ServiceProvider
@@ -26,11 +25,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        config([
-            'logging.channels.single.path' => Phar::running() !== '' && Phar::running() !== '0'
-                    ? dirname(Phar::running(false)).'/clonio.log'
-                    : storage_path('logs/clonio.log'),
-        ]);
+        //
     }
 
     /**
