@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Audit;
 
-class StderrDeliveryAdapter
+use App\Contracts\DeliveryAdapterInterface;
+
+class StderrDeliveryAdapter implements DeliveryAdapterInterface
 {
-    /**
-     * Write artefact content to STDERR.
-     *
-     * @param  array<string, string>  $artefacts  filename => content
-     */
-    public function deliver(array $artefacts): void
+    public function deliver(array $artefacts, array $channelConfig, array $templateVars): void
     {
         foreach ($artefacts as $content) {
             fwrite(STDERR, $content);

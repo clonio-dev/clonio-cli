@@ -12,7 +12,7 @@ it('delivers artefacts to local filesystem with template variable resolution', f
 
     $adapter->deliver(
         artefacts: ['audit.html' => '<html>test</html>', 'audit.sig' => 'sha256:abc123'],
-        path: 'audit-logs/{year}/{month}',
+        channelConfig: ['path' => 'audit-logs/{year}/{month}'],
         templateVars: ['year' => '2026', 'month' => '04', 'day' => '01', 'source' => 'prod', 'target' => 'staging'],
     );
 
@@ -30,7 +30,7 @@ it('delivers artefacts to path without template variables', function (): void {
 
     $adapter->deliver(
         artefacts: ['run.jsonl' => '{"event": "start"}'],
-        path: 'run-logs',
+        channelConfig: ['path' => 'run-logs'],
         templateVars: [],
     );
 

@@ -131,14 +131,12 @@ class AuditDeliveryService
         bool $deliversAudit,
         bool $deliversProcessLog,
     ): void {
-        $path = is_string($channelConfig['path'] ?? null) ? $channelConfig['path'] : 'clonio-logs';
-
         if ($deliversAudit) {
-            $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $path, $templateVars));
+            $this->deliverWithRetry(fn () => $this->localAdapter->deliver($auditArtefacts, $channelConfig, $templateVars));
         }
 
         if ($deliversProcessLog) {
-            $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$processLogFilename => $processLogContent], $path, $templateVars));
+            $this->deliverWithRetry(fn () => $this->localAdapter->deliver([$processLogFilename => $processLogContent], $channelConfig, $templateVars));
         }
     }
 
@@ -154,11 +152,11 @@ class AuditDeliveryService
         bool $deliversProcessLog,
     ): void {
         if ($deliversAudit) {
-            $this->deliverWithRetry(fn () => $adapter->deliver($auditArtefacts));
+            $this->deliverWithRetry(fn () => $adapter->deliver($auditArtefacts, [], []));
         }
 
         if ($deliversProcessLog) {
-            $this->deliverWithRetry(fn () => $adapter->deliver([$processLogFilename => $processLogContent]));
+            $this->deliverWithRetry(fn () => $adapter->deliver([$processLogFilename => $processLogContent], [], []));
         }
     }
 
