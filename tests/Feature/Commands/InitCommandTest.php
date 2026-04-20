@@ -183,10 +183,10 @@ it('creates default audit channels in clonio.json on fresh init', function (): v
 
     expect($config['audit']['channels'])->toHaveKeys(['local', 'stdout', 'stderr']);
     expect($config['audit']['channels']['local']['type'])->toBe('local');
+    expect($config['audit']['channels']['local']['path'])->toBe('./');
     expect($config['audit']['channels']['stdout']['type'])->toBe('stdout');
     expect($config['audit']['channels']['stderr']['type'])->toBe('stderr');
-    expect($config['audit']['audit_log']['deliver_to'])->toContain('local');
-    expect($config['audit']['run_log']['deliver_to'])->toContain('local');
+    expect($config['audit']['default'])->toBe('local');
 });
 
 it('creates default audit channels even when APP_KEY already exists', function (): void {
