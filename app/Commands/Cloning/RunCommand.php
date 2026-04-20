@@ -83,7 +83,20 @@ class RunCommand extends Command
         RunLogWriter $runLog,
     ): int {
         $ci = (bool) $this->option('ci');
-        $verbose = $this->getOutput()->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE;
+        $verbosity = $this->getOutput()->getVerbosity();
+        $isVerbose = $verbosity >= OutputInterface::VERBOSITY_VERBOSE;
+        $isVeryVerbose = $verbosity >= OutputInterface::VERBOSITY_VERY_VERBOSE;
+
+        if ($isVeryVerbose) {
+            /** @param array<string, mixed> $extra */
+            $runLog->setLiveOutput(function (string $level, string $event, array $extra): void {
+                $formatted = sprintf('[%s] %s', strtoupper($level), $event);
+                if ($extra !== []) {
+                    $formatted .= ' ' . json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                fwrite(STDERR, $formatted . "\n");
+            });
+        }
 
         // ─── Phase 1: YAML Validation ──────────────────────────────────────────
         $filePath = (string) $this->argument('file');
@@ -133,7 +146,7 @@ class RunCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
-        if ($verbose) {
+        if ($isVerbose) {
             $this->line('  <info>✓</info>  Validating YAML ...');
         }
 
@@ -265,7 +278,7 @@ class RunCommand extends Command
             return ExitCode::ConnectionError->value;
         }
 
-        if ($verbose) {
+        if ($isVerbose) {
             $this->line(sprintf('  <info>✓</info>  Connecting to %s and %s ...', $config->connectionName, $targetName));
         }
 
@@ -286,7 +299,7 @@ class RunCommand extends Command
             return ExitCode::ConnectionError->value;
         }
 
-        if ($verbose) {
+        if ($isVerbose) {
             $this->line('  <info>✓</info>  Resolving table order ...');
         }
 
@@ -300,7 +313,7 @@ class RunCommand extends Command
                 ini_set('memory_limit', '-1');
             }
 
-            if ($verbose) {
+            if ($isVerbose) {
                 $this->line('  <info>✓</info>  Generating key mappings ...');
             }
 
@@ -329,7 +342,7 @@ class RunCommand extends Command
                 return ExitCode::GeneralError->value;
             }
 
-            if ($verbose) {
+            if ($isVerbose) {
                 foreach ($counts as $tbl => $cnt) {
                     $this->line(sprintf('  <info>✓</info>  Key mapping: %s (%s rows)', $tbl, number_format($cnt)));
                 }
@@ -338,7 +351,7 @@ class RunCommand extends Command
 
         $skipSchema = (bool) $this->option('skip-schema');
 
-        if ($verbose) {
+        if ($isVerbose) {
             try {
                 $targetSchema = $inspector->inspect($targetConnection);
                 $schemaDiff = (new SchemaDiffService)->diff($sourceSchema, $targetSchema);
@@ -367,7 +380,7 @@ class RunCommand extends Command
             }
         }
 
-        if ($verbose && ! $skipSchema) {
+        if ($isVerbose && ! $skipSchema) {
             $this->line('  <info>✓</info>  Replicating schema ...');
         }
 
@@ -377,6 +390,9 @@ class RunCommand extends Command
         /** @var list<string> $schemaFailureTables */
         $schemaFailureTables = [];
 
+        $dotColumn = 0;
+        $maxDotColumns = 70;
+
         $result = $orchestrator->run(
             config: $config,
             source: $sourceConnection,
@@ -385,12 +401,22 @@ class RunCommand extends Command
             skipSchema: $skipSchema,
             skipTables: $skipTables,
             onlyTables: $onlyTables,
-            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped) use ($verbose, &$notFoundTables, &$schemaFailureTables): void {
-                if ($verbose) {
+            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped) use ($isVerbose, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns): void {
+                if ($ci) {
+                    if ($status === TableRunStatus::NotFound) {
+                        $notFoundTables[] = $tableName;
+                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
+                        $schemaFailureTables[] = $tableName;
+                    }
+
+                    return;
+                }
+
+                if ($isVerbose) {
                     if ($status === TableRunStatus::Transferred) {
-                        $this->line(sprintf('  <info>✓</info>  %s  (%d rows)', $tableName, $rows));
+                        $this->line(sprintf('  <info>✓</info>  %s  (%s rows%s)', $tableName, number_format($rows), $skipped > 0 ? ', '.$skipped.' skipped' : ''));
                     } elseif ($status === TableRunStatus::NotFound) {
-                        $this->line(sprintf('  <comment>✗</comment>  %s  — not found in source, skipped', $tableName));
+                        $this->line(sprintf('  <comment>?</comment>  %s  — not found in source, skipped', $tableName));
                         $notFoundTables[] = $tableName;
                     } elseif ($status === TableRunStatus::Failed) {
                         $this->line(sprintf('  <error>✗</error>  %s  — failed', $tableName));
@@ -398,17 +424,33 @@ class RunCommand extends Command
                         $this->line(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
                         $schemaFailureTables[] = $tableName;
                     }
-                } elseif ($status === TableRunStatus::Transferred) {
-                    $indicator = $skipped > 0 ? 'F' : '.';
-                    $this->output->write($indicator);
-                } elseif ($status === TableRunStatus::Failed) {
-                    $this->output->write('E');
-                } elseif ($status === TableRunStatus::NotFound) {
-                    $this->output->write('?');
+
+                    return;
+                }
+
+                // Normal mode: dot indicators wrapped at 70 chars
+                if ($status === TableRunStatus::NotFound) {
                     $notFoundTables[] = $tableName;
                 } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                    $this->output->write('S');
                     $schemaFailureTables[] = $tableName;
+                }
+
+                $indicator = match ($status) {
+                    TableRunStatus::Transferred => $skipped > 0 ? 'F' : '.',
+                    TableRunStatus::Failed => 'E',
+                    TableRunStatus::NotFound => '?',
+                    TableRunStatus::SkippedBySchemaFailure => 'S',
+                    default => null,
+                };
+
+                if ($indicator !== null) {
+                    $this->output->write($indicator);
+                    $dotColumn++;
+
+                    if ($dotColumn >= $maxDotColumns) {
+                        $this->output->writeln('');
+                        $dotColumn = 0;
+                    }
                 }
             },
             keyRemapping: $keyRemappingService,
@@ -431,7 +473,7 @@ class RunCommand extends Command
         $auditConfig = is_array($rawAuditConfig) ? $rawAuditConfig : null;
 
         if ($auditConfig !== null || $auditChannels !== []) {
-            if ($verbose) {
+            if ($isVerbose) {
                 $this->line('  <info>✓</info>  Generating audit log ...');
             }
 
@@ -482,7 +524,7 @@ class RunCommand extends Command
                 templateVars: $templateVars,
             );
 
-            if ($verbose) {
+            if ($isVerbose) {
                 $channelTypes = [];
 
                 if (is_array($auditConfig)) {
@@ -503,7 +545,7 @@ class RunCommand extends Command
         }
 
         // ─── Phase 8: Summary ──────────────────────────────────────────────────
-        if (! $verbose && ! $ci) {
+        if (! $isVerbose && ! $ci && $dotColumn > 0) {
             $this->line('');
         }
 
