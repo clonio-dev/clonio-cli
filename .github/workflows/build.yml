@@ -88,6 +88,9 @@ jobs:
       # Keep GD_LIBS_SLUG in sync — cache keys cannot contain commas.
       GD_LIBS: 'libjpeg,libwebp,freetype'
       GD_LIBS_SLUG: 'libjpeg-libwebp-freetype'
+      # oniguruma is required by mbstring's mbregex functions (mb_ereg*, mb_regex_encoding).
+      # mPDF checks for mbregex support at runtime and fails without it.
+      EXTRA_LIBS: 'oniguruma'
       # Pin OpenSSL to 3.x. OpenSSL 4.0.0 removed ERR_NUM_ERRORS, which PHP 8.5's
       # openssl extension still references — fresh downloads otherwise grab 4.x and fail to compile.
       OPENSSL_VERSION: '3.6.2'
@@ -121,7 +124,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./downloads
-          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-v5
+          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-oniguruma-v6
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
@@ -131,7 +134,7 @@ jobs:
           ./spc download \
             --with-php=${{ env.PHP_VERSION }} \
             --for-extensions="${{ env.EXTENSIONS }}" \
-            --for-libs="${{ env.GD_LIBS }}" \
+            --for-libs="${{ env.GD_LIBS }},${{ env.EXTRA_LIBS }}" \
             --custom-url="openssl:https://github.com/openssl/openssl/releases/download/openssl-${{ env.OPENSSL_VERSION }}/openssl-${{ env.OPENSSL_VERSION }}.tar.gz"
 
       - name: Cache SPC build output
@@ -139,11 +142,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-v5
+          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-oniguruma-v6
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
-        run: ./spc build --build-micro --with-libs="${{ env.GD_LIBS }}" ${{ runner.debug == '1' && '--debug' || '' }} "${{ env.EXTENSIONS }}"
+        run: ./spc build --build-micro --with-libs="${{ env.GD_LIBS }},${{ env.EXTRA_LIBS }}" ${{ runner.debug == '1' && '--debug' || '' }} "${{ env.EXTENSIONS }}"
 
       - name: Upload SPC logs on failure
         if: failure()
