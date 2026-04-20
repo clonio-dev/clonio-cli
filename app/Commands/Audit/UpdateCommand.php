@@ -71,17 +71,8 @@ class UpdateCommand extends Command
         $updated = $this->promptUpdatedFields($type, $current);
         $updated['type'] = $type->value;
 
-        // ─── Deliver-to membership ────────────────────────────────────────────
-        $auditDeliverTo = $config->getAuditDeliverTo('audit_log');
-        $runDeliverTo = $config->getAuditDeliverTo('run_log');
-        $inAuditLog = in_array($name, $auditDeliverTo, true);
-        $inRunLog = in_array($name, $runDeliverTo, true);
-
-        $newDeliverAuditLog = $this->confirm('Deliver audit log via this channel?', $inAuditLog);
-        $newDeliverRunLog = $this->confirm('Deliver run log via this channel?', $inRunLog);
-
         // ─── Diff ─────────────────────────────────────────────────────────────
-        $this->showDiff($current, $updated, $inAuditLog, $inRunLog, $newDeliverAuditLog, $newDeliverRunLog);
+        $this->showDiff($current, $updated);
 
         if (! $this->confirm('Save changes?', true)) {
             $this->line('Cancelled.');
@@ -92,8 +83,6 @@ class UpdateCommand extends Command
         // ─── Persist ──────────────────────────────────────────────────────────
         try {
             $config->setAuditChannel($name, $updated);
-            $this->updateDeliverTo($config, $name, 'audit_log', $inAuditLog, $newDeliverAuditLog);
-            $this->updateDeliverTo($config, $name, 'run_log', $inRunLog, $newDeliverRunLog);
         } catch (RuntimeException $runtimeException) {
             $this->error($runtimeException->getMessage());
 
@@ -118,6 +107,7 @@ class UpdateCommand extends Command
             AuditChannelType::MsTeams,
             AuditChannelType::Slack => $this->updateWebhookFields($current),
             AuditChannelType::Ntfy => $this->updateNtfyFields($current),
+            AuditChannelType::Stack => $this->updateStackFields($current),
             AuditChannelType::Stdout, AuditChannelType::Stderr => $current,
         };
     }
@@ -280,10 +270,23 @@ class UpdateCommand extends Command
     }
 
     /**
+     * @param  array<string, mixed>  $current
+     * @return array<string, mixed>
+     */
+    private function updateStackFields(array $current): array
+    {
+        $currentChannels = is_array($current['channels'] ?? null) ? implode(', ', array_filter($current['channels'], is_string(...))) : '';
+        $asked = $this->askString('Channels (comma-separated)', $currentChannels);
+        $selected = array_values(array_filter(array_map(trim(...), explode(',', $asked))));
+
+        return ['channels' => $selected];
+    }
+
+    /**
      * @param  array<string, mixed>  $old
      * @param  array<string, mixed>  $new
      */
-    private function showDiff(array $old, array $new, bool $oldAudit, bool $oldRun, bool $newAudit, bool $newRun): void
+    private function showDiff(array $old, array $new): void
     {
         $rows = [];
 
@@ -311,14 +314,6 @@ class UpdateCommand extends Command
             }
         }
 
-        if ($oldAudit !== $newAudit) {
-            $rows[] = ['deliver_audit_log', $oldAudit ? 'yes' : 'no', $newAudit ? 'yes' : 'no'];
-        }
-
-        if ($oldRun !== $newRun) {
-            $rows[] = ['deliver_run_log', $oldRun ? 'yes' : 'no', $newRun ? 'yes' : 'no'];
-        }
-
         if ($rows === []) {
             $this->info('No fields changed.');
 
@@ -326,19 +321,5 @@ class UpdateCommand extends Command
         }
 
         $this->table(['Field', 'Old', 'New'], $rows);
-    }
-
-    private function updateDeliverTo(ConfigService $config, string $name, string $logType, bool $was, bool $now): void
-    {
-        if ($was === $now) {
-            return;
-        }
-
-        $current = $config->getAuditDeliverTo($logType);
-        if ($now && ! in_array($name, $current, true)) {
-            $config->setAuditDeliverTo($logType, array_merge($current, [$name]));
-        } elseif (! $now && in_array($name, $current, true)) {
-            $config->setAuditDeliverTo($logType, array_values(array_filter($current, static fn ($ch): bool => $ch !== $name)));
-        }
     }
 }
