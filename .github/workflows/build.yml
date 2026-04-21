@@ -356,10 +356,14 @@ jobs:
           path: ./artifacts
           merge-multiple: true
 
-      - name: Create GitHub Release
+      # Two-step publish: create as draft so assets can be uploaded, then flip to
+      # published. Repo has immutable releases enabled — once a non-draft release
+      # exists, GitHub rejects further asset uploads. A draft is mutable.
+      - name: Create draft GitHub Release with assets
         uses: softprops/action-gh-release@v3
         with:
           files: ./artifacts/*
+          draft: true
           # Tags like v0.6.8-alpha.1 / -beta.1 / -rc.1 are marked as pre-release.
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           body: |
@@ -421,6 +425,11 @@ jobs:
             composer require --dev clonio-dev/clonio-cli
             vendor/bin/clonio --version
             ```
+
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false
 
   notify-packagist:
     name: Notify Packagist
