@@ -127,7 +127,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./downloads
-          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
+          # Key by matrix.output so Linux x86_64 and Linux aarch64 don't share a cache.
+          # Previously used runner.os only, which collided across the two Linux arches.
+          key: spc-downloads-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
@@ -145,7 +147,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
+          key: spc-build-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
