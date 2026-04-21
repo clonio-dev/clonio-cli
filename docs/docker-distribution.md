@@ -93,7 +93,7 @@ Prefer an exact `:1.2.3` tag in CI. `:latest` is safe for interactive use but dr
 ## Image internals
 
 - **Base:** `alpine:3` with `ca-certificates` and `tzdata` installed.
-- **Binary:** the same static `clonio-linux-{amd64,arm64}` artifact that is attached to each GitHub Release — placed at `/usr/local/bin/clonio`.
+- **Binary:** the same static `clonio-linux-x86_64` and `clonio-linux-aarch64` artifacts that are attached to each GitHub Release — placed at `/usr/local/bin/clonio` inside the image.
 - **Entrypoint:** `/usr/local/bin/clonio`. Any arguments after `docker run … image` are passed straight through.
 - **Workdir:** `/workspace`. Mount your project root here.
 
