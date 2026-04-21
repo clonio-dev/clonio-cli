@@ -372,6 +372,7 @@ jobs:
             | `clonio-linux-aarch64` | Linux — aarch64 (ARM64) | nothing |
             | `clonio-macos-aarch64` | macOS — Apple Silicon (M1/M2/M3/M4) | nothing |
             | `clonio.phar` | Any platform | PHP 8.5 |
+            | `ghcr.io/clonio-dev/clonio:${{ github.ref_name }}` | linux/amd64 + linux/arm64 | Docker |
 
             ### Linux
 
@@ -399,6 +400,15 @@ jobs:
             ```bash
             php clonio.phar --version
             ```
+
+            ### Docker
+
+            ```bash
+            docker run --rm -v "$(pwd)":/workspace \
+              ghcr.io/clonio-dev/clonio:${{ github.ref_name }} --version
+            ```
+
+            See [docs/docker-distribution.md](https://github.com/clonio-dev/clonio-cli/blob/main/docs/docker-distribution.md) for pinning, tag scheme, and common recipes.
 
             ### Composer (dev dependency)
 
