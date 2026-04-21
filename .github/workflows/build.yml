@@ -127,7 +127,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./downloads
-          key: spc-downloads-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
+          # Key by matrix.output so Linux x86_64 and Linux aarch64 don't share a cache.
+          # Previously used runner.os only, which collided across the two Linux arches.
+          key: spc-downloads-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
@@ -145,7 +147,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ runner.os }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
+          key: spc-build-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
@@ -247,6 +249,78 @@ jobs:
           name: clonio.phar
           path: builds/clonio.phar
 
+  docker:
+    name: Docker image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download linux binaries from build job
+        uses: actions/download-artifact@v8
+        with:
+          path: ./artifacts
+          pattern: clonio-linux-*
+          merge-multiple: true
+
+      - name: Stage binaries for Docker context
+        run: |
+          mkdir -p bin
+          cp artifacts/clonio-linux-x86_64  bin/clonio-linux-amd64
+          cp artifacts/clonio-linux-aarch64 bin/clonio-linux-arm64
+          chmod +x bin/clonio-linux-*
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/clonio-dev/clonio
+          # We control :latest explicitly — default flavor would tag every push :latest.
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            # Dry-run dispatches aren't tag pushes, so the semver patterns above produce nothing —
+            # this gives the build a deterministic dev tag and silences metadata-action warnings.
+            type=sha,prefix=dev-,enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/clonio-dev/clonio-cli
+            org.opencontainers.image.description=Clonio CLI — safe production-to-dev database transfers
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          # Push on tag; on workflow_dispatch we only build (validates the Dockerfile).
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   release:
     name: Publish Release
     needs: [test, build]
@@ -303,6 +377,7 @@ jobs:
             | `clonio-linux-aarch64` | Linux — aarch64 (ARM64) | nothing |
             | `clonio-macos-aarch64` | macOS — Apple Silicon (M1/M2/M3/M4) | nothing |
             | `clonio.phar` | Any platform | PHP 8.5 |
+            | `ghcr.io/clonio-dev/clonio:${{ github.ref_name }}` | linux/amd64 + linux/arm64 | Docker |
 
             ### Linux
 
@@ -330,6 +405,15 @@ jobs:
             ```bash
             php clonio.phar --version
             ```
+
+            ### Docker
+
+            ```bash
+            docker run --rm -v "$(pwd)":/workspace \
+              ghcr.io/clonio-dev/clonio:${{ github.ref_name }} --version
+            ```
+
+            See [docs/docker-distribution.md](https://github.com/clonio-dev/clonio-cli/blob/main/docs/docker-distribution.md) for pinning, tag scheme, and common recipes.
 
             ### Composer (dev dependency)
 

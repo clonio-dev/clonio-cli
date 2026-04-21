@@ -16,12 +16,13 @@ It is free and open source for individuals and NGOs. See [clonio.dev](https://cl
 
 Download the binary for your platform from the [latest release](https://github.com/clonio-dev/clonio-cli/releases/latest):
 
-| Platform            | Binary                   |
-|---------------------|--------------------------|
-| Linux x86_64        | `clonio-linux-x86_64`    |
-| Linux aarch64       | `clonio-linux-aarch64`   |
-| macOS Apple Silicon | `clonio-macos-aarch64`   |
-| Any (PHP 8.5+)      | `clonio.phar`            |
+| Platform            | Binary                               |
+|---------------------|--------------------------------------|
+| Linux x86_64        | `clonio-linux-x86_64`                |
+| Linux aarch64       | `clonio-linux-aarch64`               |
+| macOS Apple Silicon | `clonio-macos-aarch64`               |
+| Any (PHP 8.5+)      | `clonio.phar`                        |
+| Docker (any OS)     | `ghcr.io/clonio-dev/clonio:latest`   |
 
 The platform binaries are fully self-contained — no PHP required. The PHAR requires PHP 8.5 on the target machine (`php clonio.phar`) but is smaller and works on any platform.
 
@@ -46,6 +47,17 @@ No PHP installation required — the binary is fully self-contained.
 > xattr -d com.apple.quarantine clonio
 > ```
 > See [docs/code-signing.md](docs/code-signing.md) for the full signing setup once an Apple Developer account is available.
+
+### Docker
+
+No install required — run Clonio as a one-off container against your current directory:
+
+```bash
+docker run --rm -v "$(pwd)":/workspace \
+  ghcr.io/clonio-dev/clonio:latest --version
+```
+
+Multi-arch image (`linux/amd64`, `linux/arm64`). See [docs/docker-distribution.md](docs/docker-distribution.md) for the full tag scheme, recipes, and CI pinning guidance.
 
 ### Composer (dev dependency)
 

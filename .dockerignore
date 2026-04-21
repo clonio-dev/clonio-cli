@@ -1,0 +1,5 @@
+# Build context is intentionally minimal — only the static binaries
+# (staged by CI into bin/) and the Dockerfile itself need to be present.
+*
+!Dockerfile
+!bin/
