@@ -299,6 +299,9 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
             type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            # Dry-run dispatches aren't tag pushes, so the semver patterns above produce nothing —
+            # this gives the build a deterministic dev tag and silences metadata-action warnings.
+            type=sha,prefix=dev-,enable=${{ github.event_name == 'workflow_dispatch' }}
           labels: |
             org.opencontainers.image.source=https://github.com/clonio-dev/clonio-cli
             org.opencontainers.image.description=Clonio CLI — safe production-to-dev database transfers
