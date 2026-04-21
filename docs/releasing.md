@@ -43,6 +43,7 @@ Go to `https://github.com/clonio-dev/clonio-cli/actions` and open the `build` ru
 |-------|-------------|
 | **Tests** | Full test suite runs on Ubuntu. If this fails, nothing else runs. |
 | **Build** | Three jobs run in parallel — one per platform. Each compiles a standalone binary, builds the PHAR, and uploads both as artifacts. |
+| **Docker** | Assembles the two Linux static binaries into a multi-arch image and publishes it to `ghcr.io/clonio-dev/clonio`. Pre-release tags publish only the exact version (no `:latest`, no floating tags). Runs after Build. Non-blocking — a Docker failure does not block the GitHub Release. |
 | **Release** | Downloads all artifacts and publishes a GitHub release with binaries, PHAR, and an auto-generated changelog. |
 
 The full run takes roughly 15–30 minutes on a cold cache (SPC compiles PHP from source). Subsequent runs with a warm cache are much faster.
