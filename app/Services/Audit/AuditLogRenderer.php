@@ -240,6 +240,10 @@ HTML;
             'margin_left' => 14,
             'margin_right' => 14,
             'default_font' => 'DejaVuSans',
+            // Direct mpdf's spill files to the OS temp dir. Without this, mpdf
+            // defaults to a path inside its own vendor directory, which is read-only
+            // when clonio runs from the PHAR/micro-SAPI distribution.
+            'tempDir' => sys_get_temp_dir(),
         ]);
 
         $mpdf->WriteHTML($html);

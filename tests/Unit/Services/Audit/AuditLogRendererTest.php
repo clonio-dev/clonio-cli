@@ -100,3 +100,16 @@ it('renders duration in human-friendly format in HTML', function (): void {
     expect($html)->toContain('00:00:00,500');
     expect($html)->not->toContain('>0.500<');
 });
+
+it('renders a PDF document', function (): void {
+    $renderer = new AuditLogRenderer;
+    $record = makeFullAuditRecord();
+
+    $signer = new AuditLogSigner;
+    [$canonicalJson] = $signer->sign($record);
+
+    $pdf = $renderer->renderPdf($record, $canonicalJson);
+
+    expect($pdf)->toStartWith('%PDF-')
+        ->and(strlen($pdf))->toBeGreaterThan(1000);
+});
