@@ -231,8 +231,15 @@ jobs:
       #       --wait
       #     rm ${{ matrix.output }}.zip
 
-      - name: Smoke test
+      - name: Smoke test — version
         run: ./${{ matrix.output }} --version
+
+      - name: Smoke test — functional (binary)
+        run: ./tests/smoke/run-smoke.sh bin "$PWD/${{ matrix.output }}"
+
+      - name: Smoke test — functional (PHAR)
+        if: matrix.upload_phar
+        run: ./tests/smoke/run-smoke.sh phar "$PWD/builds/clonio"
 
       - name: Upload binary as artifact
         uses: actions/upload-artifact@v7
@@ -281,6 +288,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build amd64 image into local daemon (for smoke)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: clonio:smoke-test
+          cache-from: type=gha
+
+      - name: Smoke test — functional (Docker)
+        run: ./tests/smoke/run-smoke.sh docker clonio:smoke-test
+
       - name: Log in to GHCR
         if: github.event_name == 'push'
         uses: docker/login-action@v3
@@ -323,10 +342,10 @@ jobs:
 
   release:
     name: Publish Release
-    needs: [test, build]
+    needs: [test, build, docker]
     runs-on: ubuntu-latest
     # Skip on workflow_dispatch — manual runs are dry-runs (artifacts only, no release).
-    if: always() && needs.test.result == 'success' && needs.build.result == 'success' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    if: always() && needs.test.result == 'success' && needs.build.result == 'success' && needs.docker.result == 'success' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout
