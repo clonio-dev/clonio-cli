@@ -373,6 +373,8 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: ./artifacts
+          # Explicit allowlist — excludes Docker Buildx summary artifacts and spc-logs-* from failed attempts.
+          pattern: '{clonio-linux-*,clonio-macos-*,clonio.phar}'
           merge-multiple: true
 
       # Two-step publish: create as draft so assets can be uploaded, then flip to
