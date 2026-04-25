@@ -14,6 +14,7 @@ use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
+use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\SchemaDiffData;
 use App\Enums\AuditChannelType;
 use App\Enums\ExitCode;
@@ -34,8 +35,10 @@ use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\RunLogWriter;
+use App\Services\Cloning\SkippedRow;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
+use App\Services\Output\VerboseStepRenderer;
 use App\Services\Schema\SchemaDiffService;
 use App\Services\Schema\SchemaInspector;
 use DateTimeImmutable;
@@ -43,6 +46,7 @@ use DateTimeZone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
+use RuntimeException;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -104,6 +108,8 @@ class RunCommand extends Command
             });
         }
 
+        $step = new VerboseStepRenderer($this->output, $ci);
+
         // ─── Phase 1: YAML Validation ──────────────────────────────────────────
         $filePath = (string) $this->argument('file');
 
@@ -117,43 +123,35 @@ class RunCommand extends Command
         $validator = new CloningYamlValidator;
 
         try {
-            $config = $loader->load($filePath);
-        } catch (Throwable $throwable) {
-            $this->error(sprintf('Failed to parse YAML: %s', $throwable->getMessage()));
+            $config = $step->run('Validating YAML', function () use ($loader, $validator, $filePath): CloningConfigData {
+                $config = $loader->load($filePath);
 
-            return ExitCode::ValidationError->value;
-        }
-
-        // Re-parse raw data for validator
-        try {
-            $content = Storage::disk('local')->get($filePath);
-
-            if ($content === null) {
-                $content = (string) file_get_contents($filePath);
-            }
-
-            $rawData = Yaml::parse($content);
-
-            if (is_array($rawData)) {
-                /** @var array<string, mixed> $rawData */
-                $errors = $validator->validate($rawData);
-
-                if ($errors !== []) {
-                    foreach ($errors as $error) {
-                        $this->error($error);
-                    }
-
-                    return ExitCode::ValidationError->value;
+                $content = Storage::disk('local')->get($filePath);
+                if ($content === null) {
+                    $content = (string) file_get_contents($filePath);
                 }
+
+                $rawData = Yaml::parse($content);
+                if (is_array($rawData)) {
+                    /** @var array<string, mixed> $rawData */
+                    $errors = $validator->validate($rawData);
+                    if ($errors !== []) {
+                        throw new RuntimeException(implode("\n", $errors));
+                    }
+                }
+
+                return $config;
+            });
+        } catch (RuntimeException $validationError) {
+            foreach (explode("\n", $validationError->getMessage()) as $validationLine) {
+                $this->error($validationLine);
             }
-        } catch (Throwable $throwable) {
-            $this->error(sprintf('Failed to validate YAML: %s', $throwable->getMessage()));
 
             return ExitCode::ValidationError->value;
-        }
+        } catch (Throwable $throwable) {
+            $this->error(sprintf('Failed to parse or validate YAML: %s', $throwable->getMessage()));
 
-        if ($isVerbose) {
-            $this->line('  <info>✓</info>  Validating YAML ...');
+            return ExitCode::ValidationError->value;
         }
 
         // Validate --skip-tables + --only-tables mutual exclusivity
@@ -266,26 +264,28 @@ class RunCommand extends Command
         }
 
         // Test both connections
-        try {
-            $sourceConnName = $connector->open($sourceConnection);
-            DB::purge($sourceConnName);
-        } catch (Throwable $throwable) {
-            $this->error(sprintf("Cannot connect to source '%s': %s", $config->connectionName, $throwable->getMessage()));
-
-            return ExitCode::ConnectionError->value;
-        }
+        $connectLabel = sprintf('Connecting to %s and %s', $config->connectionName, $targetName);
 
         try {
-            $targetConnName = $connector->open($targetConnection);
-            DB::purge($targetConnName);
-        } catch (Throwable $throwable) {
-            $this->error(sprintf("Cannot connect to target '%s': %s", $targetName, $throwable->getMessage()));
+            $step->run($connectLabel, function () use ($connector, $sourceConnection, $targetConnection, $config, $targetName): void {
+                try {
+                    $sourceConnName = $connector->open($sourceConnection);
+                    DB::purge($sourceConnName);
+                } catch (Throwable $throwable) {
+                    throw new RuntimeException(sprintf("Cannot connect to source '%s': %s", $config->connectionName, $throwable->getMessage()), $throwable->getCode(), $throwable);
+                }
+
+                try {
+                    $targetConnName = $connector->open($targetConnection);
+                    DB::purge($targetConnName);
+                } catch (Throwable $throwable) {
+                    throw new RuntimeException(sprintf("Cannot connect to target '%s': %s", $targetName, $throwable->getMessage()), $throwable->getCode(), $throwable);
+                }
+            });
+        } catch (RuntimeException $runtimeException) {
+            $this->error($runtimeException->getMessage());
 
             return ExitCode::ConnectionError->value;
-        }
-
-        if ($isVerbose) {
-            $this->line(sprintf('  <info>✓</info>  Connecting to %s and %s ...', $config->connectionName, $targetName));
         }
 
         // ─── Phase 3: Dry-run ──────────────────────────────────────────────────
@@ -298,15 +298,11 @@ class RunCommand extends Command
         $runLog->log('info', 'run_started', ['source' => $config->connectionName, 'target' => $targetName]);
 
         try {
-            $sourceSchema = $inspector->inspect($sourceConnection);
+            $sourceSchema = $step->run('Resolving table order', fn (): DatabaseSchemaData => $inspector->inspect($sourceConnection));
         } catch (Throwable $throwable) {
             $this->error(sprintf('Failed to inspect source schema: %s', $throwable->getMessage()));
 
             return ExitCode::ConnectionError->value;
-        }
-
-        if ($isVerbose) {
-            $this->line('  <info>✓</info>  Resolving table order ...');
         }
 
         // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
@@ -319,10 +315,6 @@ class RunCommand extends Command
                 ini_set('memory_limit', '-1');
             }
 
-            if ($isVerbose) {
-                $this->line('  <info>✓</info>  Generating key mappings ...');
-            }
-
             $keyRemappingService = (bool) $this->option('file-based')
                 ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
                 : new KeyRemappingService($connector);
@@ -332,7 +324,10 @@ class RunCommand extends Command
             );
 
             try {
-                $counts = $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sortedForMapping);
+                $counts = $step->run(
+                    'Generating key mappings',
+                    fn (): array => $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sortedForMapping),
+                );
             } catch (Throwable $throwable) {
                 if (str_contains($throwable->getMessage(), 'Allowed memory size') || str_contains($throwable->getMessage(), 'Out of memory')) {
                     $reRunCommand = $this->getOriginalCommandWithNoMemoryLimit();
@@ -357,33 +352,32 @@ class RunCommand extends Command
 
         $skipSchema = (bool) $this->option('skip-schema');
 
-        if ($isVerbose) {
-            try {
-                $targetSchema = $inspector->inspect($targetConnection);
-                $schemaDiff = (new SchemaDiffService)->diff($sourceSchema, $targetSchema);
+        $step->start('Comparing schema');
+        try {
+            $targetSchema = $inspector->inspect($targetConnection);
+            $schemaDiff = (new SchemaDiffService)->diff($sourceSchema, $targetSchema);
 
-                if ($schemaDiff->hasDifferences()) {
-                    $parts = [];
+            if ($schemaDiff->hasDifferences()) {
+                $parts = [];
 
-                    if ($schemaDiff->missingTables !== []) {
-                        $parts[] = count($schemaDiff->missingTables).' missing';
-                    }
-
-                    if ($schemaDiff->modifiedTables !== []) {
-                        $parts[] = count($schemaDiff->modifiedTables).' modified';
-                    }
-
-                    if ($schemaDiff->extraTables !== []) {
-                        $parts[] = count($schemaDiff->extraTables).' extra on target';
-                    }
-
-                    $this->line(sprintf('  <comment>~</comment>  Schema diff: %s', implode(', ', $parts)));
-                } else {
-                    $this->line('  <info>✓</info>  Schema diff: target matches source');
+                if ($schemaDiff->missingTables !== []) {
+                    $parts[] = count($schemaDiff->missingTables).' missing';
                 }
-            } catch (Throwable) {
-                // non-fatal: skip diff output if target schema cannot be inspected
+
+                if ($schemaDiff->modifiedTables !== []) {
+                    $parts[] = count($schemaDiff->modifiedTables).' modified';
+                }
+
+                if ($schemaDiff->extraTables !== []) {
+                    $parts[] = count($schemaDiff->extraTables).' extra on target';
+                }
+
+                $step->success(sprintf('(differs: %s)', implode(', ', $parts)));
+            } else {
+                $step->success('(target matches source)');
             }
+        } catch (Throwable) {
+            $step->success('(unable to inspect target — non-fatal)');
         }
 
         if ($isVerbose && ! $skipSchema) {
@@ -407,7 +401,7 @@ class RunCommand extends Command
             skipSchema: $skipSchema,
             skipTables: $skipTables,
             onlyTables: $onlyTables,
-            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped) use ($isVerbose, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns): void {
+            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use ($step, $isVerbose, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns): void {
                 if ($ci) {
                     if ($status === TableRunStatus::NotFound) {
                         $notFoundTables[] = $tableName;
@@ -420,12 +414,15 @@ class RunCommand extends Command
 
                 if ($isVerbose) {
                     if ($status === TableRunStatus::Transferred) {
-                        $this->line(sprintf('  <info>✓</info>  %s  (%s rows%s)', $tableName, number_format($rows), $skipped > 0 ? ', '.$skipped.' skipped' : ''));
+                        $suffix = sprintf('(%s rows%s)', number_format($rows), $skipped > 0 ? ', '.$skipped.' skipped' : '');
+                        $step->success($suffix);
+                        $this->renderSkipGroups($step, $skippedRows);
+                    } elseif ($status === TableRunStatus::Failed) {
+                        $step->fail();
+                        $this->renderSkipGroups($step, $skippedRows);
                     } elseif ($status === TableRunStatus::NotFound) {
                         $this->line(sprintf('  <comment>?</comment>  %s  — not found in source, skipped', $tableName));
                         $notFoundTables[] = $tableName;
-                    } elseif ($status === TableRunStatus::Failed) {
-                        $this->line(sprintf('  <error>✗</error>  %s  — failed', $tableName));
                     } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
                         $this->line(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
                         $schemaFailureTables[] = $tableName;
@@ -461,6 +458,9 @@ class RunCommand extends Command
             },
             keyRemapping: $keyRemappingService,
             breakOnFailure: (bool) $this->option('break-on-failure'),
+            onTableStart: $isVerbose && ! $ci
+                ? fn (string $tableName) => $step->start('  '.$tableName)
+                : null,
         );
 
         $finishedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -479,10 +479,6 @@ class RunCommand extends Command
         $auditConfig = is_array($rawAuditConfig) ? $rawAuditConfig : null;
 
         if ($auditConfig !== null || $auditChannels !== []) {
-            if ($isVerbose) {
-                $this->line('  <info>✓</info>  Generating audit log ...');
-            }
-
             $signer = new AuditLogSigner;
             $builder = new AuditLogBuilder($signer);
             $renderer = new AuditLogRenderer;
@@ -499,64 +495,76 @@ class RunCommand extends Command
             );
 
             $yamlFileName = basename($filePath);
-            $auditRecord = $builder->build(
-                config: $config,
-                result: $result,
-                targetConnection: $targetName,
-                startedAt: $startedAt,
-                finishedAt: $finishedAt,
-                yamlFileName: $yamlFileName,
-            );
 
-            [$canonicalJson, $contentHash, $hmacSignature] = $signer->sign($auditRecord);
-            $htmlContent = $renderer->render($auditRecord, $canonicalJson);
-            $pdfContent = $renderer->renderPdf($auditRecord, $canonicalJson);
+            /**
+             * @var array{auditArtefacts: array<string, string>, templateVars: array<string, string>, processLogContent: string} $auditPayload
+             */
+            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $runLog): array {
+                $auditRecord = $builder->build(
+                    config: $config,
+                    result: $result,
+                    targetConnection: $targetName,
+                    startedAt: $startedAt,
+                    finishedAt: $finishedAt,
+                    yamlFileName: $yamlFileName,
+                );
 
-            $timestamp = $startedAt->format('Y-m-d\TH-i-s\Z');
-            $baseFilename = sprintf('%s_%s_%s', $config->connectionName, $targetName, $timestamp);
-            $auditArtefacts = [
-                $baseFilename.'_audit.html' => $htmlContent,
-                $baseFilename.'_audit.pdf' => $pdfContent,
-                $baseFilename.'_audit.sig' => 'sha256:'.$hmacSignature,
-            ];
+                [$canonicalJson, $contentHash, $hmacSignature] = $signer->sign($auditRecord);
+                $htmlContent = $renderer->render($auditRecord, $canonicalJson);
+                $pdfContent = $renderer->renderPdf($auditRecord, $canonicalJson);
 
-            $templateVars = [
-                'year' => $startedAt->format('Y'),
-                'month' => $startedAt->format('m'),
-                'day' => $startedAt->format('d'),
-                'source' => $config->connectionName,
-                'target' => $targetName,
-                'timestamp' => $timestamp,
-            ];
+                $timestamp = $startedAt->format('Y-m-d\TH-i-s\Z');
+                $baseFilename = sprintf('%s_%s_%s', $config->connectionName, $targetName, $timestamp);
+                $auditArtefacts = [
+                    $baseFilename.'_audit.html' => $htmlContent,
+                    $baseFilename.'_audit.pdf' => $pdfContent,
+                    $baseFilename.'_audit.sig' => 'sha256:'.$hmacSignature,
+                ];
 
-            $processLogContent = $runLog->flush();
+                $templateVars = [
+                    'year' => $startedAt->format('Y'),
+                    'month' => $startedAt->format('m'),
+                    'day' => $startedAt->format('d'),
+                    'source' => $config->connectionName,
+                    'target' => $targetName,
+                    'timestamp' => $timestamp,
+                ];
 
-            $deliveryService->deliver(
-                auditConfig: $auditConfig,
-                auditArtefacts: $auditArtefacts,
-                processLogContent: $processLogContent,
-                channelOverride: $auditChannels,
-                templateVars: $templateVars,
-            );
+                $processLogContent = $runLog->flush();
 
-            if ($isVerbose) {
-                $channelTypes = [];
+                return [
+                    'auditArtefacts' => $auditArtefacts,
+                    'templateVars' => $templateVars,
+                    'processLogContent' => $processLogContent,
+                ];
+            });
 
-                if (is_array($auditConfig)) {
-                    /** @var array<string, mixed> $channels */
-                    $channels = is_array($auditConfig['channels'] ?? null) ? $auditConfig['channels'] : [];
+            $channelTypes = [];
 
-                    foreach ($channels as $channelConfig) {
-                        if (is_array($channelConfig) && isset($channelConfig['type']) && is_string($channelConfig['type'])) {
-                            $channelTypes[] = $channelConfig['type'];
-                        }
+            if (is_array($auditConfig)) {
+                /** @var array<string, mixed> $channels */
+                $channels = is_array($auditConfig['channels'] ?? null) ? $auditConfig['channels'] : [];
+
+                foreach ($channels as $channelConfig) {
+                    if (is_array($channelConfig) && isset($channelConfig['type']) && is_string($channelConfig['type'])) {
+                        $channelTypes[] = $channelConfig['type'];
                     }
                 }
-
-                if ($channelTypes !== []) {
-                    $this->line(sprintf('  <info>✓</info>  Delivering via %s ...', implode(', ', $channelTypes)));
-                }
             }
+
+            $deliveryLabel = $channelTypes !== []
+                ? sprintf('Delivering via %s', implode(', ', $channelTypes))
+                : 'Delivering audit log';
+
+            $step->run($deliveryLabel, function () use ($deliveryService, $auditConfig, $auditChannels, $auditPayload): void {
+                $deliveryService->deliver(
+                    auditConfig: $auditConfig,
+                    auditArtefacts: $auditPayload['auditArtefacts'],
+                    processLogContent: $auditPayload['processLogContent'],
+                    channelOverride: $auditChannels,
+                    templateVars: $auditPayload['templateVars'],
+                );
+            });
         }
 
         // ─── Phase 8: Summary ──────────────────────────────────────────────────
@@ -851,6 +859,50 @@ class RunCommand extends Command
         $remaining = $seconds % 60;
 
         return sprintf('%dm %ds', $minutes, $remaining);
+    }
+
+    /**
+     * Aggregate skipped rows by SQL error message, sorted by descending count.
+     *
+     * @param  list<SkippedRow>  $rows
+     * @return list<array{count: int, message: string}>
+     */
+    private function aggregateSkipReasons(array $rows): array
+    {
+        $byMessage = [];
+        foreach ($rows as $row) {
+            $byMessage[$row->sqlError] = ($byMessage[$row->sqlError] ?? 0) + 1;
+        }
+
+        arsort($byMessage);
+
+        $result = [];
+        foreach ($byMessage as $message => $count) {
+            $result[] = ['count' => $count, 'message' => (string) $message];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  list<SkippedRow>  $skippedRows
+     */
+    private function renderSkipGroups(VerboseStepRenderer $step, array $skippedRows): void
+    {
+        if ($skippedRows === []) {
+            return;
+        }
+
+        $groups = $this->aggregateSkipReasons($skippedRows);
+        $shown = array_slice($groups, 0, 10);
+        foreach ($shown as $group) {
+            $step->note(sprintf('     └ %d× %s', $group['count'], $group['message']));
+        }
+
+        $rest = count($groups) - count($shown);
+        if ($rest > 0) {
+            $step->note(sprintf('     └ … and %d more error types', $rest));
+        }
     }
 
     /**
