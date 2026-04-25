@@ -35,7 +35,7 @@ class CloningRunOrchestrator
      * @param  list<string>  $skipTables  Tables to exclude (already validated as mutually exclusive with onlyTables)
      * @param  list<string>  $onlyTables  If non-empty, only these tables are transferred
      * @param  callable(string, TableRunStatus, int, int, list<SkippedRow>): void  $onProgress
-     * @param  (callable(string): void)|null  $onTableStart  Optional: fires once per actually-transferred table before its data is moved.
+     * @param  (callable(string): void)|null  $onTableStart  Optional. Fires once per table that enters `transferTable()`, regardless of whether the transfer ultimately succeeds (`Transferred`) or fails (`Failed`). Does NOT fire for tables resolved as `SkippedByFlag`, `SkippedByCascade`, `NotFound`, or `SkippedBySchemaFailure`.
      */
     public function run(
         CloningConfigData $config,
@@ -149,6 +149,7 @@ class CloningRunOrchestrator
                 continue;
             }
 
+            // Past this point a table will enter transferTable() — keep new pre-skip statuses above.
             if ($onTableStart !== null) {
                 $onTableStart($tableName);
             }
