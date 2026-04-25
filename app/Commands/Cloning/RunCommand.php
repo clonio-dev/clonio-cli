@@ -352,36 +352,35 @@ class RunCommand extends Command
 
         $skipSchema = (bool) $this->option('skip-schema');
 
-        $step->start('Comparing schema');
-        try {
-            $targetSchema = $inspector->inspect($targetConnection);
-            $schemaDiff = (new SchemaDiffService)->diff($sourceSchema, $targetSchema);
+        if ($isVerbose && ! $ci) {
+            $step->start('Comparing schema');
 
-            if ($schemaDiff->hasDifferences()) {
-                $parts = [];
+            try {
+                $targetSchema = $inspector->inspect($targetConnection);
+                $schemaDiff = (new SchemaDiffService)->diff($sourceSchema, $targetSchema);
 
-                if ($schemaDiff->missingTables !== []) {
-                    $parts[] = count($schemaDiff->missingTables).' missing';
+                if ($schemaDiff->hasDifferences()) {
+                    $parts = [];
+
+                    if ($schemaDiff->missingTables !== []) {
+                        $parts[] = count($schemaDiff->missingTables).' missing';
+                    }
+
+                    if ($schemaDiff->modifiedTables !== []) {
+                        $parts[] = count($schemaDiff->modifiedTables).' modified';
+                    }
+
+                    if ($schemaDiff->extraTables !== []) {
+                        $parts[] = count($schemaDiff->extraTables).' extra on target';
+                    }
+
+                    $step->success(sprintf('(differs: %s)', implode(', ', $parts)));
+                } else {
+                    $step->success('(target matches source)');
                 }
-
-                if ($schemaDiff->modifiedTables !== []) {
-                    $parts[] = count($schemaDiff->modifiedTables).' modified';
-                }
-
-                if ($schemaDiff->extraTables !== []) {
-                    $parts[] = count($schemaDiff->extraTables).' extra on target';
-                }
-
-                $step->success(sprintf('(differs: %s)', implode(', ', $parts)));
-            } else {
-                $step->success('(target matches source)');
+            } catch (Throwable) {
+                $step->success('(unable to inspect target — non-fatal)');
             }
-        } catch (Throwable) {
-            $step->success('(unable to inspect target — non-fatal)');
-        }
-
-        if ($isVerbose && ! $skipSchema) {
-            $this->line('  <info>✓</info>  Replicating schema ...');
         }
 
         /** @var list<string> $notFoundTables */
