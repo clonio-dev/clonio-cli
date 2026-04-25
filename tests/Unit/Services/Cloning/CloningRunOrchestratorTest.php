@@ -507,3 +507,139 @@ it('aborts after first schema failure when breakOnFailure is true', function ():
     expect($tableNames)->not->toContain('users');
     expect($result->success)->toBeFalse();
 });
+
+it('captures per-row skip details when bulk insert fails and row-by-row fallback also fails', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    $sourceRows = [
+        (object) ['id' => 1],
+        (object) ['id' => 2],
+        (object) ['id' => 3],
+    ];
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn($sourceRows, []);
+    DB::shouldReceive('table')->andReturnSelf();
+
+    $insertCalls = 0;
+    DB::shouldReceive('insert')->andReturnUsing(static function ($payload) use (&$insertCalls): bool {
+        $insertCalls++;
+
+        if ($insertCalls === 1) {
+            // Bulk insert: throw to force row-by-row fallback
+            throw new RuntimeException('SQLSTATE[23000]: Duplicate entry for key PRIMARY (bulk)');
+        }
+
+        // Row-by-row: succeed for id=2, fail for id=1 and id=3 with distinct messages
+        if (is_array($payload) && array_key_exists('id', $payload)) {
+            if ($payload['id'] === 1) {
+                throw new RuntimeException("SQLSTATE[23000]: Duplicate entry '1' for key 'PRIMARY'");
+            }
+
+            if ($payload['id'] === 3) {
+                throw new RuntimeException("SQLSTATE[22001]: Data too long for column 'name'");
+            }
+        }
+
+        return true;
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $runLog = new RunLogWriter;
+    $orchestratorWithLog = new CloningRunOrchestrator(
+        Mockery::mock(DatabaseConnectionService::class)
+            ->shouldReceive('open')
+            ->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn')
+            ->getMock(),
+        Mockery::mock(SchemaReplicator::class)
+            ->shouldReceive('replicate')
+            ->andReturn([])
+            ->getMock(),
+        Mockery::mock(DependencyResolver::class)
+            ->shouldReceive('computeCascadeExclusions')
+            ->andReturn([])
+            ->shouldReceive('sort')
+            ->andReturnUsing(static fn ($s, array $tables): array => $tables)
+            ->getMock(),
+        $runLog,
+    );
+
+    $orchestratorWithLog->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+
+    $logged = json_decode('['.str_replace("\n", ',', rtrim($runLog->flush(), "\n,")).']', true);
+    expect($logged)->toBeArray();
+
+    $skipEvents = array_values(array_filter($logged, static fn (array $e): bool => $e['event'] === 'row_skipped'));
+    expect($skipEvents)->toHaveCount(2);
+
+    $errorMessages = array_column($skipEvents, 'error');
+    expect($errorMessages)->toContain("SQLSTATE[23000]: Duplicate entry '1' for key 'PRIMARY'");
+    expect($errorMessages)->toContain("SQLSTATE[22001]: Data too long for column 'name'");
+
+    foreach ($skipEvents as $event) {
+        expect($event)->toHaveKeys(['table', 'chunk_offset', 'row_index', 'pk', 'error']);
+        expect($event['table'])->toBe('users');
+        expect($event['pk'])->toBe(['id' => $event['pk']['id']]); // PK snapshot present
+    }
+});
+
+it('falls back to null pk snapshot when source schema has no primary key column', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(
+                name: 'users',
+                columns: [
+                    new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([(object) ['email' => 'a@b.c']], []);
+    DB::shouldReceive('table')->andReturnSelf();
+
+    $callCount = 0;
+    DB::shouldReceive('insert')->andReturnUsing(static function () use (&$callCount): bool {
+        $callCount++;
+
+        throw new RuntimeException('Some error');
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $runLog = new RunLogWriter;
+    $orchestrator = new CloningRunOrchestrator(
+        Mockery::mock(DatabaseConnectionService::class)
+            ->shouldReceive('open')
+            ->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn')
+            ->getMock(),
+        Mockery::mock(SchemaReplicator::class)
+            ->shouldReceive('replicate')
+            ->andReturn([])
+            ->getMock(),
+        Mockery::mock(DependencyResolver::class)
+            ->shouldReceive('computeCascadeExclusions')
+            ->andReturn([])
+            ->shouldReceive('sort')
+            ->andReturnUsing(static fn ($s, array $tables): array => $tables)
+            ->getMock(),
+        $runLog,
+    );
+
+    $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+
+    $logged = json_decode('['.str_replace("\n", ',', rtrim($runLog->flush(), "\n,")).']', true);
+    $skipEvents = array_values(array_filter($logged, static fn (array $e): bool => $e['event'] === 'row_skipped'));
+
+    expect($skipEvents)->toHaveCount(1);
+    expect($skipEvents[0]['pk'])->toBeNull();
+});
