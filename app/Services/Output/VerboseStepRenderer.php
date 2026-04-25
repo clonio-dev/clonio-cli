@@ -89,7 +89,7 @@ final class VerboseStepRenderer
 
         if ($this->output->isDecorated()) {
             $padLength = max(self::TARGET_COLUMN - mb_strlen($compose) - 2, 1);
-            $padding = ' '.str_repeat('.', max($padLength - 1, 1));
+            $padding = ' '.str_repeat('.', max($padLength - 1, 0));
             $this->output->write("\x1b[1A\r\x1b[K");
             $this->output->writeln(sprintf('%s%s  %s', $compose, $padding, $symbol));
         } else {

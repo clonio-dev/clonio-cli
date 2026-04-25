@@ -66,6 +66,7 @@ it('rewrites the start line in place on tty (uses cursor-up + clear-line escape)
     $text = $output->fetch();
     expect($text)->toContain("\x1b[1A");
     expect($text)->toContain("\r");
+    expect($text)->toContain("\x1b[K");
     expect($text)->toContain('Validating YAML');
 });
 
