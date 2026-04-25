@@ -582,8 +582,11 @@ it('captures per-row skip details when bulk insert fails and row-by-row fallback
     foreach ($skipEvents as $event) {
         expect($event)->toHaveKeys(['table', 'chunk_offset', 'row_index', 'pk', 'error']);
         expect($event['table'])->toBe('users');
-        expect($event['pk'])->toBe(['id' => $event['pk']['id']]); // PK snapshot present
     }
+
+    $pkIds = array_column(array_column($skipEvents, 'pk'), 'id');
+    expect($pkIds)->toContain(1);
+    expect($pkIds)->toContain(3);
 });
 
 it('falls back to null pk snapshot when source schema has no primary key column', function (): void {
@@ -608,10 +611,7 @@ it('falls back to null pk snapshot when source schema has no primary key column'
     DB::shouldReceive('select')->andReturn([(object) ['email' => 'a@b.c']], []);
     DB::shouldReceive('table')->andReturnSelf();
 
-    $callCount = 0;
-    DB::shouldReceive('insert')->andReturnUsing(static function () use (&$callCount): bool {
-        $callCount++;
-
+    DB::shouldReceive('insert')->andReturnUsing(static function (): never {
         throw new RuntimeException('Some error');
     });
     DB::shouldReceive('purge')->andReturnNull();
