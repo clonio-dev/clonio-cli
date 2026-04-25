@@ -34,6 +34,8 @@ class CloningRunOrchestrator
     /**
      * @param  list<string>  $skipTables  Tables to exclude (already validated as mutually exclusive with onlyTables)
      * @param  list<string>  $onlyTables  If non-empty, only these tables are transferred
+     * @param  callable(string, TableRunStatus, int, int, list<SkippedRow>): void  $onProgress
+     * @param  (callable(string): void)|null  $onTableStart  Optional: fires once per actually-transferred table before its data is moved.
      */
     public function run(
         CloningConfigData $config,
@@ -46,6 +48,7 @@ class CloningRunOrchestrator
         callable $onProgress,
         ?KeyRemappingService $keyRemapping = null,
         bool $breakOnFailure = false,
+        ?callable $onTableStart = null,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -128,7 +131,7 @@ class CloningRunOrchestrator
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $reason);
                 $this->runLog->log('warning', 'table_skipped_schema_failure', ['table' => $tableName, 'reason' => $reason]);
                 $success = false;
-                ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0);
+                ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
                 if ($breakOnFailure) {
                     break;
@@ -141,9 +144,13 @@ class CloningRunOrchestrator
             if (! $sourceSchema->hasTable($tableName)) {
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::NotFound, 0, 0, 0.0, null);
                 $this->runLog->log('warning', 'table_not_found', ['table' => $tableName]);
-                ($onProgress)($tableName, TableRunStatus::NotFound, 0, 0);
+                ($onProgress)($tableName, TableRunStatus::NotFound, 0, 0, []);
 
                 continue;
+            }
+
+            if ($onTableStart !== null) {
+                $onTableStart($tableName);
             }
 
             $tableStart = microtime(true);
@@ -165,7 +172,6 @@ class CloningRunOrchestrator
                 $config->keyRemapping,
             );
 
-            unset($skippedRows); // wired through onProgress in the next task
             $tableDuration = microtime(true) - $tableStart;
 
             $status = $failed ? TableRunStatus::Failed : TableRunStatus::Transferred;
@@ -180,7 +186,7 @@ class CloningRunOrchestrator
             $tableResults[] = new TableRunResultData($tableName, $status, $rows, $skipped, $tableDuration, $reason);
             $totalRows += $rows;
             $totalSkipped += $skipped;
-            ($onProgress)($tableName, $status, $rows, $skipped);
+            ($onProgress)($tableName, $status, $rows, $skipped, $skippedRows);
 
             if ($failed && $breakOnFailure) {
                 break;
