@@ -289,7 +289,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build amd64 image into local daemon (for smoke)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -329,7 +329,7 @@ jobs:
             org.opencontainers.image.licenses=MIT
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
