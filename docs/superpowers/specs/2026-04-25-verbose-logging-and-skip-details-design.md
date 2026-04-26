@@ -57,9 +57,8 @@ public function note(string $line): void;
 Behaviour:
 
 - `run($label, $work)` is a convenience wrapper: `start($label)` → execute closure → `success()` on return, `fail()` on `Throwable` (then re-throw). The closure's return value is passed through.
-- `start()` on a TTY: instantiates `Symfony\Component\Console\Helper\ProgressIndicator`, advances it once to render the first frame.
-- `start()` on a non-TTY: writes the label as a plain line (no carriage return, no spinner).
-- `success(?string $suffix)` on a TTY: finalises the indicator, then `\r`-overwrites the line with `  <label> [padding-dots] [suffix ]<info>✓</info>` padded to a fixed column (80).
+- `start()` writes `  <label> ...` as a single line (TTY and non-TTY alike). No animated spinner: a Symfony `ProgressIndicator` was considered but offers no value without periodic `advance()` ticks during the synchronous closure body — it would render a single static glyph that says nothing more than the label already does. The user still sees the label appear immediately when work begins; the in-flight signal is the absence of a finalisation indicator.
+- `success(?string $suffix)` on a TTY: emits `\x1b[1A\r\x1b[K` (cursor-up, carriage-return, clear-line) and rewrites the line as `  <label> [suffix ][padding-dots]  <info>✓</info>` padded so the symbol lands at column 80. When the composed length already meets or exceeds the target column, the padding collapses to a single space (no dots) and the symbol falls on the right of the content.
 - `success()` on a non-TTY: writes a second line `  <label> [suffix] ✓` (no `\r`).
 - `fail()` mirrors `success()` with `<error>✗</error>`.
 - `note($line)` always writes a plain indented line (used for the skip-group sub-lines under a table row). It does not interact with the indicator state.
