@@ -7,6 +7,7 @@ use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
 use App\Data\Cloning\TableRunResultData;
+use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
@@ -17,6 +18,7 @@ use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\DependencyResolver;
 use App\Services\Cloning\RunLogWriter;
 use App\Services\Cloning\SchemaReplicator;
+use App\Services\Cloning\SkippedRow;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
 
@@ -113,7 +115,7 @@ it('calls TRUNCATE TABLE for mysql when clear is truncate', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($truncateCalled)->toBeTrue();
     expect($result->success)->toBeTrue();
@@ -146,7 +148,7 @@ it('calls DELETE instead of TRUNCATE on sqlite when clear is truncate', function
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($truncateCalled)->toBeFalse();
     expect($deleteCalled)->toBeTrue();
@@ -180,7 +182,7 @@ it('calls DELETE when clear is delete', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($truncateCalled)->toBeFalse();
     expect($deleteCalled)->toBeTrue();
@@ -213,7 +215,7 @@ it('does not clear table when clear is false', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($clearCalled)->toBeFalse();
 });
@@ -245,7 +247,7 @@ it('disables and re-enables FK checks on mysql when disableForeignKeyChecks is t
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($fkDisabled)->toBeTrue();
     expect($fkEnabled)->toBeTrue();
@@ -262,7 +264,7 @@ it('marks table as skipped when in skip-tables list', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, ['users'], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, ['users'], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($result->tables)->toHaveCount(1);
     expect($result->tables[0]->status->value)->toBe('skipped_by_flag');
@@ -279,7 +281,7 @@ it('marks table as not-found when missing from schema', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($result->tables)->toHaveCount(1);
     expect($result->tables[0]->status->value)->toBe('not_found');
@@ -301,7 +303,7 @@ it('transfers rows and counts correctly', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($result->totalRows)->toBe(2);
     expect($result->success)->toBeTrue();
@@ -324,7 +326,7 @@ it('marks run as failed when all rows are skipped during insert', function (): v
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($result->tables[0]->rowsSkipped)->toBe(2);
     expect($result->tables[0]->rowsTransferred)->toBe(0);
@@ -345,7 +347,7 @@ it('reports table failure when SELECT throws', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($result->success)->toBeFalse();
     expect($result->failureReason)->not->toBeNull();
@@ -379,7 +381,7 @@ it('marks table as skipped_by_schema_failure when schema could not be created', 
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestratorWithSchemaFailures(['users' => 'syntax error']);
-    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     expect($result->tables)->toHaveCount(1);
     expect($result->tables[0]->status->value)->toBe('skipped_by_schema_failure');
@@ -439,7 +441,7 @@ it('continues with other tables after a schema failure', function (): void {
 
     // orders fails schema; users succeeds
     $orchestrator = makeOrchestratorWithSchemaFailures(['orders' => 'syntax error']);
-    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
     $statusByTable = [];
     foreach ($result->tables as $tableResult) {
@@ -500,10 +502,403 @@ it('aborts after first schema failure when breakOnFailure is true', function ():
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestratorWithSchemaFailures(['orders' => 'syntax error']);
-    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (): null => null, breakOnFailure: true);
+    $result = $orchestrator->run($config, $source, $target, $schema, false, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, breakOnFailure: true);
 
     $tableNames = array_map(static fn (TableRunResultData $t): string => $t->tableName, $result->tables);
     expect($tableNames)->toContain('orders');
     expect($tableNames)->not->toContain('users');
     expect($result->success)->toBeFalse();
+});
+
+it('captures per-row skip details when bulk insert fails and row-by-row fallback also fails', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    $sourceRows = [
+        (object) ['id' => 1],
+        (object) ['id' => 2],
+        (object) ['id' => 3],
+    ];
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn($sourceRows, []);
+    DB::shouldReceive('table')->andReturnSelf();
+
+    $insertCalls = 0;
+    DB::shouldReceive('insert')->andReturnUsing(static function ($payload) use (&$insertCalls): bool {
+        $insertCalls++;
+
+        if ($insertCalls === 1) {
+            // Bulk insert: throw to force row-by-row fallback
+            throw new RuntimeException('SQLSTATE[23000]: Duplicate entry for key PRIMARY (bulk)');
+        }
+
+        // Row-by-row: succeed for id=2, fail for id=1 and id=3 with distinct messages
+        if (is_array($payload) && array_key_exists('id', $payload)) {
+            if ($payload['id'] === 1) {
+                throw new RuntimeException("SQLSTATE[23000]: Duplicate entry '1' for key 'PRIMARY'");
+            }
+
+            if ($payload['id'] === 3) {
+                throw new RuntimeException("SQLSTATE[22001]: Data too long for column 'name'");
+            }
+        }
+
+        return true;
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $runLog = new RunLogWriter;
+    $orchestratorWithLog = new CloningRunOrchestrator(
+        Mockery::mock(DatabaseConnectionService::class)
+            ->shouldReceive('open')
+            ->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn')
+            ->getMock(),
+        Mockery::mock(SchemaReplicator::class)
+            ->shouldReceive('replicate')
+            ->andReturn([])
+            ->getMock(),
+        Mockery::mock(DependencyResolver::class)
+            ->shouldReceive('computeCascadeExclusions')
+            ->andReturn([])
+            ->shouldReceive('sort')
+            ->andReturnUsing(static fn ($s, array $tables): array => $tables)
+            ->getMock(),
+        $runLog,
+    );
+
+    $orchestratorWithLog->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
+
+    $logged = json_decode('['.str_replace("\n", ',', rtrim($runLog->flush(), "\n,")).']', true);
+    expect($logged)->toBeArray();
+
+    $skipEvents = array_values(array_filter($logged, static fn (array $e): bool => $e['event'] === 'row_skipped'));
+    expect($skipEvents)->toHaveCount(2);
+
+    $errorMessages = array_column($skipEvents, 'error');
+    expect($errorMessages)->toContain("SQLSTATE[23000]: Duplicate entry '1' for key 'PRIMARY'");
+    expect($errorMessages)->toContain("SQLSTATE[22001]: Data too long for column 'name'");
+
+    foreach ($skipEvents as $event) {
+        expect($event)->toHaveKeys(['table', 'chunk_offset', 'row_index', 'pk', 'error']);
+        expect($event['table'])->toBe('users');
+    }
+
+    $pkIds = array_column(array_column($skipEvents, 'pk'), 'id');
+    expect($pkIds)->toContain(1);
+    expect($pkIds)->toContain(3);
+});
+
+it('falls back to null pk snapshot when source schema has no primary key column', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(
+                name: 'users',
+                columns: [
+                    new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([(object) ['email' => 'a@b.c']], []);
+    DB::shouldReceive('table')->andReturnSelf();
+
+    DB::shouldReceive('insert')->andReturnUsing(static function (): never {
+        throw new RuntimeException('Some error');
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $runLog = new RunLogWriter;
+    $orchestrator = new CloningRunOrchestrator(
+        Mockery::mock(DatabaseConnectionService::class)
+            ->shouldReceive('open')
+            ->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn')
+            ->getMock(),
+        Mockery::mock(SchemaReplicator::class)
+            ->shouldReceive('replicate')
+            ->andReturn([])
+            ->getMock(),
+        Mockery::mock(DependencyResolver::class)
+            ->shouldReceive('computeCascadeExclusions')
+            ->andReturn([])
+            ->shouldReceive('sort')
+            ->andReturnUsing(static fn ($s, array $tables): array => $tables)
+            ->getMock(),
+        $runLog,
+    );
+
+    $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
+
+    $logged = json_decode('['.str_replace("\n", ',', rtrim($runLog->flush(), "\n,")).']', true);
+    $skipEvents = array_values(array_filter($logged, static fn (array $e): bool => $e['event'] === 'row_skipped'));
+
+    expect($skipEvents)->toHaveCount(1);
+    expect($skipEvents[0]['pk'])->toBeNull();
+});
+
+it('fires onTableStart exactly once before onProgress for transferred tables', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([(object) ['id' => 1]], []);
+    DB::shouldReceive('table')->andReturnSelf();
+    DB::shouldReceive('insert')->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $events = [];
+    $orchestrator = makeOrchestrator();
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        [],
+        [],
+        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$events): void {
+            $events[] = ['progress', $tbl];
+        },
+        onTableStart: static function (string $tbl) use (&$events): void {
+            $events[] = ['start', $tbl];
+        },
+    );
+
+    expect($events)->toBe([
+        ['start', 'users'],
+        ['progress', 'users'],
+    ]);
+});
+
+it('does not fire onTableStart for tables skipped by --skip flag', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $startCalls = [];
+    $orchestrator = makeOrchestrator();
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        ['users'],
+        [],
+        static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null,
+        onTableStart: static function (string $tbl) use (&$startCalls): void {
+            $startCalls[] = $tbl;
+        },
+    );
+
+    expect($startCalls)->toBe([]);
+});
+
+it('does not fire onTableStart for tables not found in source schema', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = new DatabaseSchemaData(databaseName: 'testdb', tables: []);
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $startCalls = [];
+    $orchestrator = makeOrchestrator();
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        [],
+        [],
+        static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null,
+        onTableStart: static function (string $tbl) use (&$startCalls): void {
+            $startCalls[] = $tbl;
+        },
+    );
+
+    expect($startCalls)->toBe([]);
+});
+
+it('does not fire onTableStart for tables excluded by cascade dependency', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([]);
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturnUsing(static fn (ConnectionData $c): string => $c->name.'_conn');
+
+    $replicator = Mockery::mock(SchemaReplicator::class);
+    $replicator->shouldReceive('replicate')->andReturn([]);
+
+    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver->shouldReceive('computeCascadeExclusions')->andReturn(['users']);
+    $resolver->shouldReceive('sort')->andReturnUsing(static fn ($s, array $tables): array => $tables);
+
+    $startCalls = [];
+    $orchestrator = new CloningRunOrchestrator(
+        $connector,
+        $replicator,
+        $resolver,
+        new RunLogWriter,
+    );
+
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        [],
+        [],
+        static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null,
+        onTableStart: static function (string $tbl) use (&$startCalls): void {
+            $startCalls[] = $tbl;
+        },
+    );
+
+    expect($startCalls)->toBe([]);
+});
+
+it('passes skipped rows list to onProgress for transferred tables with row failures', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+    $config = makeOrchestratorConfig();
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([(object) ['id' => 1], (object) ['id' => 2]], []);
+    DB::shouldReceive('table')->andReturnSelf();
+
+    $insertCalls = 0;
+    DB::shouldReceive('insert')->andReturnUsing(static function ($payload) use (&$insertCalls): bool {
+        $insertCalls++;
+
+        if ($insertCalls === 1) {
+            throw new RuntimeException('bulk fail');
+        }
+
+        if (is_array($payload) && ($payload['id'] ?? null) === 1) {
+            throw new RuntimeException('error A');
+        }
+
+        return true;
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $progressArgs = null;
+    $orchestrator = makeOrchestrator();
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        [],
+        [],
+        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
+            $progressArgs = compact('tbl', 'rows', 'skipped', 'skippedRows');
+        },
+    );
+
+    expect($progressArgs['tbl'])->toBe('users');
+    expect($progressArgs['rows'])->toBe(1);
+    expect($progressArgs['skipped'])->toBe(1);
+    expect($progressArgs['skippedRows'])->toHaveCount(1);
+    expect($progressArgs['skippedRows'][0])->toBeInstanceOf(SkippedRow::class);
+    expect($progressArgs['skippedRows'][0]->sqlError)->toBe('error A');
+});
+
+it('preserves captured skip rows when a later chunk fetch throws', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+
+    // Use chunk size 1 so we can sequence chunk-1 (with a row failure) then chunk-2 (select throws)
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'source',
+        options: new CloningOptionsData(
+            chunkSize: 1,
+            enforceColumnTypes: false,
+            dropUnknownTables: false,
+            dropExtraColumns: false,
+            disableForeignKeyChecks: false,
+            fakerLocale: 'en_US',
+        ),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+        ],
+    );
+
+    $selectCalls = 0;
+    $insertCalls = 0;
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturnUsing(static function () use (&$selectCalls): array {
+        $selectCalls++;
+
+        if ($selectCalls === 1) {
+            return [(object) ['id' => 1]];
+        }
+
+        // Second select throws — simulating a connection-level failure mid-run
+        throw new RuntimeException('Connection lost mid-run');
+    });
+    DB::shouldReceive('table')->andReturnSelf();
+    DB::shouldReceive('insert')->andReturnUsing(static function () use (&$insertCalls): bool {
+        $insertCalls++;
+
+        // Bulk insert: throw to force row-by-row, then row-by-row throws too
+        throw new RuntimeException('SQLSTATE[23000]: row failure on chunk 1');
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $progressArgs = null;
+    $orchestrator = makeOrchestrator();
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        [],
+        [],
+        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
+            $progressArgs = compact('tbl', 'rows', 'skipped', 'skippedRows');
+        },
+    );
+
+    expect($progressArgs['tbl'])->toBe('users');
+    expect($progressArgs['skippedRows'])->toHaveCount(1);
+    expect($progressArgs['skippedRows'][0]->sqlError)->toBe('SQLSTATE[23000]: row failure on chunk 1');
 });

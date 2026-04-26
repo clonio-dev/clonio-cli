@@ -16,6 +16,8 @@ use App\Data\Schema\TableSchemaData;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
 use App\Services\Cloning\CloningRunOrchestrator;
+use App\Services\Cloning\KeyRemappingService;
+use App\Services\Cloning\SkippedRow;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
@@ -1044,4 +1046,208 @@ YAML;
 
     expect($capturedSkipTables)->toContain('audit_logs');
     expect($capturedSkipTables)->toContain('sessions');
+});
+
+it('renders verbose phase steps with start-then-finalize layout', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('cloning.yml', file_get_contents(__DIR__.'/fixtures/cloning-minimal.yml'));
+
+    $this->mock(ConfigService::class, function ($mock): void {
+        $mock->shouldReceive('getConnection')->andReturn(makeRunMysqlConnection());
+        $mock->shouldReceive('getConnections')->andReturn([
+            'production-db' => makeRunMysqlConnection(),
+            'staging' => makeRunTargetConnection(),
+        ]);
+        $mock->shouldReceive('load')->andReturn([]);
+    });
+
+    $this->mock(DatabaseConnectionService::class, function ($mock): void {
+        $mock->shouldReceive('open')->andReturn('test_conn');
+    });
+
+    $this->mock(SchemaInspector::class, function ($mock): void {
+        $mock->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(
+            databaseName: 'mydb',
+            tables: [],
+        ));
+    });
+
+    $this->mock(CloningRunOrchestrator::class, function ($mock): void {
+        $mock->shouldReceive('run')->andReturn(new RunResultData(
+            success: true,
+            tables: [],
+            totalRows: 0,
+            skippedRows: 0,
+            durationSeconds: 0.0,
+            failureReason: null,
+        ));
+    });
+
+    $this->artisan('cloning:run cloning.yml --target=staging -v')
+        ->expectsOutputToContain('Validating YAML')
+        ->expectsOutputToContain('Connecting to')
+        ->expectsOutputToContain('✓')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('renders skip groups under the table line in verbose mode', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('cloning.yml', file_get_contents(__DIR__.'/fixtures/cloning-minimal.yml'));
+
+    $skippedRows = [
+        new SkippedRow(
+            tableName: 'orders',
+            chunkOffset: 0,
+            rowIndex: 0,
+            pkSnapshot: ['id' => 1],
+            sqlError: 'SQLSTATE[23000]: FK fail',
+        ),
+        new SkippedRow(
+            tableName: 'orders',
+            chunkOffset: 0,
+            rowIndex: 1,
+            pkSnapshot: ['id' => 2],
+            sqlError: 'SQLSTATE[23000]: FK fail',
+        ),
+        new SkippedRow(
+            tableName: 'orders',
+            chunkOffset: 0,
+            rowIndex: 2,
+            pkSnapshot: ['id' => 3],
+            sqlError: 'SQLSTATE[22001]: Data too long',
+        ),
+    ];
+
+    $this->mock(ConfigService::class, function ($mock): void {
+        $mock->shouldReceive('getConnection')->andReturn(makeRunMysqlConnection());
+        $mock->shouldReceive('getConnections')->andReturn([
+            'production-db' => makeRunMysqlConnection(),
+            'staging' => makeRunTargetConnection(),
+        ]);
+        $mock->shouldReceive('load')->andReturn([]);
+    });
+
+    $this->mock(DatabaseConnectionService::class, function ($mock): void {
+        $mock->shouldReceive('open')->andReturn('test_conn');
+    });
+
+    $this->mock(SchemaInspector::class, function ($mock): void {
+        $mock->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(
+            databaseName: 'mydb',
+            tables: [],
+        ));
+    });
+
+    $this->mock(CloningRunOrchestrator::class, function ($mock) use ($skippedRows): void {
+        $mock->shouldReceive('run')->andReturnUsing(function (
+            CloningConfigData $config,
+            ConnectionData $source,
+            ConnectionData $target,
+            DatabaseSchemaData $sourceSchema,
+            bool $skipSchema,
+            array $skipTables,
+            array $onlyTables,
+            callable $onProgress,
+            ?KeyRemappingService $keyRemapping = null,
+            bool $breakOnFailure = false,
+            ?callable $onTableStart = null,
+        ) use ($skippedRows): RunResultData {
+            if ($onTableStart !== null) {
+                $onTableStart('orders');
+            }
+
+            $onProgress('orders', TableRunStatus::Transferred, 5, 3, $skippedRows);
+
+            return new RunResultData(
+                success: true,
+                tables: [],
+                totalRows: 5,
+                skippedRows: 3,
+                durationSeconds: 0.0,
+                failureReason: null,
+            );
+        });
+    });
+
+    $this->artisan('cloning:run cloning.yml --target=staging -v')
+        ->expectsOutputToContain('└ 2× SQLSTATE[23000]: FK fail')
+        ->expectsOutputToContain('└ 1× SQLSTATE[22001]: Data too long')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('renders skip groups under a fully failed table line in verbose mode', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('cloning.yml', file_get_contents(__DIR__.'/fixtures/cloning-minimal.yml'));
+
+    $skippedRows = [
+        new SkippedRow(
+            tableName: 'invoice_lines',
+            chunkOffset: 0,
+            rowIndex: 0,
+            pkSnapshot: ['id' => 1],
+            sqlError: "SQLSTATE[42S22]: Column not found: 1054 Unknown column 'tax_rate_v2' in 'field list'",
+        ),
+        new SkippedRow(
+            tableName: 'invoice_lines',
+            chunkOffset: 0,
+            rowIndex: 1,
+            pkSnapshot: ['id' => 2],
+            sqlError: "SQLSTATE[42S22]: Column not found: 1054 Unknown column 'tax_rate_v2' in 'field list'",
+        ),
+    ];
+
+    $this->mock(ConfigService::class, function ($mock): void {
+        $mock->shouldReceive('getConnection')->andReturn(makeRunMysqlConnection());
+        $mock->shouldReceive('getConnections')->andReturn([
+            'production-db' => makeRunMysqlConnection(),
+            'staging' => makeRunTargetConnection(),
+        ]);
+        $mock->shouldReceive('load')->andReturn([]);
+    });
+
+    $this->mock(DatabaseConnectionService::class, function ($mock): void {
+        $mock->shouldReceive('open')->andReturn('test_conn');
+    });
+
+    $this->mock(SchemaInspector::class, function ($mock): void {
+        $mock->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(
+            databaseName: 'mydb',
+            tables: [],
+        ));
+    });
+
+    $this->mock(CloningRunOrchestrator::class, function ($mock) use ($skippedRows): void {
+        $mock->shouldReceive('run')->andReturnUsing(function (
+            CloningConfigData $config,
+            ConnectionData $source,
+            ConnectionData $target,
+            DatabaseSchemaData $sourceSchema,
+            bool $skipSchema,
+            array $skipTables,
+            array $onlyTables,
+            callable $onProgress,
+            ?KeyRemappingService $keyRemapping = null,
+            bool $breakOnFailure = false,
+            ?callable $onTableStart = null,
+        ) use ($skippedRows): RunResultData {
+            if ($onTableStart !== null) {
+                $onTableStart('invoice_lines');
+            }
+
+            $onProgress('invoice_lines', TableRunStatus::Failed, 0, 2, $skippedRows);
+
+            return new RunResultData(
+                success: false,
+                tables: [],
+                totalRows: 0,
+                skippedRows: 2,
+                durationSeconds: 0.0,
+                failureReason: 'simulated',
+            );
+        });
+    });
+
+    $this->artisan('cloning:run cloning.yml --target=staging -v')
+        ->expectsOutputToContain('└ 2× SQLSTATE[42S22]: Column not found')
+        ->expectsOutputToContain('✗');
 });

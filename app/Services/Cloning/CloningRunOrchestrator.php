@@ -34,6 +34,8 @@ class CloningRunOrchestrator
     /**
      * @param  list<string>  $skipTables  Tables to exclude (already validated as mutually exclusive with onlyTables)
      * @param  list<string>  $onlyTables  If non-empty, only these tables are transferred
+     * @param  callable(string, TableRunStatus, int, int, list<SkippedRow>): void  $onProgress
+     * @param  (callable(string): void)|null  $onTableStart  Optional. Fires once per table that enters `transferTable()`, regardless of whether the transfer ultimately succeeds (`Transferred`) or fails (`Failed`). Does NOT fire for tables resolved as `SkippedByFlag`, `SkippedByCascade`, `NotFound`, or `SkippedBySchemaFailure`.
      */
     public function run(
         CloningConfigData $config,
@@ -46,6 +48,7 @@ class CloningRunOrchestrator
         callable $onProgress,
         ?KeyRemappingService $keyRemapping = null,
         bool $breakOnFailure = false,
+        ?callable $onTableStart = null,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -128,7 +131,7 @@ class CloningRunOrchestrator
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $reason);
                 $this->runLog->log('warning', 'table_skipped_schema_failure', ['table' => $tableName, 'reason' => $reason]);
                 $success = false;
-                ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0);
+                ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
                 if ($breakOnFailure) {
                     break;
@@ -141,13 +144,35 @@ class CloningRunOrchestrator
             if (! $sourceSchema->hasTable($tableName)) {
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::NotFound, 0, 0, 0.0, null);
                 $this->runLog->log('warning', 'table_not_found', ['table' => $tableName]);
-                ($onProgress)($tableName, TableRunStatus::NotFound, 0, 0);
+                ($onProgress)($tableName, TableRunStatus::NotFound, 0, 0, []);
 
                 continue;
             }
 
+            // Past this point a table will enter transferTable() — keep new pre-skip statuses above.
+            if ($onTableStart !== null) {
+                $onTableStart($tableName);
+            }
+
             $tableStart = microtime(true);
-            [$rows, $skipped, $failed, $reason] = $this->transferTable($config->options, $tableConfig, $source, $target, $keyRemapping, $config->keyRemapping);
+            $sourceTable = $sourceSchema->getTable($tableName);
+            $pkColumns = $sourceTable instanceof TableSchemaData
+                ? array_values(array_map(
+                    static fn (ColumnSchemaData $c): string => $c->name,
+                    array_filter($sourceTable->columns, static fn (ColumnSchemaData $c): bool => $c->isPrimary)
+                ))
+                : [];
+
+            [$rows, $skipped, $failed, $reason, $skippedRows] = $this->transferTable(
+                $config->options,
+                $tableConfig,
+                $source,
+                $target,
+                $pkColumns,
+                $keyRemapping,
+                $config->keyRemapping,
+            );
+
             $tableDuration = microtime(true) - $tableStart;
 
             $status = $failed ? TableRunStatus::Failed : TableRunStatus::Transferred;
@@ -162,24 +187,19 @@ class CloningRunOrchestrator
             $tableResults[] = new TableRunResultData($tableName, $status, $rows, $skipped, $tableDuration, $reason);
             $totalRows += $rows;
             $totalSkipped += $skipped;
-            ($onProgress)($tableName, $status, $rows, $skipped);
+            ($onProgress)($tableName, $status, $rows, $skipped, $skippedRows);
 
             if ($failed && $breakOnFailure) {
                 break;
             }
 
-            if (! $failed) {
-                $sourceTable = $sourceSchema->getTable($tableName);
-
-                if ($sourceTable instanceof TableSchemaData) {
-                    $pkColumn = $this->findIntegerPkColumn($target, $sourceTable);
-
-                    if ($pkColumn !== null) {
-                        try {
-                            $this->replicator->correctAutoIncrement($target, $tableName, $pkColumn);
-                        } catch (Throwable $e) {
-                            $this->runLog->log('warning', 'auto_increment_correction_failed', ['table' => $tableName, 'error' => $e->getMessage()]);
-                        }
+            if (! $failed && $sourceTable instanceof TableSchemaData) {
+                $pkColumn = $this->findIntegerPkColumn($target, $sourceTable);
+                if ($pkColumn !== null) {
+                    try {
+                        $this->replicator->correctAutoIncrement($target, $tableName, $pkColumn);
+                    } catch (Throwable $e) {
+                        $this->runLog->log('warning', 'auto_increment_correction_failed', ['table' => $tableName, 'error' => $e->getMessage()]);
                     }
                 }
             }
@@ -223,21 +243,32 @@ class CloningRunOrchestrator
     }
 
     /**
-     * Transfer a single table. Returns [rowsTransferred, rowsSkipped, hasFailed, failureReason].
+     * Transfer a single table. Returns [rowsTransferred, rowsSkipped, hasFailed, failureReason, skippedRows].
      *
-     * @return array{int, int, bool, ?string}
+     * @param  list<string>  $pkColumns
+     * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
     private function transferTable(
         CloningOptionsData $options,
         TableCloningConfigData $tableConfig,
         ConnectionData $source,
         ConnectionData $target,
+        array $pkColumns,
         ?KeyRemappingService $keyRemapping = null,
         ?KeyRemappingConfigData $keyRemappingConfig = null,
     ): array {
         $engine = new AnonymizationEngine($options->fakerLocale);
         $sourceConn = $this->connector->open($source);
         $targetConn = $this->connector->open($target);
+
+        $rows = 0;
+        $skipped = 0;
+        $offset = 0;
+        $chunkSize = $options->chunkSize;
+        $firstInsertError = null;
+
+        /** @var list<SkippedRow> $skippedRows */
+        $skippedRows = [];
 
         try {
             if ($options->disableForeignKeyChecks) {
@@ -247,12 +278,6 @@ class CloningRunOrchestrator
             if ($tableConfig->rows->clear !== ClearMode::None) {
                 $this->clearTable($targetConn, $tableConfig->tableName, $tableConfig->rows->clear, $target);
             }
-
-            $rows = 0;
-            $skipped = 0;
-            $offset = 0;
-            $chunkSize = $options->chunkSize;
-            $firstInsertError = null;
 
             do {
                 /** @var list<object> $chunk */
@@ -297,12 +322,30 @@ class CloningRunOrchestrator
                     }
 
                     // Fall back to row-by-row
-                    foreach ($transformed as $row) {
+                    foreach ($transformed as $rowIndexInChunk => $row) {
                         try {
                             DB::connection($targetConn)->table($tableConfig->tableName)->insert($row);
                             $rows++;
-                        } catch (Throwable) {
+                        } catch (Throwable $rowError) {
                             $skipped++;
+                            /** @var array<string, mixed> $sourceRow */
+                            $sourceRow = (array) $chunk[$rowIndexInChunk];
+                            $pkSnapshot = $this->extractPkSnapshot($sourceRow, $pkColumns);
+                            $skippedRow = new SkippedRow(
+                                tableName: $tableConfig->tableName,
+                                chunkOffset: $offset,
+                                rowIndex: $rowIndexInChunk,
+                                pkSnapshot: $pkSnapshot,
+                                sqlError: $rowError->getMessage(),
+                            );
+                            $skippedRows[] = $skippedRow;
+                            $this->runLog->log('warning', 'row_skipped', [
+                                'table' => $skippedRow->tableName,
+                                'chunk_offset' => $skippedRow->chunkOffset,
+                                'row_index' => $skippedRow->rowIndex,
+                                'pk' => $skippedRow->pkSnapshot,
+                                'error' => $skippedRow->sqlError,
+                            ]);
                         }
                     }
                 }
@@ -316,12 +359,12 @@ class CloningRunOrchestrator
                     $reason .= sprintf(': %s', $firstInsertError);
                 }
 
-                return [0, $skipped, true, $reason];
+                return [0, $skipped, true, $reason, $skippedRows];
             }
 
-            return [$rows, $skipped, false, null];
+            return [$rows, $skipped, false, null, $skippedRows];
         } catch (Throwable $throwable) {
-            return [0, 0, true, $throwable->getMessage()];
+            return [$rows, $skipped, true, $throwable->getMessage(), $skippedRows];
         } finally {
             if ($options->disableForeignKeyChecks) {
                 $this->enableFkChecks($targetConn, $target);
@@ -330,6 +373,27 @@ class CloningRunOrchestrator
             DB::purge($sourceConn);
             DB::purge($targetConn);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $sourceRow
+     * @param  list<string>  $pkColumns
+     * @return array<string, mixed>|null
+     */
+    private function extractPkSnapshot(array $sourceRow, array $pkColumns): ?array
+    {
+        if ($pkColumns === []) {
+            return null;
+        }
+
+        $snapshot = [];
+        foreach ($pkColumns as $col) {
+            if (array_key_exists($col, $sourceRow)) {
+                $snapshot[$col] = $sourceRow[$col];
+            }
+        }
+
+        return $snapshot === [] ? null : $snapshot;
     }
 
     private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit): string

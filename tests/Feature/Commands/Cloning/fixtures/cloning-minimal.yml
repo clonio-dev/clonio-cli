@@ -1,0 +1,12 @@
+version: "1"
+connection: production-db
+options:
+  chunk_size: 100
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
