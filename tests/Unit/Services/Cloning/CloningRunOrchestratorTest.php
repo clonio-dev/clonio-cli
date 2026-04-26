@@ -833,3 +833,72 @@ it('passes skipped rows list to onProgress for transferred tables with row failu
     expect($progressArgs['skippedRows'][0])->toBeInstanceOf(SkippedRow::class);
     expect($progressArgs['skippedRows'][0]->sqlError)->toBe('error A');
 });
+
+it('preserves captured skip rows when a later chunk fetch throws', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema();
+
+    // Use chunk size 1 so we can sequence chunk-1 (with a row failure) then chunk-2 (select throws)
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'source',
+        options: new CloningOptionsData(
+            chunkSize: 1,
+            enforceColumnTypes: false,
+            dropUnknownTables: false,
+            dropExtraColumns: false,
+            disableForeignKeyChecks: false,
+            fakerLocale: 'en_US',
+        ),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+        ],
+    );
+
+    $selectCalls = 0;
+    $insertCalls = 0;
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturnUsing(static function () use (&$selectCalls): array {
+        $selectCalls++;
+
+        if ($selectCalls === 1) {
+            return [(object) ['id' => 1]];
+        }
+
+        // Second select throws — simulating a connection-level failure mid-run
+        throw new RuntimeException('Connection lost mid-run');
+    });
+    DB::shouldReceive('table')->andReturnSelf();
+    DB::shouldReceive('insert')->andReturnUsing(static function () use (&$insertCalls): bool {
+        $insertCalls++;
+
+        // Bulk insert: throw to force row-by-row, then row-by-row throws too
+        throw new RuntimeException('SQLSTATE[23000]: row failure on chunk 1');
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $progressArgs = null;
+    $orchestrator = makeOrchestrator();
+    $orchestrator->run(
+        $config,
+        $source,
+        $target,
+        $schema,
+        true,
+        [],
+        [],
+        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
+            $progressArgs = compact('tbl', 'rows', 'skipped', 'skippedRows');
+        },
+    );
+
+    expect($progressArgs['tbl'])->toBe('users');
+    expect($progressArgs['skippedRows'])->toHaveCount(1);
+    expect($progressArgs['skippedRows'][0]->sqlError)->toBe('SQLSTATE[23000]: row failure on chunk 1');
+});

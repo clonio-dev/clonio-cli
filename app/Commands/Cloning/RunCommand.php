@@ -379,7 +379,7 @@ class RunCommand extends Command
                     $step->success('(target matches source)');
                 }
             } catch (Throwable) {
-                $step->success('(unable to inspect target — non-fatal)');
+                $step->fail('(unable to inspect target — non-fatal)');
             }
         }
 

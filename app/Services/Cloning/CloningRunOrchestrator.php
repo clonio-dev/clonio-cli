@@ -261,6 +261,15 @@ class CloningRunOrchestrator
         $sourceConn = $this->connector->open($source);
         $targetConn = $this->connector->open($target);
 
+        $rows = 0;
+        $skipped = 0;
+        $offset = 0;
+        $chunkSize = $options->chunkSize;
+        $firstInsertError = null;
+
+        /** @var list<SkippedRow> $skippedRows */
+        $skippedRows = [];
+
         try {
             if ($options->disableForeignKeyChecks) {
                 $this->disableFkChecks($targetConn, $target);
@@ -269,15 +278,6 @@ class CloningRunOrchestrator
             if ($tableConfig->rows->clear !== ClearMode::None) {
                 $this->clearTable($targetConn, $tableConfig->tableName, $tableConfig->rows->clear, $target);
             }
-
-            $rows = 0;
-            $skipped = 0;
-            $offset = 0;
-            $chunkSize = $options->chunkSize;
-            $firstInsertError = null;
-
-            /** @var list<SkippedRow> $skippedRows */
-            $skippedRows = [];
 
             do {
                 /** @var list<object> $chunk */
@@ -364,7 +364,7 @@ class CloningRunOrchestrator
 
             return [$rows, $skipped, false, null, $skippedRows];
         } catch (Throwable $throwable) {
-            return [0, 0, true, $throwable->getMessage(), []];
+            return [$rows, $skipped, true, $throwable->getMessage(), $skippedRows];
         } finally {
             if ($options->disableForeignKeyChecks) {
                 $this->enableFkChecks($targetConn, $target);
