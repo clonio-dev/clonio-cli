@@ -22,8 +22,6 @@ final readonly class ColumnCloningConfigData
         public ?bool $preserveFormat,
         public ?string $staticValue,
         public ?string $remappingUse = null,
-        public ?int $remappingMin = null,
-        public ?int $remappingMax = null,
         public ?array $remappingForeignKeys = null,
     ) {}
 }

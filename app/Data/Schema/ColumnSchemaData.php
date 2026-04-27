@@ -12,5 +12,6 @@ final readonly class ColumnSchemaData
         public bool $nullable,
         public ?string $default,
         public bool $isPrimary,
+        public bool $unsigned = false,
     ) {}
 }

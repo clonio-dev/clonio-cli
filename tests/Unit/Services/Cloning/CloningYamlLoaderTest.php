@@ -272,8 +272,6 @@ key_remapping:
     - table: orders
       primary_key: id
       strategy: random_integer
-      range_min: 100000
-      range_max: 9999999
 YAML;
 
     Storage::disk('local')->put('int-remapping.yaml', $yaml);
@@ -284,8 +282,6 @@ YAML;
     $table = $config->keyRemapping?->getTable('orders');
     expect($table)->not->toBeNull();
     expect($table?->strategy->value)->toBe('random_integer');
-    expect($table?->rangeMin)->toBe(100000);
-    expect($table?->rangeMax)->toBe(9999999);
 });
 
 it('sets keyRemapping to null when section is absent', function (): void {
@@ -436,8 +432,6 @@ tables:
         strategy: remapping
         arguments:
           - use: random_integer
-          - min: 100000
-          - max: 9999999
           - foreign_keys: []
       email:
         strategy: fake
@@ -456,16 +450,12 @@ YAML;
     expect($krTable)->not->toBeNull();
     expect($krTable?->primaryKey)->toBe('id');
     expect($krTable?->strategy->value)->toBe('random_integer');
-    expect($krTable?->rangeMin)->toBe(100000);
-    expect($krTable?->rangeMax)->toBe(9999999);
     expect($krTable?->foreignKeys)->toBe([]);
 
     // The remapping column itself is accessible
     $idCol = $config->getTable('users')?->getColumn('id');
     expect($idCol?->strategy)->toBe('remapping');
     expect($idCol?->remappingUse)->toBe('random_integer');
-    expect($idCol?->remappingMin)->toBe(100000);
-    expect($idCol?->remappingMax)->toBe(9999999);
 });
 
 it('loads inline remapping with new_uuid strategy', function (): void {
@@ -520,27 +510,22 @@ tables:
       id:
         strategy: remapping
         arguments:
-          - use: random_integer
-          - min: 200000
-          - max: 8888888
+          - use: new_uuid
           - foreign_keys: []
 key_remapping:
   tables:
     - table: users
       primary_key: id
       strategy: random_integer
-      range_min: 1
-      range_max: 99
 YAML;
 
     Storage::disk('local')->put('both.yaml', $yaml);
 
     $config = (new CloningYamlLoader)->load('both.yaml');
 
-    // Inline wins — range from inline config
+    // Inline wins — strategy from inline config (new_uuid), not legacy (random_integer)
     $krTable = $config->keyRemapping?->getTable('users');
-    expect($krTable?->rangeMin)->toBe(200000);
-    expect($krTable?->rangeMax)->toBe(8888888);
+    expect($krTable?->strategy->value)->toBe('new_uuid');
 });
 
 it('parses drop_extra_columns option when present', function (): void {

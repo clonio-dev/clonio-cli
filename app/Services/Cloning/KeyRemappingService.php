@@ -7,18 +7,22 @@ namespace App\Services\Cloning;
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\ConnectionData;
+use App\Data\Schema\ColumnSchemaData;
+use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\TableSchemaData;
 use App\Enums\KeyRemappingStrategy;
+use App\Exceptions\KeyRemappingExhaustedException;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
-use Throwable;
 
 class KeyRemappingService
 {
     public function __construct(
         private readonly DatabaseConnectionService $connector,
         private readonly KeyRemappingStoreInterface $store = new InMemoryKeyRemappingStore,
+        private readonly KeyTypeBoundsResolver $boundsResolver = new KeyTypeBoundsResolver,
     ) {}
 
     /**
@@ -31,6 +35,7 @@ class KeyRemappingService
     public function generateMappings(
         KeyRemappingConfigData $config,
         ConnectionData $source,
+        DatabaseSchemaData $sourceSchema,
         array $orderedTables,
     ): array {
         $counts = [];
@@ -41,17 +46,101 @@ class KeyRemappingService
                 continue;
             }
 
-            $counts[$tableName] = $this->generateTableMapping($tableConfig, $source);
+            $counts[$tableName] = $this->generateTableMapping($tableConfig, $source, $sourceSchema);
         }
 
         return $counts;
     }
 
     /**
-     * @return int Number of rows mapped
+     * Pure allocator: returns oldId(string) => newId(string), preserving source order.
+     *
+     * @param  list<string>  $sourceIds  Stringified PK values from the source table.
+     * @param  list<int>  $existingIds  Numeric PK values cast to int (used for gap-fill fallback).
+     * @return array<string, string>
      */
-    private function generateTableMapping(KeyRemappingTableData $config, ConnectionData $source): int
+    public function allocateIntegerIds(
+        string $table,
+        ColumnSchemaData $column,
+        array $sourceIds,
+        int $existingMax,
+        array $existingIds,
+    ): array {
+        $rowCount = count($sourceIds);
+        if ($rowCount === 0) {
+            return [];
+        }
+
+        $typeMax = $this->boundsResolver->ceilingFor($column);
+        $upperStart = max($existingMax + 1, 1);
+        $upperSlots = $upperStart > $typeMax ? 0 : ($typeMax - $upperStart + 1);
+
+        $targets = [];
+
+        if ($upperSlots >= $rowCount) {
+            for ($i = 0; $i < $rowCount; $i++) {
+                $targets[] = $upperStart + $i;
+            }
+        } else {
+            for ($i = 0; $i < $upperSlots; $i++) {
+                $targets[] = $upperStart + $i;
+            }
+
+            $needed = $rowCount - $upperSlots;
+            $gaps = $this->findGaps($existingIds, 1, $existingMax);
+
+            if (count($gaps) < $needed) {
+                throw new KeyRemappingExhaustedException(
+                    table: $table,
+                    column: $column->name,
+                    columnType: $column->type,
+                    unsigned: $column->unsigned,
+                    typeMax: $typeMax,
+                    rowCount: $rowCount,
+                    upperSlots: $upperSlots,
+                    gapSlots: count($gaps),
+                );
+            }
+
+            for ($i = 0; $i < $needed; $i++) {
+                $targets[] = $gaps[$i];
+            }
+        }
+
+        $mapping = [];
+        foreach ($sourceIds as $i => $oldId) {
+            $mapping[$oldId] = (string) $targets[$i];
+        }
+
+        return $mapping;
+    }
+
+    /**
+     * @param  list<int>  $existingIds
+     * @return list<int>
+     */
+    private function findGaps(array $existingIds, int $lo, int $hi): array
     {
+        if ($hi < $lo) {
+            return [];
+        }
+
+        $set = array_flip($existingIds);
+        $gaps = [];
+        for ($i = $lo; $i <= $hi; $i++) {
+            if (! isset($set[$i])) {
+                $gaps[] = $i;
+            }
+        }
+
+        return $gaps;
+    }
+
+    private function generateTableMapping(
+        KeyRemappingTableData $config,
+        ConnectionData $source,
+        DatabaseSchemaData $sourceSchema,
+    ): int {
         $connName = $this->connector->open($source);
         $pkCol = $config->primaryKey;
         $table = $config->table;
@@ -74,64 +163,67 @@ class KeyRemappingService
                 sprintf('SELECT %s FROM %s', $quotedCol, $quotedTable)
             );
 
-            /** @var array<string, string> $tableMappings */
-            $tableMappings = [];
-            $usedIntegers = [];
-
+            $sourceIds = [];
+            $existingIdsInt = [];
             foreach ($rows as $row) {
                 $rowArray = (array) $row;
                 $rawValue = $rowArray[$pkCol] ?? null;
                 $oldValue = is_scalar($rawValue) ? (string) $rawValue : '';
-
-                $newValue = match ($config->strategy) {
-                    KeyRemappingStrategy::NewUuid => (string) Str::uuid(),
-                    KeyRemappingStrategy::RandomInteger => $this->generateUniqueInteger(
-                        $config->rangeMin,
-                        $config->rangeMax,
-                        $usedIntegers,
-                        $table,
-                    ),
-                };
-
-                $tableMappings[$oldValue] = $newValue;
+                $sourceIds[] = $oldValue;
+                if (is_numeric($oldValue)) {
+                    $existingIdsInt[] = (int) $oldValue;
+                }
             }
+
+            $existingMax = $existingIdsInt === [] ? 0 : max($existingIdsInt);
+
+            $tableMappings = match ($config->strategy) {
+                KeyRemappingStrategy::NewUuid => $this->allocateUuids($sourceIds),
+                KeyRemappingStrategy::RandomInteger => $this->allocateIntegerIds(
+                    $table,
+                    $this->resolvePkColumn($sourceSchema, $table, $pkCol),
+                    $sourceIds,
+                    $existingMax,
+                    $existingIdsInt,
+                ),
+            };
 
             $this->store->storeTable($table, $tableMappings);
 
             return count($tableMappings);
-        } catch (Throwable) {
-            return 0;
         } finally {
             DB::purge($connName);
         }
     }
 
     /**
-     * @param  array<int, true>  $used
+     * @param  list<string>  $sourceIds
+     * @return array<string, string>
      */
-    private function generateUniqueInteger(int $min, int $max, array &$used, string $table): string
+    private function allocateUuids(array $sourceIds): array
     {
-        $range = $max - $min;
-        if ($range < 1) {
-            throw new RuntimeException(
-                sprintf("Key remapping range for table '%s' is exhausted (min=%d, max=%d).", $table, $min, $max)
-            );
+        $mapping = [];
+        foreach ($sourceIds as $oldId) {
+            $mapping[$oldId] = (string) Str::uuid();
         }
 
-        $attempts = 0;
-        do {
-            $value = random_int($min, $max);
-            $attempts++;
-            if ($attempts > $range * 2 + 100) {
-                throw new RuntimeException(
-                    sprintf("Key remapping range exhausted for table '%s'. Increase range_min/range_max.", $table)
-                );
+        return $mapping;
+    }
+
+    private function resolvePkColumn(DatabaseSchemaData $schema, string $table, string $column): ColumnSchemaData
+    {
+        $tableSchema = $schema->getTable($table);
+        if (! $tableSchema instanceof TableSchemaData) {
+            throw new RuntimeException(sprintf("Table '%s' not found in source schema", $table));
+        }
+
+        foreach ($tableSchema->columns as $col) {
+            if ($col->name === $column) {
+                return $col;
             }
-        } while (isset($used[$value]));
+        }
 
-        $used[$value] = true;
-
-        return (string) $value;
+        throw new RuntimeException(sprintf("Primary key column '%s' not found on table '%s' in source schema", $column, $table));
     }
 
     /**

@@ -353,8 +353,6 @@ class DumpCommand extends Command
                 table: $tableName,
                 primaryKey: $primaryKey,
                 strategy: KeyRemappingStrategy::RandomInteger,
-                rangeMin: 100000,
-                rangeMax: 9999999,
                 foreignKeys: $fksByReferencedTable[$tableName] ?? [],
             );
         }
