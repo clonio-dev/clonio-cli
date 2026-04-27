@@ -97,6 +97,9 @@ jobs:
       # Pin OpenSSL to 3.x. OpenSSL 4.0.0 removed ERR_NUM_ERRORS, which PHP 8.5's
       # openssl extension still references — fresh downloads otherwise grab 4.x and fail to compile.
       OPENSSL_VERSION: '3.6.2'
+      # Pin libcares to a known-good tag. SPC 2.8.4 release-metadata lookup has been
+      # flaky for c-ares/c-ares; pinning + direct URL bypasses the GH releases API path.
+      LIBCARES_VERSION: '1.34.6'
 
     steps:
       - name: Checkout
@@ -129,7 +132,7 @@ jobs:
           path: ./downloads
           # Key by matrix.output so Linux x86_64 and Linux aarch64 don't share a cache.
           # Previously used runner.os only, which collided across the two Linux arches.
-          key: spc-downloads-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
+          key: spc-downloads-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-cares${{ env.LIBCARES_VERSION }}
 
       - name: Download PHP sources & extensions
         if: steps.spc-downloads-cache.outputs.cache-hit != 'true'
@@ -140,14 +143,15 @@ jobs:
             --with-php=${{ env.PHP_VERSION }} \
             --for-extensions="${{ env.EXTENSIONS }}" \
             --for-libs="${{ env.GD_LIBS }}" \
-            --custom-url="openssl:https://github.com/openssl/openssl/releases/download/openssl-${{ env.OPENSSL_VERSION }}/openssl-${{ env.OPENSSL_VERSION }}.tar.gz"
+            --custom-url="openssl:https://github.com/openssl/openssl/releases/download/openssl-${{ env.OPENSSL_VERSION }}/openssl-${{ env.OPENSSL_VERSION }}.tar.gz" \
+            --custom-url="libcares:https://github.com/c-ares/c-ares/releases/download/v${{ env.LIBCARES_VERSION }}/c-ares-${{ env.LIBCARES_VERSION }}.tar.gz"
 
       - name: Cache SPC build output
         id: spc-build-cache
         uses: actions/cache@v5
         with:
           path: ./buildroot
-          key: spc-build-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-v1
+          key: spc-build-${{ matrix.output }}-php${{ env.PHP_VERSION }}-openssl${{ env.OPENSSL_VERSION }}-gd${{ env.GD_LIBS_SLUG }}-mbregex-cares${{ env.LIBCARES_VERSION }}
 
       - name: Compile PHP micro SAPI
         if: steps.spc-build-cache.outputs.cache-hit != 'true'
