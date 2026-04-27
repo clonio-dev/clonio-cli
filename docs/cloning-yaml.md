@@ -268,8 +268,6 @@ id:
   strategy: remapping
   arguments:
     - use: random_integer
-    - min: 100000
-    - max: 9999999
     - foreign_keys:
         - table: orders
           column: user_id
@@ -450,8 +448,6 @@ tables:
         strategy: remapping
         arguments:
           - use: random_integer
-          - min: 100000
-          - max: 9999999
           - foreign_keys:
               - table: orders
                 column: user_id
@@ -495,8 +491,6 @@ tables:
         strategy: remapping
         arguments:
           - use: random_integer
-          - min: 100000
-          - max: 9999999
           - foreign_keys:
               - table: order_items
                 column: order_id

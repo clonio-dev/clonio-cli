@@ -60,8 +60,6 @@ key_remapping:
     - table: users
       primary_key: id
       strategy: new_uuid
-      range_min: 1
-      range_max: 999999
       foreign_keys:
         - table: orders
           column: user_id
