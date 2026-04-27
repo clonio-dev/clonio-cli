@@ -13,8 +13,6 @@ final readonly class KeyRemappingTableData
         public string $table,
         public string $primaryKey,
         public KeyRemappingStrategy $strategy,
-        public int $rangeMin,
-        public int $rangeMax,
         public array $foreignKeys,
     ) {}
 }

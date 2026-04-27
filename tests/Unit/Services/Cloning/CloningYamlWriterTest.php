@@ -323,8 +323,6 @@ it('writes remapping strategy as inline column not key_remapping section', funct
             table: 'users',
             primaryKey: 'id',
             strategy: KeyRemappingStrategy::RandomInteger,
-            rangeMin: 100000,
-            rangeMax: 9999999,
             foreignKeys: [],
         ),
     ]);
@@ -343,9 +341,10 @@ it('writes remapping strategy as inline column not key_remapping section', funct
     // Remapping must be inline in columns
     expect($yaml)->toContain('strategy: remapping');
     expect($yaml)->toContain('- use: random_integer');
-    expect($yaml)->toContain('- min: 100000');
-    expect($yaml)->toContain('- max: 9999999');
     expect($yaml)->toContain('- foreign_keys: []');
+    // No legacy range knobs
+    expect($yaml)->not->toContain('- min:');
+    expect($yaml)->not->toContain('- max:');
     // The old top-level section must NOT appear
     expect($yaml)->not->toContain('key_remapping:');
 });
@@ -364,8 +363,6 @@ it('does not duplicate primary key column when key remapping is active', functio
             table: 'users',
             primaryKey: 'id',
             strategy: KeyRemappingStrategy::RandomInteger,
-            rangeMin: 100000,
-            rangeMax: 9999999,
             foreignKeys: [],
         ),
     ]);

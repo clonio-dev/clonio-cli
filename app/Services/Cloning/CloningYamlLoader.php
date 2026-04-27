@@ -96,8 +96,6 @@ class CloningYamlLoader
                     table: $tableData->tableName,
                     primaryKey: $column->columnName,
                     strategy: KeyRemappingStrategy::tryFrom($column->remappingUse ?? 'random_integer') ?? KeyRemappingStrategy::RandomInteger,
-                    rangeMin: $column->remappingMin ?? 100000,
-                    rangeMax: $column->remappingMax ?? 9999999,
                     foreignKeys: $column->remappingForeignKeys ?? [],
                 );
             }
@@ -206,8 +204,6 @@ class CloningYamlLoader
             $primaryKey = is_string($tableEntry['primary_key'] ?? null) ? $tableEntry['primary_key'] : '';
             $strategyRaw = is_string($tableEntry['strategy'] ?? null) ? $tableEntry['strategy'] : 'random_integer';
             $strategy = KeyRemappingStrategy::tryFrom($strategyRaw) ?? KeyRemappingStrategy::RandomInteger;
-            $rangeMin = is_int($tableEntry['range_min'] ?? null) ? $tableEntry['range_min'] : 100000;
-            $rangeMax = is_int($tableEntry['range_max'] ?? null) ? $tableEntry['range_max'] : 9999999;
 
             $fks = [];
             $fksRaw = $tableEntry['foreign_keys'] ?? [];
@@ -238,8 +234,6 @@ class CloningYamlLoader
                 table: $table,
                 primaryKey: $primaryKey,
                 strategy: $strategy,
-                rangeMin: $rangeMin,
-                rangeMax: $rangeMax,
                 foreignKeys: $fks,
             );
         }
@@ -267,8 +261,6 @@ class CloningYamlLoader
         $preserveFormat = null;
         $staticValue = null;
         $remappingUse = null;
-        $remappingMin = null;
-        $remappingMax = null;
         $remappingForeignKeys = null;
 
         switch ($strategy) {
@@ -311,14 +303,6 @@ class CloningYamlLoader
                                     $remappingUse = is_string($argValue) ? $argValue : null;
                                     break;
 
-                                case 'min':
-                                    $remappingMin = is_int($argValue) ? $argValue : null;
-                                    break;
-
-                                case 'max':
-                                    $remappingMax = is_int($argValue) ? $argValue : null;
-                                    break;
-
                                 case 'foreign_keys':
                                     if (is_array($argValue)) {
                                         $remappingForeignKeys = [];
@@ -359,8 +343,6 @@ class CloningYamlLoader
             preserveFormat: $preserveFormat,
             staticValue: $staticValue,
             remappingUse: $remappingUse,
-            remappingMin: $remappingMin,
-            remappingMax: $remappingMax,
             remappingForeignKeys: $remappingForeignKeys,
         );
     }

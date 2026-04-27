@@ -297,8 +297,6 @@ it('passes validation for a valid key_remapping section with random_integer stra
                 'table' => 'users',
                 'primary_key' => 'id',
                 'strategy' => 'random_integer',
-                'range_min' => 100000,
-                'range_max' => 9999999,
             ],
         ],
     ];
@@ -378,7 +376,7 @@ it('returns error for invalid strategy in key_remapping', function (): void {
     expect(implode(' ', $errors))->toContain("'strategy' must be one of");
 });
 
-it('returns error when range_min >= range_max for random_integer strategy', function (): void {
+it('returns error when legacy range_min/range_max keys are present', function (): void {
     $validator = new CloningYamlValidator;
     $config = makeValidConfig();
     $config['key_remapping'] = [
@@ -387,14 +385,37 @@ it('returns error when range_min >= range_max for random_integer strategy', func
                 'table' => 'users',
                 'primary_key' => 'id',
                 'strategy' => 'random_integer',
-                'range_min' => 9999999,
-                'range_max' => 100000,
+                'range_min' => 100000,
+                'range_max' => 9999999,
             ],
         ],
     ];
 
     $errors = $validator->validate($config);
-    expect(implode(' ', $errors))->toContain("'range_min' must be less than 'range_max'");
+    $joined = implode(' ', $errors);
+    expect($joined)->toContain("'range_min' is no longer supported")
+        ->and($joined)->toContain("'range_max' is no longer supported");
+});
+
+it('returns error when legacy inline min/max remapping arguments are present', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns'] = [
+        'id' => [
+            'strategy' => 'remapping',
+            'arguments' => [
+                ['use' => 'random_integer'],
+                ['min' => 100000],
+                ['max' => 9999999],
+                ['foreign_keys' => []],
+            ],
+        ],
+    ];
+
+    $errors = $validator->validate($config);
+    $joined = implode(' ', $errors);
+    expect($joined)->toContain("'min' is no longer supported")
+        ->and($joined)->toContain("'max' is no longer supported");
 });
 
 it('passes with valid foreign_keys in key_remapping', function (): void {
@@ -479,8 +500,6 @@ it('passes validation for a valid remapping column with random_integer', functio
         'strategy' => 'remapping',
         'arguments' => [
             ['use' => 'random_integer'],
-            ['min' => 100000],
-            ['max' => 9999999],
             ['foreign_keys' => []],
         ],
     ];
@@ -507,31 +526,13 @@ it('returns error when remapping strategy has no use argument', function (): voi
     $config['tables']['users']['columns']['id'] = [
         'strategy' => 'remapping',
         'arguments' => [
-            ['min' => 100000],
-            ['max' => 9999999],
+            ['foreign_keys' => []],
         ],
     ];
 
     $errors = $validator->validate($config);
     expect($errors)->not->toBe([]);
     expect(implode(' ', $errors))->toContain("'remapping' requires argument 'use'");
-});
-
-it('returns error when remapping random_integer has min greater than or equal to max', function (): void {
-    $validator = new CloningYamlValidator;
-    $config = makeValidConfig();
-    $config['tables']['users']['columns']['id'] = [
-        'strategy' => 'remapping',
-        'arguments' => [
-            ['use' => 'random_integer'],
-            ['min' => 9999999],
-            ['max' => 100000],
-        ],
-    ];
-
-    $errors = $validator->validate($config);
-    expect($errors)->not->toBe([]);
-    expect(implode(' ', $errors))->toContain("'min' must be less than 'max'");
 });
 
 it('accepts drop_extra_columns as optional boolean when present', function (): void {

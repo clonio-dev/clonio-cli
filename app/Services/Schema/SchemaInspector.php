@@ -58,7 +58,7 @@ class SchemaInspector
 
             /** @var list<stdClass> $columnRows */
             $columnRows = DB::connection($connName)->select(
-                'SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
+                'SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
                 [$tableName]
             );
 
@@ -69,6 +69,8 @@ class SchemaInspector
                 $colName = $col->COLUMN_NAME;
                 /** @var string $dataType */
                 $dataType = $col->DATA_TYPE;
+                /** @var string $columnType */
+                $columnType = $col->COLUMN_TYPE;
                 /** @var string $isNullable */
                 $isNullable = $col->IS_NULLABLE;
                 $rawDefault = $col->COLUMN_DEFAULT ?? null;
@@ -82,6 +84,7 @@ class SchemaInspector
                     nullable: $isNullable === 'YES',
                     default: $colDefault,
                     isPrimary: $colKey === 'PRI',
+                    unsigned: str_contains(strtolower($columnType), 'unsigned'),
                 );
             }
 

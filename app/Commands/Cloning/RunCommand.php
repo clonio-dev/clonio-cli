@@ -326,7 +326,7 @@ class RunCommand extends Command
             try {
                 $counts = $step->run(
                     'Generating key mappings',
-                    fn (): array => $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sortedForMapping),
+                    fn (): array => $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sourceSchema, $sortedForMapping),
                 );
             } catch (Throwable $throwable) {
                 if (str_contains($throwable->getMessage(), 'Allowed memory size') || str_contains($throwable->getMessage(), 'Out of memory')) {

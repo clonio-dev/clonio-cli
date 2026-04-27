@@ -304,8 +304,8 @@ it('includes key_remapping section for tables with integer primary keys', functi
     expect($yaml)->not->toContain('key_remapping:');
     expect($yaml)->toContain('strategy: remapping');
     expect($yaml)->toContain('- use: random_integer');
-    expect($yaml)->toContain('- min: 100000');
-    expect($yaml)->toContain('- max: 9999999');
+    expect($yaml)->not->toContain('- min:');
+    expect($yaml)->not->toContain('- max:');
     expect($yaml)->toContain('column: user_id');
     expect($yaml)->toContain('self_referential: false');
 });

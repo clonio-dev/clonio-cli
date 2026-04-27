@@ -1,8 +1,10 @@
 # PRD — Key Remapping in `cloning:run`
 
-**Version:** 0.2
+**Version:** 0.3
 **Status:** Draft
-**Date:** 2026-04-02
+**Date:** 2026-04-27
+
+> **Change in v0.3 (2026-04-27):** removed the user-configurable `min` / `max` / `range_min` / `range_max` knobs from the `random_integer` strategy. Bounds are now derived automatically from the source PK column's data type and `MAX(id)`. See companion spec `specs/2026-04-27-key-remapping-auto-bounds.md` for design details.
 
 ---
 
@@ -52,8 +54,6 @@ tables:
         strategy: remapping
         arguments:
           - use: random_integer
-          - min: 100000
-          - max: 9999999
           - foreign_keys:
               - table: orders
                 column: user_id
@@ -80,8 +80,6 @@ tables:
         strategy: remapping
         arguments:
           - use: random_integer
-          - min: 100000
-          - max: 9999999
           - foreign_keys:
               - table: order_items
                 column: order_id
@@ -106,8 +104,6 @@ tables:
         strategy: remapping
         arguments:
           - use: random_integer
-          - min: 100000
-          - max: 9999999
           - foreign_keys:
               - table: employees
                 column: manager_id
@@ -131,9 +127,9 @@ The remapping strategy is configured via an `arguments` list of single-key mappi
 | Argument key | Type | Required | Description |
 | --- | --- | --- | --- |
 | `use` | enum | yes | `random_integer` or `new_uuid` |
-| `min` | integer | only for `random_integer` | Lower bound, inclusive. Default: 100000. |
-| `max` | integer | only for `random_integer` | Upper bound, inclusive. Default: 9999999. |
 | `foreign_keys` | list | yes | FK columns on other (or the same) tables that reference this column. May be empty (`[]`). |
+
+> **Removed in v0.3:** `min` and `max` are no longer accepted. Integer bounds are derived automatically from the source PK column's data type (signed/unsigned) and `MAX(id)`. Files that still contain these keys produce a hard validation error.
 
 Each entry in `foreign_keys`:
 
@@ -154,8 +150,6 @@ key_remapping:
     - table: users
       primary_key: id
       strategy: random_integer
-      range_min: 100000
-      range_max: 9999999
       foreign_keys:
         - table: posts
           column: user_id
@@ -173,7 +167,7 @@ key_remapping:
 ### 3.4 Validation rules
 
 - `strategy: new_uuid` is only valid when `primary_key` is a UUID/CHAR(36) column. The validator checks the source schema if a connection is available; otherwise it is accepted and fails at runtime.
-- `range_min` must be `≥ 1` and `< range_max`.
+- Legacy keys `min`, `max`, `range_min`, `range_max` produce a hard validation error directing the user to remove them — bounds are now derived from the column type.
 - No two entries in `key_remapping.tables` may reference the same `table`.
 - A table listed in `key_remapping.tables` must also appear in `tables`.
 - A FK entry referencing a table that is not in `tables` is a warning, not a hard error (the FK update will be skipped for unlisted tables).
@@ -206,12 +200,12 @@ For each table in `key_remapping.tables` (processed in dependency order):
 
 1. Read all primary key values from the source table, respecting the table's `rows` strategy (full / first N / last N with the configured `sort_by` and `limit`).
 2. For each source PK value, generate a new value:
-   - `random_integer`: draw a random integer in `[range_min, range_max]`. Retry if already used in this run (in-memory collision set). If the range is exhausted, abort with `ExitCode::GeneralError`.
+   - `random_integer`: derive the column's integer ceiling from its data type and unsigned flag (`TINYINT` 127/255, `SMALLINT` 32767/65535, `MEDIUMINT` 8388607/16777215, `INT` 2147483647/4294967295, `BIGINT` `PHP_INT_MAX`). Allocate IDs ascending starting at `MAX(source.pk) + 1`, capped at the ceiling. If the upper region is too small for the row count, fall back to filling unused gaps in `[1, MAX(id)]`. If neither region has room, abort with `KeyRemappingExhaustedException` (`ExitCode::GeneralError`).
    - `new_uuid`: generate a UUID v7.
 3. Store the mapping as `old_value → new_value` in an in-memory map keyed by `table.primary_key`.
 4. Mappings are scoped to this run instance and are never written to the target database.
 
-Output (verbose only): `✓ Key mapping generated for users (12,450 rows)`
+Output (verbose only): `✓ Key mapping generated for users (12,450 rows; INT UNSIGNED, MAX(id)=2,889,387)`
 
 ### 4.2 Phase 6 — Data Transfer (modified)
 
@@ -260,7 +254,7 @@ php clonio cloning:run --skip-remapping-keys
 When `--dry-run` is active, Phase 5b is executed but generates no in-memory mappings. Instead, for each remapped table the dry-run output shows:
 
 ```
-  key_remapping  users.id → random_integer [100000–9999999]
+  key_remapping  users.id → random_integer (auto, INT UNSIGNED ceiling 4294967295)
 ```
 
 This is appended to the per-table block in the existing dry-run table output.
@@ -280,8 +274,9 @@ The audit record produced in Phase 8 is extended with a `key_remapping` block:
         "table": "users",
         "primary_key": "id",
         "strategy": "random_integer",
-        "range_min": 100000,
-        "range_max": 9999999,
+        "column_type": "int",
+        "unsigned": true,
+        "type_ceiling": 4294967295,
         "rows_remapped": 12450,
         "rows_skipped_unique_violation": 3,
         "rows_skipped_fk_violation": 1
@@ -313,7 +308,8 @@ The resulting `key_remapping` section is ready for use without manual edits in t
 
 | Condition | Behaviour |
 | --- | --- |
-| Range exhausted (random_integer) | Abort run with `ExitCode::GeneralError`; print table name and range in error message. |
+| Type ceiling cannot host row count (random_integer) | Abort run with `ExitCode::GeneralError` raised as `KeyRemappingExhaustedException`; message names table, column, type, ceiling, row count, and slot accounting (above MAX(id) vs gaps below). |
+| PK column type unsupported (random_integer) | Abort with `UnsupportedKeyColumnTypeException` (e.g. `random_integer` requested on a `varchar` column). |
 | Source PK column not found on source | Abort at Phase 5b with validation error. |
 | FK column not found on FK table | Warning logged; FK column not rewritten. |
 | Self-referential second-pass update fails | Warning logged; row is left with original FK value. |
@@ -324,7 +320,7 @@ The resulting `key_remapping` section is ready for use without manual edits in t
 ## 10. Constraints and Limitations
 
 - Only **single-column primary keys** are supported for remapping. Composite PKs that are not pure-FK junction tables are not supported and must not appear in `key_remapping.tables`.
-- The **range must be large enough** for the number of rows being transferred. There is no automatic range expansion.
+- The **column type must be wide enough** for `MAX(id) + rowCount` (or for `MAX(id)` plus enough gaps below it). If neither region has room, the run aborts before any data is written. To resolve, widen the source PK column type or reduce row scope via the table's `rows` strategy.
 - All tables whose FK columns reference a remapped table must themselves be included in the `tables` section; otherwise FK rewriting is silently skipped for missing tables.
 - Key mappings are **in-memory only** for the CLI. Unlike the web app, there is no `cloning_run_key_mappings` database table; the CLI holds the full mapping in RAM. For very large tables, memory usage should be monitored.
 

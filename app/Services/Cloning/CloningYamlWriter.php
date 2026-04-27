@@ -8,7 +8,6 @@ use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
 use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\Cloning\KeyRemappingTableData;
-use App\Enums\KeyRemappingStrategy;
 use Illuminate\Support\Facades\Storage;
 
 class CloningYamlWriter
@@ -74,11 +73,6 @@ class CloningYamlWriter
                     $lines[] = '        strategy: remapping';
                     $lines[] = '        arguments:';
                     $lines[] = sprintf('          - use: %s', $krTable->strategy->value);
-
-                    if ($krTable->strategy === KeyRemappingStrategy::RandomInteger) {
-                        $lines[] = sprintf('          - min: %d', $krTable->rangeMin);
-                        $lines[] = sprintf('          - max: %d', $krTable->rangeMax);
-                    }
 
                     if ($krTable->foreignKeys !== []) {
                         $fkYaml = array_map(

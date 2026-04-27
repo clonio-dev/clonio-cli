@@ -315,19 +315,13 @@ class CloningYamlValidator
                 $errors[] = sprintf("%s: 'strategy' must be one of: %s", $prefix, implode(', ', $validStrategies));
             }
 
-            if (($strategy ?? '') === 'random_integer') {
-                $rangeMin = $entry['range_min'] ?? 100000;
-                $rangeMax = $entry['range_max'] ?? 9999999;
-                if (! is_int($rangeMin) || $rangeMin < 1) {
-                    $errors[] = sprintf("%s: 'range_min' must be an integer >= 1", $prefix);
-                }
-
-                if (! is_int($rangeMax) || $rangeMax < 1) {
-                    $errors[] = sprintf("%s: 'range_max' must be an integer >= 1", $prefix);
-                }
-
-                if (is_int($rangeMin) && is_int($rangeMax) && $rangeMin >= $rangeMax) {
-                    $errors[] = sprintf("%s: 'range_min' must be less than 'range_max'", $prefix);
+            foreach (['range_min', 'range_max'] as $legacyKey) {
+                if (array_key_exists($legacyKey, $entry)) {
+                    $errors[] = sprintf(
+                        "%s: '%s' is no longer supported (auto-bounds is computed from column type — remove this line)",
+                        $prefix,
+                        $legacyKey,
+                    );
                 }
             }
 
@@ -440,29 +434,22 @@ class CloningYamlValidator
                     }
                 }
 
+                foreach (['min', 'max'] as $legacyKey) {
+                    if (array_key_exists($legacyKey, $args)) {
+                        $errors[] = sprintf(
+                            "%s: 'remapping' argument '%s' is no longer supported (auto-bounds is computed from column type — remove this line)",
+                            $prefix,
+                            $legacyKey,
+                        );
+                    }
+                }
+
                 $validUseValues = ['random_integer', 'new_uuid'];
                 $use = $args['use'] ?? null;
 
                 if (! is_string($use) || ! in_array($use, $validUseValues, true)) {
                     $errors[] = sprintf("%s: 'remapping' requires argument 'use' (one of: %s)", $prefix, implode(', ', $validUseValues));
                     break;
-                }
-
-                if ($use === 'random_integer') {
-                    $min = $args['min'] ?? null;
-                    $max = $args['max'] ?? null;
-
-                    if (! is_int($min) || $min < 1) {
-                        $errors[] = sprintf("%s: 'remapping' requires argument 'min' (integer >= 1)", $prefix);
-                    }
-
-                    if (! is_int($max) || $max < 1) {
-                        $errors[] = sprintf("%s: 'remapping' requires argument 'max' (integer >= 1)", $prefix);
-                    }
-
-                    if (is_int($min) && is_int($max) && $min >= $max) {
-                        $errors[] = sprintf("%s: 'remapping' argument 'min' must be less than 'max'", $prefix);
-                    }
                 }
 
                 break;

@@ -13,8 +13,6 @@ function makeTableData(string $table = 'users', string $pk = 'id'): KeyRemapping
         table: $table,
         primaryKey: $pk,
         strategy: KeyRemappingStrategy::NewUuid,
-        rangeMin: 1,
-        rangeMax: 999999,
         foreignKeys: [],
     );
 }
@@ -37,16 +35,12 @@ it('KeyRemappingTableData stores fields correctly', function (): void {
         table: 'users',
         primaryKey: 'id',
         strategy: KeyRemappingStrategy::RandomInteger,
-        rangeMin: 100,
-        rangeMax: 999999,
         foreignKeys: [$fk],
     );
 
     expect($table->table)->toBe('users')
         ->and($table->primaryKey)->toBe('id')
         ->and($table->strategy)->toBe(KeyRemappingStrategy::RandomInteger)
-        ->and($table->rangeMin)->toBe(100)
-        ->and($table->rangeMax)->toBe(999999)
         ->and($table->foreignKeys)->toHaveCount(1);
 });
 
