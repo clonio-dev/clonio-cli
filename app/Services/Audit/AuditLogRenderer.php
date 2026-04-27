@@ -100,6 +100,7 @@ class AuditLogRenderer
   .kpi .kpi-sub { font-size: 8pt; color: #94a3b8; margin-top: 1mm; }
 
   h2 { font-size: 13pt; color: #0f172a; margin: 7mm 0 3mm 0; font-weight: bold; }
+  h2.page-break { page-break-before: always; break-before: page; }
   h2 .h2-count { color: #94a3b8; font-weight: normal; font-size: 11pt; margin-left: 2mm; }
 
   .badge { display: inline-block; padding: 1mm 3mm; border-radius: 10mm; font-size: 9pt; font-weight: bold; }
@@ -196,7 +197,7 @@ class AuditLogRenderer
   <tbody>{$piiRows}</tbody>
 </table>
 
-<h2>Integrity</h2>
+<h2 class="page-break">Integrity</h2>
 <div class="integrity-card">
   <div class="label">SHA-256 content hash</div>
   <div class="hash">{$contentHash}</div>
