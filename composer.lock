@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "894242581d04e17b16946546dbf72f33",
+    "content-hash": "92d5119b5de9147b280e9362065c69a0",
     "packages": [
         {
             "name": "brick/math",
@@ -7560,38 +7560,38 @@
         },
         {
             "name": "nunomaduro/pao",
-            "version": "v0.1.7",
+            "version": "v1.0.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nunomaduro/pao.git",
-                "reference": "d6370bee6d67150adab876d56ccfb287f98b9371"
+                "reference": "abb05092e543e031b035058894ede0f5e7dbfecf"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nunomaduro/pao/zipball/d6370bee6d67150adab876d56ccfb287f98b9371",
-                "reference": "d6370bee6d67150adab876d56ccfb287f98b9371",
+                "url": "https://api.github.com/repos/nunomaduro/pao/zipball/abb05092e543e031b035058894ede0f5e7dbfecf",
+                "reference": "abb05092e543e031b035058894ede0f5e7dbfecf",
                 "shasum": ""
             },
             "require": {
                 "php": "^8.3",
-                "shipfastlabs/agent-detector": "^1.1.2"
+                "shipfastlabs/agent-detector": "^1.1.3"
             },
             "conflict": {
                 "laravel/framework": "<12.0",
-                "nunomaduro/collision": "<8.9.2",
-                "pestphp/pest": "<4.4.3 || >=6.0",
-                "phpunit/phpunit": "<12.5.14 || >=13.0.0 <13.0.5 || >=14.0"
+                "nunomaduro/collision": "<8.9.3",
+                "pestphp/pest": "<4.6.3 || >=6.0",
+                "phpunit/phpunit": "<12.5.23 || >=13.0.0 <13.1.7 || >=14.0"
             },
             "require-dev": {
                 "brianium/paratest": "^7.20.0",
                 "laravel/pint": "^1.29.0",
                 "orchestra/testbench": "^10.11.0 || ^11.1.0",
-                "pestphp/pest": "^4.4.6 || ^5.0.0",
-                "pestphp/pest-plugin-type-coverage": "^4.0.3 || ^5.0.0",
-                "phpstan/phpstan": "^2.1.46",
-                "rector/rector": "^2.4.1",
-                "symfony/process": "^7.4.5 || ^8.1.0",
-                "symfony/var-dumper": "^7.4.6 || ^8.0.8"
+                "pestphp/pest": "^4.6.3 || ^5.0.0",
+                "pestphp/pest-plugin-type-coverage": "^4.0.4 || ^5.0.0",
+                "phpstan/phpstan": "^2.1.50",
+                "rector/rector": "^2.4.2",
+                "symfony/process": "^7.4.8 || ^8.1.0",
+                "symfony/var-dumper": "^7.4.8 || ^8.0.8"
             },
             "type": "library",
             "extra": {
@@ -7638,7 +7638,7 @@
             ],
             "support": {
                 "issues": "https://github.com/nunomaduro/pao/issues",
-                "source": "https://github.com/nunomaduro/pao/tree/v0.1.7"
+                "source": "https://github.com/nunomaduro/pao/tree/v1.0.4"
             },
             "funding": [
                 {
@@ -7654,7 +7654,7 @@
                     "type": "patreon"
                 }
             ],
-            "time": "2026-04-10T15:41:53+00:00"
+            "time": "2026-04-20T15:51:00+00:00"
         },
         {
             "name": "nunomaduro/pokio",
@@ -9981,16 +9981,16 @@
         },
         {
             "name": "shipfastlabs/agent-detector",
-            "version": "v1.1.2",
+            "version": "v1.1.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/shipfastlabs/agent-detector.git",
-                "reference": "98abb0aa0950e62b9125143daad171ef42cb467d"
+                "reference": "0faef92b88c6680b3fc53c8f349ea868181d2484"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/shipfastlabs/agent-detector/zipball/98abb0aa0950e62b9125143daad171ef42cb467d",
-                "reference": "98abb0aa0950e62b9125143daad171ef42cb467d",
+                "url": "https://api.github.com/repos/shipfastlabs/agent-detector/zipball/0faef92b88c6680b3fc53c8f349ea868181d2484",
+                "reference": "0faef92b88c6680b3fc53c8f349ea868181d2484",
                 "shasum": ""
             },
             "require": {
@@ -10036,7 +10036,7 @@
             ],
             "support": {
                 "issues": "https://github.com/shipfastlabs/agent-detector/issues",
-                "source": "https://github.com/shipfastlabs/agent-detector/tree/v1.1.2"
+                "source": "https://github.com/shipfastlabs/agent-detector/tree/v1.1.3"
             },
             "funding": [
                 {
@@ -10044,7 +10044,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-04-09T14:17:25+00:00"
+            "time": "2026-04-14T03:10:46+00:00"
         },
         {
             "name": "staabm/side-effects-detector",

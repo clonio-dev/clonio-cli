@@ -46,7 +46,7 @@
         "larastan/larastan": "^3.9.5",
         "laravel/pint": "^1.29.0",
         "mockery/mockery": "^1.6.12",
-        "nunomaduro/pao": "^0.1.7",
+        "nunomaduro/pao": "^1.0.4",
         "pestphp/pest": "^4.5.0",
         "pestphp/pest-plugin-type-coverage": "^4.0.4"
     },
