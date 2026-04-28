@@ -4,10 +4,20 @@ declare(strict_types=1);
 
 namespace App\Commands\Cloning;
 
+use App\Data\ConnectionData;
+use App\Data\Schema\ColumnSchemaData;
+use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\TableSchemaData;
 use App\Enums\ExitCode;
+use App\Enums\KeyRemappingStrategy;
+use App\Services\Config\ConfigService;
+use App\Services\Database\DatabaseConnectionService;
+use App\Services\Schema\SchemaInspector;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
 use Symfony\Component\Yaml\Yaml;
+use Throwable;
 
 class ColumnEditCommand extends Command
 {
@@ -18,7 +28,7 @@ class ColumnEditCommand extends Command
         {file?              : Path to the .cloning.yaml file}
         {--table=           : Table name}
         {--column=          : Column name}
-        {--strategy=        : Strategy to apply (keep, fake, hash, mask, static)}
+        {--strategy=        : Strategy to apply (keep, fake, hash, mask, static, remapping)}
         {--faker-method=    : (fake) Faker method name}
         {--faker-arguments= : (fake) Comma-separated faker arguments}
         {--algorithm=       : (hash) Hash algorithm}
@@ -26,7 +36,8 @@ class ColumnEditCommand extends Command
         {--mask-char=       : (mask) Mask character}
         {--visible-chars=   : (mask) Number of visible characters}
         {--preserve-format  : (mask) Preserve original format}
-        {--value=           : (static) Static replacement value}';
+        {--value=           : (static) Static replacement value}
+        {--remapping-use=   : (remapping) random_integer | new_uuid}';
 
     /**
      * @var string
@@ -78,8 +89,21 @@ class ColumnEditCommand extends Command
                     ['name' => 'value', 'label' => 'Static value', 'type' => 'string', 'default' => ''],
                 ],
             ],
+            'remapping' => [
+                'label' => 'Remapping',
+                'description' => 'Replace primary key values; foreign keys auto-detected from the source schema.',
+                'parameters' => [
+                    ['name' => 'remapping_use', 'label' => 'Remapping mode', 'type' => 'choice', 'default' => 'random_integer'],
+                ],
+            ],
         ];
     }
+
+    /** @var array<string, string> */
+    private const array REMAPPING_USE_LABELS = [
+        'random_integer' => 'Random integer — auto-bounded by column type ceiling',
+        'new_uuid' => 'New UUID (UUIDv7)',
+    ];
 
     /** @var list<string> */
     private const array FAKER_METHODS = [
@@ -126,8 +150,11 @@ class ColumnEditCommand extends Command
     /** @var list<string> */
     private const array HASH_ALGORITHMS = ['sha256', 'sha512', 'md5', 'sha1'];
 
-    public function handle(): int
-    {
+    public function handle(
+        ConfigService $configService,
+        DatabaseConnectionService $connector,
+        SchemaInspector $inspector,
+    ): int {
         // ─── Resolve file ──────────────────────────────────────────────────
         $fileArg = $this->argument('file');
         $filePath = is_string($fileArg) && $fileArg !== '' ? $fileArg : null;
@@ -271,6 +298,14 @@ class ColumnEditCommand extends Command
 
         $definition = $definitions[$strategyKey];
 
+        // Validate --remapping-use flag value upfront (if provided).
+        $useFlag = $this->option('remapping-use');
+        if ($strategyKey === 'remapping' && is_string($useFlag) && $useFlag !== '' && ! in_array($useFlag, KeyRemappingStrategy::values(), true)) {
+            $this->error(sprintf("Unknown remapping use: '%s'. Valid: %s", $useFlag, implode(', ', KeyRemappingStrategy::values())));
+
+            return ExitCode::ValidationError->value;
+        }
+
         // ─── Collect parameters ────────────────────────────────────────────
         /** @var array<string, mixed> $newConfig */
         $newConfig = ['strategy' => $strategyKey];
@@ -295,6 +330,30 @@ class ColumnEditCommand extends Command
             }
         }
 
+        // ─── Remapping: resolve source schema, validate PK, detect FKs ─────
+        /** @var list<array{table: string, column: string, self_referential: bool}> $remappingForeignKeys */
+        $remappingForeignKeys = [];
+
+        if ($strategyKey === 'remapping') {
+            $connectionName = is_string($data['connection'] ?? null) ? $data['connection'] : '';
+            $remappingContext = $this->resolveRemappingContext(
+                connectionName: $connectionName,
+                tableName: $tableName,
+                columnName: $columnName,
+                configService: $configService,
+                connector: $connector,
+                inspector: $inspector,
+            );
+
+            if ($remappingContext['error'] !== null) {
+                $this->error($remappingContext['error']);
+
+                return ExitCode::ValidationError->value;
+            }
+
+            $remappingForeignKeys = $remappingContext['foreignKeys'];
+        }
+
         // ─── Summary ──────────────────────────────────────────────────────
         $this->line('');
         $rows = [['Table', $tableName], ['Column', $columnName], ['Strategy', $definition['label']]];
@@ -307,6 +366,20 @@ class ColumnEditCommand extends Command
                     : (is_bool($paramValue) ? ($paramValue ? 'true' : 'false') : (is_scalar($paramValue) ? (string) $paramValue : ''));
                 $rows[] = [$param['label'], $display];
             }
+        }
+
+        if ($strategyKey === 'remapping') {
+            $rows[] = ['Foreign keys (auto-detected)', $remappingForeignKeys === []
+                ? '— none —'
+                : implode(', ', array_map(
+                    static fn (array $fk): string => sprintf(
+                        '%s.%s%s',
+                        $fk['table'],
+                        $fk['column'],
+                        $fk['self_referential'] ? ' (self)' : '',
+                    ),
+                    $remappingForeignKeys,
+                ))];
         }
 
         /** @var string $strategyKey */
@@ -345,6 +418,18 @@ class ColumnEditCommand extends Command
             $newConfig['visible_chars'] = is_numeric($visibleCharsVal) ? (int) $visibleCharsVal : 0;
         }
 
+        // Reshape remapping config into arguments-list form (mirrors cloning:dump output)
+        if ($strategyKey === 'remapping') {
+            $use = is_string($newConfig['remapping_use'] ?? null) ? $newConfig['remapping_use'] : 'random_integer';
+            $newConfig = [
+                'strategy' => 'remapping',
+                'arguments' => [
+                    ['use' => $use],
+                    ['foreign_keys' => $remappingForeignKeys],
+                ],
+            ];
+        }
+
         $columns[$columnName] = $newConfig;
         $tableConfig['columns'] = $columns;
         /** @var array<string, mixed> $dataTables */
@@ -352,7 +437,7 @@ class ColumnEditCommand extends Command
         $dataTables[$tableName] = $tableConfig;
         $data['tables'] = $dataTables;
 
-        $yaml = Yaml::dump($data, 6, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK);
+        $yaml = Yaml::dump($data, 6, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK | Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
         Storage::disk('local')->put($filePath, $yaml);
 
         $this->info(sprintf('Updated %s.%s → strategy: %s in %s', $tableName, $columnName, $strategyKey, $filePath));
@@ -425,7 +510,117 @@ class ColumnEditCommand extends Command
             return is_string($chosen) ? $chosen : $param['default'];
         }
 
+        if ($param['name'] === 'remapping_use') {
+            $useValues = array_keys(self::REMAPPING_USE_LABELS);
+            $useLabels = array_values(self::REMAPPING_USE_LABELS);
+            $defaultIdx = (int) array_search($param['default'], $useValues, true);
+            $chosen = $this->choice($param['label'], $useLabels, $defaultIdx);
+            $key = is_string($chosen) ? array_search($chosen, self::REMAPPING_USE_LABELS, true) : false;
+
+            return is_string($key) ? $key : $param['default'];
+        }
+
         return $param['default'];
+    }
+
+    /**
+     * Resolve source schema for a remapping column: validate the column is a primary key and
+     * auto-detect reverse foreign keys (other tables whose FKs reference this PK).
+     *
+     * @return array{error: ?string, foreignKeys: list<array{table: string, column: string, self_referential: bool}>}
+     */
+    private function resolveRemappingContext(
+        string $connectionName,
+        string $tableName,
+        string $columnName,
+        ConfigService $configService,
+        DatabaseConnectionService $connector,
+        SchemaInspector $inspector,
+    ): array {
+        if ($connectionName === '') {
+            $this->warn('  Source connection unknown (YAML missing top-level "connection") — writing foreign_keys: [] and skipping primary-key validation.');
+
+            return ['error' => null, 'foreignKeys' => []];
+        }
+
+        $connection = $configService->getConnection($connectionName);
+
+        if (! $connection instanceof ConnectionData) {
+            $this->warn(sprintf("  Source connection '%s' not found in clonio.json — writing foreign_keys: [] and skipping primary-key validation.", $connectionName));
+
+            return ['error' => null, 'foreignKeys' => []];
+        }
+
+        try {
+            $connName = $connector->open($connection);
+
+            try {
+                $schema = $inspector->inspect($connection);
+            } finally {
+                DB::purge($connName);
+            }
+        } catch (Throwable $throwable) {
+            $this->warn(sprintf('  Source connection unreachable (%s) — writing foreign_keys: [] and skipping primary-key validation.', $throwable->getMessage()));
+
+            return ['error' => null, 'foreignKeys' => []];
+        }
+
+        $table = $schema->getTable($tableName);
+
+        if (! $table instanceof TableSchemaData) {
+            return [
+                'error' => sprintf("Table '%s' does not exist in source schema for connection '%s'.", $tableName, $connectionName),
+                'foreignKeys' => [],
+            ];
+        }
+
+        $column = array_find($table->columns, static fn (ColumnSchemaData $col): bool => $col->name === $columnName);
+
+        if (! $column instanceof ColumnSchemaData) {
+            return [
+                'error' => sprintf("Column '%s' does not exist on table '%s' in source schema.", $columnName, $tableName),
+                'foreignKeys' => [],
+            ];
+        }
+
+        if (! $column->isPrimary) {
+            return [
+                'error' => sprintf("Column '%s.%s' is not a primary key in source schema — remapping requires a primary-key column.", $tableName, $columnName),
+                'foreignKeys' => [],
+            ];
+        }
+
+        return ['error' => null, 'foreignKeys' => $this->detectReverseForeignKeys($schema, $tableName, $columnName)];
+    }
+
+    /**
+     * Scan every table for FK columns referencing <tableName>.<columnName>.
+     *
+     * @return list<array{table: string, column: string, self_referential: bool}>
+     */
+    private function detectReverseForeignKeys(DatabaseSchemaData $schema, string $tableName, string $columnName): array
+    {
+        $foreignKeys = [];
+
+        foreach ($schema->tables as $sourceTable) {
+            foreach ($sourceTable->foreignKeys as $fk) {
+                if ($fk->referencedTable !== $tableName) {
+                    continue;
+                }
+
+                if ($fk->referencedColumn !== $columnName) {
+                    continue;
+                }
+
+                $foreignKeys[] = [
+                    'table' => $sourceTable->name,
+                    'column' => $fk->columnName,
+                    'self_referential' => $sourceTable->name === $tableName,
+                ];
+            }
+        }
+
+        return $foreignKeys;
     }
 
     private function askString(string $question, string $default): string
