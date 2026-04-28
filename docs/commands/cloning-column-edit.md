@@ -31,6 +31,7 @@ When run without flags, the command walks through each step interactively:
 | `hash` | Replace with a one-way hash of the original value. Useful for passwords and secrets. |
 | `mask` | Partially mask the value, preserving a configurable number of visible characters. |
 | `static` | Replace every value with a fixed string. |
+| `remapping` | Replace primary-key values; foreign keys auto-detected from the live source schema. |
 
 ### `fake` Parameters
 
@@ -90,6 +91,33 @@ Argument reference for methods that accept parameters:
 |-----------|--------|-------------|
 | Value | `--value=` | The fixed string to replace every value with |
 
+### `remapping` Parameters
+
+| Parameter | Option | Description |
+|-----------|--------|-------------|
+| Remapping mode | `--remapping-use=` | `random_integer` (auto-bounded by column type ceiling) or `new_uuid` (UUIDv7) |
+
+The command opens the source connection declared at the YAML top-level (`connection:`), inspects the live schema, and:
+
+1. **Validates** that the chosen column is a primary key on the source table. If it is not, the command exits with code `4` and the YAML is left untouched.
+2. **Auto-detects** every foreign key in the source database that references `<table>.<column>`. The detected list is written into the `arguments[].foreign_keys` block — overwriting any prior list. Self-references (FK on the same table) are emitted with `self_referential: true`.
+
+The output structure mirrors `cloning:dump`:
+
+```yaml
+columns:
+  id:
+    strategy: remapping
+    arguments:
+      - use: random_integer
+      - foreign_keys:
+          - table: posts
+            column: user_id
+            self_referential: false
+```
+
+If the source connection cannot be reached (config missing, host unreachable, etc.), the command prints a warning, **skips** primary-key validation, and writes an empty `foreign_keys: []`. Re-run the command once the connection is available, or hand-edit the FK list, to populate the relationships.
+
 ## Options
 
 | Option | Description |
@@ -97,7 +125,8 @@ Argument reference for methods that accept parameters:
 | `file` | Path to the `.cloning.yaml` file (argument, optional) |
 | `--table=` | Table name |
 | `--column=` | Column name |
-| `--strategy=` | Strategy to apply: `keep`, `fake`, `hash`, `mask`, `static` |
+| `--strategy=` | Strategy to apply: `keep`, `fake`, `hash`, `mask`, `static`, `remapping` |
+| `--remapping-use=` | (`remapping`) `random_integer` or `new_uuid` |
 
 ## Exit Codes
 
@@ -131,4 +160,13 @@ clonio cloning:column:edit production-db.cloning.yaml \
 # Non-interactive: replace all values with a static string
 clonio cloning:column:edit production-db.cloning.yaml \
   --table=users --column=bio --strategy=static --value=redacted
+
+# Non-interactive: enable random-integer key remapping for users.id
+# (foreign keys auto-detected from the source schema)
+clonio cloning:column:edit production-db.cloning.yaml \
+  --table=users --column=id --strategy=remapping --remapping-use=random_integer
+
+# Non-interactive: enable UUIDv7 key remapping
+clonio cloning:column:edit production-db.cloning.yaml \
+  --table=users --column=id --strategy=remapping --remapping-use=new_uuid
 ```
