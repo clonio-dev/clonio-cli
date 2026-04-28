@@ -502,7 +502,7 @@ class RunCommand extends Command
             /**
              * @var array{auditArtefacts: array<string, string>, templateVars: array<string, string>, processLogContent: string} $auditPayload
              */
-            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $runLog): array {
+            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $runLog, $sourceConnection, $targetConnection): array {
                 $auditRecord = $builder->build(
                     config: $config,
                     result: $result,
@@ -510,6 +510,8 @@ class RunCommand extends Command
                     startedAt: $startedAt,
                     finishedAt: $finishedAt,
                     yamlFileName: $yamlFileName,
+                    sourceConnectionData: $sourceConnection,
+                    targetConnectionData: $targetConnection,
                 );
 
                 [$canonicalJson, $contentHash, $hmacSignature] = $signer->sign($auditRecord);

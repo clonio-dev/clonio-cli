@@ -11,6 +11,7 @@ use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunStatus;
+use App\Data\ConnectionData;
 use DateTimeImmutable;
 
 class AuditLogBuilder
@@ -24,6 +25,8 @@ class AuditLogBuilder
         DateTimeImmutable $startedAt,
         DateTimeImmutable $finishedAt,
         string $yamlFileName,
+        ?ConnectionData $sourceConnectionData = null,
+        ?ConnectionData $targetConnectionData = null,
     ): AuditRecordData {
         $auditTables = [];
 
@@ -68,6 +71,9 @@ class AuditLogBuilder
         $rawVersion = config('app.version', '1.0.0');
         $clonioVersion = is_string($rawVersion) ? $rawVersion : '1.0.0';
 
+        $sourceDetails = $this->projectConnectionDetails($config->connectionName, $sourceConnectionData);
+        $targetDetails = $this->projectConnectionDetails($targetConnection, $targetConnectionData);
+
         // Create a placeholder record (without hash/sig) to sign
         $placeholder = new AuditRecordData(
             clonioVersion: $clonioVersion,
@@ -84,6 +90,8 @@ class AuditLogBuilder
             channels: [],
             contentHash: '',
             hmacSignature: '',
+            sourceConnectionDetails: $sourceDetails,
+            targetConnectionDetails: $targetDetails,
         );
 
         [, $contentHash, $hmacSignature] = $this->signer->sign($placeholder);
@@ -103,6 +111,39 @@ class AuditLogBuilder
             channels: [],
             contentHash: $contentHash,
             hmacSignature: $hmacSignature,
+            sourceConnectionDetails: $sourceDetails,
+            targetConnectionDetails: $targetDetails,
         );
+    }
+
+    /**
+     * Project a ConnectionData into a password-free details array suitable for the audit record.
+     * Returns a stub array with only the connection name when no ConnectionData is provided.
+     *
+     * @return array{name: string, type: string, host: ?string, port: ?int, database: ?string, schema: ?string, username: ?string}
+     */
+    private function projectConnectionDetails(string $name, ?ConnectionData $connection): array
+    {
+        if (! $connection instanceof ConnectionData) {
+            return [
+                'name' => $name,
+                'type' => '',
+                'host' => null,
+                'port' => null,
+                'database' => null,
+                'schema' => null,
+                'username' => null,
+            ];
+        }
+
+        return [
+            'name' => $connection->name,
+            'type' => $connection->type->value,
+            'host' => $connection->host,
+            'port' => $connection->port,
+            'database' => $connection->database,
+            'schema' => $connection->schema,
+            'username' => $connection->username,
+        ];
     }
 }

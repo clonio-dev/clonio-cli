@@ -111,10 +111,15 @@ The audit log HTML document contains the following sections:
 - List of tables with at least one transformation
 - Statement: "All PII columns configured for transformation in this run were processed."
 
-### 4.5 Integrity Section
-- Document hash (SHA-256 of canonical JSON)
-- HMAC-SHA256 signature (truncated to first 16 chars for display; full value in `.sig` file)
-- Verification instruction: `clonio cloning:verify-audit <file>`
+### 4.5 Summary & Integrity Section
+Always rendered on its own page (forced page break before the heading).
+
+- **Connection cards** — side-by-side cards for source and target showing `name`, `type`, `host:port`, `database`, optional `schema`, and `username`. **Passwords are never rendered or stored in the audit record.**
+- **Recap KPI strip** — duplicates the cover-page summary so a reader landing on the last page sees the run's key numbers without flipping back: rows transferred (with table count), PII columns anonymised, and total duration.
+- **Integrity card** (dark) — document hash (SHA-256 of canonical JSON) + HMAC-SHA256 signature (full value in the `.sig` artefact).
+- Verification instruction: `clonio cloning:verify-audit <file>`.
+
+The PII transformations section likewise begins on its own page (`<h2 class="page-break">PII transformations</h2>`) so the table is never split across the cover page.
 
 ---
 
@@ -422,6 +427,10 @@ final readonly class AuditRecordData
         public array $channels,
         public string $contentHash,       // SHA-256 of canonical JSON
         public string $hmacSignature,     // HMAC-SHA256(contentHash, APP_KEY)
+        // Source / target connection details — name/type/host/port/database/schema/username only.
+        // Password is intentionally omitted so the audit trail can be safely shared.
+        public array $sourceConnectionDetails,
+        public array $targetConnectionDetails,
     ) {}
 }
 ```

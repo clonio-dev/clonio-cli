@@ -49,6 +49,8 @@ function makeFullAuditRecord(): AuditRecordData
         channels: [],
         contentHash: 'abc123',
         hmacSignature: 'sig456',
+        sourceConnectionDetails: ['name' => 'production-db', 'type' => 'mysql', 'host' => 'db.prod.io', 'port' => 3306, 'database' => 'mydb', 'schema' => null, 'username' => 'root'],
+        targetConnectionDetails: ['name' => 'staging', 'type' => 'mysql', 'host' => 'db.staging.io', 'port' => 3306, 'database' => 'stagingdb', 'schema' => null, 'username' => 'root'],
     );
 }
 
@@ -112,4 +114,37 @@ it('renders a PDF document', function (): void {
 
     expect($pdf)->toStartWith('%PDF-')
         ->and(strlen($pdf))->toBeGreaterThan(1000);
+});
+
+it('renders the Summary & Integrity section with connection details', function (): void {
+    $renderer = new AuditLogRenderer;
+    $record = makeFullAuditRecord();
+
+    $signer = new AuditLogSigner;
+    [$canonicalJson] = $signer->sign($record);
+
+    $html = $renderer->render($record, $canonicalJson);
+
+    expect($html)->toContain('Summary &amp; Integrity');
+    expect($html)->toContain('class="conn-grid"');
+    expect($html)->toContain('class="conn-eyebrow">Source<');
+    expect($html)->toContain('class="conn-eyebrow">Target<');
+    expect($html)->toContain('db.prod.io:3306');
+    expect($html)->toContain('db.staging.io:3306');
+    expect($html)->toContain('mydb');
+    expect($html)->toContain('stagingdb');
+    expect($html)->toContain('class="kpi kpi-3"');
+    expect($html)->not->toContain('secret'); // password must never leak
+});
+
+it('forces a page break before the PII transformations heading', function (): void {
+    $renderer = new AuditLogRenderer;
+    $record = makeFullAuditRecord();
+
+    $signer = new AuditLogSigner;
+    [$canonicalJson] = $signer->sign($record);
+
+    $html = $renderer->render($record, $canonicalJson);
+
+    expect($html)->toContain('<h2 class="page-break">PII transformations');
 });

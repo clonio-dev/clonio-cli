@@ -10,8 +10,40 @@ use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
+use App\Data\ConnectionData;
+use App\Enums\DatabaseConnectionType;
 use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogSigner;
+
+function makeBuilderSourceConnection(): ConnectionData
+{
+    return new ConnectionData(
+        name: 'production-db',
+        type: DatabaseConnectionType::Mysql,
+        host: 'db.prod.io',
+        port: 3306,
+        database: 'mydb',
+        schema: null,
+        username: 'root',
+        password: 'secret',
+        isProduction: true,
+    );
+}
+
+function makeBuilderTargetConnection(): ConnectionData
+{
+    return new ConnectionData(
+        name: 'staging',
+        type: DatabaseConnectionType::Mysql,
+        host: 'db.staging.io',
+        port: 3306,
+        database: 'stagingdb',
+        schema: null,
+        username: 'root',
+        password: 'secret',
+        isProduction: false,
+    );
+}
 
 function makeBuilderCloningConfig(): CloningConfigData
 {
@@ -71,6 +103,8 @@ it('builds an AuditRecordData from config and result', function (): void {
         startedAt: $startedAt,
         finishedAt: $finishedAt,
         yamlFileName: 'test.cloning.yaml',
+        sourceConnectionData: makeBuilderSourceConnection(),
+        targetConnectionData: makeBuilderTargetConnection(),
     );
 
     expect($record)->toBeInstanceOf(AuditRecordData::class);
@@ -81,4 +115,40 @@ it('builds an AuditRecordData from config and result', function (): void {
     expect($record->tables)->toHaveCount(1);
     expect($record->contentHash)->not->toBeEmpty();
     expect($record->hmacSignature)->not->toBeEmpty();
+    expect($record->sourceConnectionDetails)->toMatchArray([
+        'name' => 'production-db',
+        'type' => 'mysql',
+        'host' => 'db.prod.io',
+        'port' => 3306,
+        'database' => 'mydb',
+        'username' => 'root',
+    ]);
+    expect($record->targetConnectionDetails)->toMatchArray([
+        'name' => 'staging',
+        'type' => 'mysql',
+        'host' => 'db.staging.io',
+        'port' => 3306,
+        'database' => 'stagingdb',
+        'username' => 'root',
+    ]);
+    expect(json_encode($record->sourceConnectionDetails))->not->toContain('secret');
+    expect(json_encode($record->targetConnectionDetails))->not->toContain('secret');
+});
+
+it('builds a record without ConnectionData (legacy callers) producing stub details', function (): void {
+    $signer = new AuditLogSigner;
+    $builder = new AuditLogBuilder($signer);
+
+    $record = $builder->build(
+        config: makeBuilderCloningConfig(),
+        result: makeBuilderRunResult(),
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+    );
+
+    expect($record->sourceConnectionDetails['name'])->toBe('production-db');
+    expect($record->sourceConnectionDetails['host'])->toBeNull();
+    expect($record->targetConnectionDetails['name'])->toBe('staging');
 });
