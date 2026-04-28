@@ -63,6 +63,9 @@ class AuditLogRenderer
         $totalRowsTransferred = number_format($record->totalRowsTransferred, 0, '.', ' ');
         $totalRowsSkipped = number_format($record->totalRowsSkipped, 0, '.', ' ');
 
+        $sourceConnCard = $this->renderConnectionCard('Source', $record->sourceConnectionDetails);
+        $targetConnCard = $this->renderConnectionCard('Target', $record->targetConnectionDetails);
+
         $escapedCanonicalJson = htmlspecialchars($canonicalJson, ENT_NOQUOTES);
 
         return <<<HTML
@@ -95,9 +98,15 @@ class AuditLogRenderer
 
   .kpi { width: 100%; border-collapse: separate; border-spacing: 3mm 0; margin-bottom: 6mm; margin-left: -3mm; margin-right: -3mm; }
   .kpi td { width: 25%; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4mm; vertical-align: top; border-radius: 2mm; }
+  .kpi.kpi-3 td { width: 33.33%; }
   .kpi .kpi-label { font-size: 8pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; font-weight: bold; }
   .kpi .kpi-value { font-size: 18pt; color: #0f172a; font-weight: bold; margin-top: 2mm; letter-spacing: -0.02em; }
   .kpi .kpi-sub { font-size: 8pt; color: #94a3b8; margin-top: 1mm; }
+
+  .conn-grid { width: 100%; border-collapse: separate; border-spacing: 3mm 0; margin: 0 -3mm 4mm -3mm; }
+  .conn-grid td { width: 50%; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4mm 5mm; vertical-align: top; border-radius: 2mm; }
+  .conn-grid .conn-eyebrow { font-size: 8pt; color: #6366f1; text-transform: uppercase; letter-spacing: 0.12em; font-weight: bold; }
+  .conn-grid .conn-name { font-size: 13pt; color: #0f172a; font-weight: bold; margin: 1mm 0 3mm 0; letter-spacing: -0.01em; }
 
   h2 { font-size: 13pt; color: #0f172a; margin: 7mm 0 3mm 0; font-weight: bold; }
   h2.page-break { page-break-before: always; break-before: page; }
@@ -191,13 +200,41 @@ class AuditLogRenderer
   <tbody>{$tableRows}</tbody>
 </table>
 
-<h2>PII transformations <span class="h2-count">· {$piiColumnCount}</span></h2>
+<h2 class="page-break">PII transformations <span class="h2-count">· {$piiColumnCount}</span></h2>
 <table class="data">
   <thead><tr><th>Table</th><th>Column</th><th>Strategy</th></tr></thead>
   <tbody>{$piiRows}</tbody>
 </table>
 
-<h2 class="page-break">Integrity</h2>
+<h2 class="page-break">Summary &amp; Integrity</h2>
+
+<table class="conn-grid">
+  <tr>
+    {$sourceConnCard}
+    {$targetConnCard}
+  </tr>
+</table>
+
+<table class="kpi kpi-3">
+  <tr>
+    <td>
+      <div class="kpi-label">Rows transferred</div>
+      <div class="kpi-value">{$totalRowsTransferred}</div>
+      <div class="kpi-sub">across {$tableCount} tables</div>
+    </td>
+    <td>
+      <div class="kpi-label">PII columns</div>
+      <div class="kpi-value">{$piiColumnCount}</div>
+      <div class="kpi-sub">anonymised</div>
+    </td>
+    <td>
+      <div class="kpi-label">Duration</div>
+      <div class="kpi-value">{$duration}</div>
+      <div class="kpi-sub">wall-clock</div>
+    </td>
+  </tr>
+</table>
+
 <div class="integrity-card">
   <div class="label">SHA-256 content hash</div>
   <div class="hash">{$contentHash}</div>
@@ -208,6 +245,46 @@ class AuditLogRenderer
 <script type="application/json" id="audit-data">{$escapedCanonicalJson}</script>
 </body>
 </html>
+HTML;
+    }
+
+    /**
+     * Render a single source/target connection card for the Summary & Integrity section.
+     *
+     * @param  array{name: string, type: string, host: ?string, port: ?int, database: ?string, schema: ?string, username: ?string}  $details
+     */
+    private function renderConnectionCard(string $eyebrow, array $details): string
+    {
+        $name = htmlspecialchars($details['name']);
+        $type = $details['type'] !== '' ? htmlspecialchars($details['type']) : '—';
+
+        $hostPort = $details['host'] !== null && $details['host'] !== ''
+            ? htmlspecialchars($details['host']).($details['port'] !== null ? ':'.$details['port'] : '')
+            : '—';
+
+        $database = $details['database'] !== null && $details['database'] !== ''
+            ? htmlspecialchars($details['database'])
+            : '—';
+
+        $username = $details['username'] !== null && $details['username'] !== ''
+            ? htmlspecialchars($details['username'])
+            : '—';
+
+        $schemaRow = $details['schema'] !== null && $details['schema'] !== ''
+            ? sprintf('<tr><td class="label">Schema</td><td class="value">%s</td></tr>', htmlspecialchars($details['schema']))
+            : '';
+
+        return <<<HTML
+<td>
+      <div class="conn-eyebrow">{$eyebrow}</div>
+      <div class="conn-name">{$name}</div>
+      <table class="meta-table">
+        <tr><td class="label">Type</td><td class="value">{$type}</td></tr>
+        <tr><td class="label">Host</td><td class="value">{$hostPort}</td></tr>
+        <tr><td class="label">Database</td><td class="value">{$database}</td></tr>{$schemaRow}
+        <tr><td class="label">Username</td><td class="value">{$username}</td></tr>
+      </table>
+    </td>
 HTML;
     }
 

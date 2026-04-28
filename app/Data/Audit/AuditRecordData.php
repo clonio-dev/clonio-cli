@@ -12,6 +12,8 @@ final readonly class AuditRecordData
     /**
      * @param  list<AuditTableRecordData>  $tables
      * @param  list<string>  $channels
+     * @param  array{name: string, type: string, host: ?string, port: ?int, database: ?string, schema: ?string, username: ?string}  $sourceConnectionDetails
+     * @param  array{name: string, type: string, host: ?string, port: ?int, database: ?string, schema: ?string, username: ?string}  $targetConnectionDetails
      */
     public function __construct(
         public string $clonioVersion,
@@ -28,5 +30,7 @@ final readonly class AuditRecordData
         public array $channels,
         public string $contentHash,
         public string $hmacSignature,
+        public array $sourceConnectionDetails,
+        public array $targetConnectionDetails,
     ) {}
 }
