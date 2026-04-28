@@ -310,6 +310,22 @@ clonio cloning:run prod.cloning.yaml --target staging --file-based
 
 The original top-level `key_remapping:` section is still parsed. Existing YAML files do not need to be updated. When both formats are present in the same file, the inline column format takes priority.
 
+### Recovering from "key remapping exhausted"
+
+When the column type cannot host the source row count (for example a `TINYINT` primary key that already holds 250 rows but the source has 300), the run aborts in Phase 5b with a *key remapping exhausted* error.
+
+- **Interactive mode** — Clonio prints a prose summary (column type, ceiling, rows requested, slots available) and prompts:
+
+  ```
+  Switch users.id strategy to 'keep' in production-db.cloning.yaml? (yes/no)
+  ```
+
+  Accepting the prompt invokes `cloning:column:edit ... --strategy=keep` in-process, which rewrites the YAML so the offending column is no longer remapped. The command exits with code `0` and prints the original `cloning:run` invocation so you can re-run it. Declining the prompt also exits with code `0` and leaves the YAML untouched.
+
+- **CI mode** (`--ci`) — Clonio prints the same prose summary plus a hint, including the exact `cloning:column:edit` command needed to patch the configuration, then exits with code `1` (`GeneralError`). No interactive prompts are shown.
+
+If widening the column type is the right fix instead of switching to `keep`, run a schema migration on the source and retry — Clonio will pick up the new ceiling automatically on the next `cloning:run`.
+
 ---
 
 ## The 8-Phase Pipeline

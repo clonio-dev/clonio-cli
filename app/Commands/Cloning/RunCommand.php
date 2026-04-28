@@ -18,6 +18,7 @@ use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\SchemaDiffData;
 use App\Enums\AuditChannelType;
 use App\Enums\ExitCode;
+use App\Exceptions\KeyRemappingExhaustedException;
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogRenderer;
@@ -43,6 +44,7 @@ use App\Services\Schema\SchemaDiffService;
 use App\Services\Schema\SchemaInspector;
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
@@ -317,7 +319,7 @@ class RunCommand extends Command
 
             $keyRemappingService = (bool) $this->option('file-based')
                 ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
-                : new KeyRemappingService($connector);
+                : resolve(KeyRemappingService::class);
             $sortedForMapping = array_map(
                 static fn (TableCloningConfigData $t): string => $t->tableName,
                 $config->tables
@@ -328,6 +330,8 @@ class RunCommand extends Command
                     'Generating key mappings',
                     fn (): array => $keyRemappingService->generateMappings($keyRemappingConfig, $sourceConnection, $sourceSchema, $sortedForMapping),
                 );
+            } catch (KeyRemappingExhaustedException $exhausted) {
+                return $this->handleKeyRemappingExhausted($exhausted, $filePath, $ci);
             } catch (Throwable $throwable) {
                 if (str_contains($throwable->getMessage(), 'Allowed memory size') || str_contains($throwable->getMessage(), 'Out of memory')) {
                     $reRunCommand = $this->getOriginalCommandWithNoMemoryLimit();
@@ -909,6 +913,16 @@ class RunCommand extends Command
      */
     private function getOriginalCommandWithNoMemoryLimit(): string
     {
+        return $this->getOriginalCommand(['--no-memory-limit']);
+    }
+
+    /**
+     * Reconstruct the original command line, optionally appending extra flags.
+     *
+     * @param  list<string>  $extraFlags  Additional flags to append (e.g. ['--no-memory-limit'])
+     */
+    private function getOriginalCommand(array $extraFlags = []): string
+    {
         $parts = ['clonio', 'cloning:run', (string) $this->argument('file')];
 
         // Add all options that affect the command behavior
@@ -948,9 +962,92 @@ class RunCommand extends Command
             }
         }
 
-        // Add --no-memory-limit
-        $parts[] = '--no-memory-limit';
+        foreach ($extraFlags as $extraFlag) {
+            $parts[] = $extraFlag;
+        }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * Handle KeyRemappingExhaustedException with a friendly recovery flow.
+     *
+     * CI mode: print prose with hint, exit GeneralError.
+     * Interactive: prompt to switch the offending column to `keep` strategy via cloning:column:edit.
+     *   On accept: invoke editor in-process, exit Success with re-run hint.
+     *   On decline: exit Success without changes.
+     */
+    private function handleKeyRemappingExhausted(KeyRemappingExhaustedException $exhausted, string $filePath, bool $ci): int
+    {
+        $columnTypeLabel = sprintf('%s (%s, ceiling %d)', strtoupper($exhausted->columnType), $exhausted->unsigned ? 'unsigned' : 'signed', $exhausted->typeMax);
+        $slotSummary = sprintf('%d (%d above MAX(id), %d gaps below)', $exhausted->upperSlots + $exhausted->gapSlots, $exhausted->upperSlots, $exhausted->gapSlots);
+
+        $editCommand = sprintf(
+            'clonio cloning:column:edit %s --table=%s --column=%s --strategy=keep',
+            $filePath,
+            $exhausted->table,
+            $exhausted->column,
+        );
+
+        if ($ci) {
+            $this->line(sprintf('Cannot remap %s.%s: key remapping exhausted.', $exhausted->table, $exhausted->column));
+            $this->line(sprintf('  Column type: %s', $columnTypeLabel));
+            $this->line(sprintf('  Rows requested: %d', $exhausted->rowCount));
+            $this->line(sprintf('  Slots available: %s', $slotSummary));
+            $this->line('');
+            $this->line("Hint: switch the column's strategy to 'keep' to skip remapping for this table, or widen the column type.");
+            $this->line('');
+            $this->line('    '.$editCommand);
+            $this->line('');
+
+            return ExitCode::GeneralError->value;
+        }
+
+        $this->line('');
+        $this->line(sprintf('  <error>Cannot remap %s.%s — key remapping exhausted.</error>', $exhausted->table, $exhausted->column));
+        $this->line(sprintf('  Column type: %s', $columnTypeLabel));
+        $this->line(sprintf('  Rows requested: %d', $exhausted->rowCount));
+        $this->line(sprintf('  Slots available: %s', $slotSummary));
+        $this->line('');
+        $this->line("  Switching the column to the 'keep' strategy will skip remapping for this");
+        $this->line('  table and let the run continue with the original primary-key values.');
+        $this->line('');
+
+        $proceed = $this->confirm(sprintf(
+            "Switch %s.%s strategy to 'keep' in %s?",
+            $exhausted->table,
+            $exhausted->column,
+            $filePath,
+        ), false);
+
+        if (! $proceed) {
+            $this->line('Cancelled. Re-run after editing the configuration.');
+
+            return ExitCode::Success->value;
+        }
+
+        $editResult = Artisan::call('cloning:column:edit', [
+            'file' => $filePath,
+            '--table' => $exhausted->table,
+            '--column' => $exhausted->column,
+            '--strategy' => 'keep',
+            '--no-interaction' => true,
+        ]);
+
+        if ($editResult !== ExitCode::Success->value) {
+            $this->error(sprintf(
+                "Failed to update column strategy via cloning:column:edit (exit code %d). Run the editor manually:\n\n    %s\n",
+                $editResult,
+                $editCommand,
+            ));
+
+            return ExitCode::GeneralError->value;
+        }
+
+        $this->line('');
+        $this->info(sprintf('Updated %s.%s → strategy: keep in %s.', $exhausted->table, $exhausted->column, $filePath));
+        $this->line(sprintf("\nConfiguration patched. Re-run the cloning command:\n\n    %s\n", $this->getOriginalCommand()));
+
+        return ExitCode::Success->value;
     }
 }
