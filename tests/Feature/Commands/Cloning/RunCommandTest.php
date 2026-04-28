@@ -15,6 +15,7 @@ use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
+use App\Exceptions\KeyRemappingExhaustedException;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\SkippedRow;
@@ -1250,4 +1251,135 @@ it('renders skip groups under a fully failed table line in verbose mode', functi
     $this->artisan('cloning:run cloning.yml --target=staging -v')
         ->expectsOutputToContain('└ 2× SQLSTATE[42S22]: Column not found')
         ->expectsOutputToContain('✗');
+});
+
+function makeRemappingYaml(): string
+{
+    return <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: random_integer
+          - foreign_keys: []
+YAML;
+}
+
+function bindExhaustionMocks(KeyRemappingExhaustedException $exhausted): void
+{
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    app()->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    app()->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    app()->instance(SchemaInspector::class, $inspector);
+
+    $remapping = Mockery::mock(KeyRemappingService::class);
+    $remapping->shouldReceive('generateMappings')->andThrow($exhausted);
+    $remapping->shouldReceive('cleanup')->andReturnNull();
+    app()->instance(KeyRemappingService::class, $remapping);
+}
+
+it('returns GeneralError(1) and prints prose hint when key remapping exhausted in --ci', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYaml());
+
+    bindExhaustionMocks(new KeyRemappingExhaustedException(
+        table: 'users',
+        column: 'id',
+        columnType: 'tinyint',
+        unsigned: true,
+        typeMax: 255,
+        rowCount: 199,
+        upperSlots: 56,
+        gapSlots: 0,
+    ));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+    ])
+        ->expectsOutputToContain('Cannot remap users.id')
+        ->expectsOutputToContain('TINYINT')
+        ->expectsOutputToContain("strategy to 'keep'")
+        ->expectsOutputToContain('cloning:column:edit')
+        ->assertExitCode(ExitCode::GeneralError->value);
+});
+
+it('exits 0 with re-run hint after interactively switching offending column to keep', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYaml());
+
+    bindExhaustionMocks(new KeyRemappingExhaustedException(
+        table: 'users',
+        column: 'id',
+        columnType: 'tinyint',
+        unsigned: true,
+        typeMax: 255,
+        rowCount: 199,
+        upperSlots: 56,
+        gapSlots: 0,
+    ));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+    ])
+        ->expectsConfirmation("Switch users.id strategy to 'keep' in test.cloning.yaml?", 'yes')
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->expectsOutputToContain('Updated users.id')
+        ->expectsOutputToContain('Configuration patched. Re-run')
+        ->assertExitCode(ExitCode::Success->value);
+
+    $patched = Storage::disk('local')->get('test.cloning.yaml');
+    expect($patched)->toBeString();
+    expect($patched)->toContain('strategy: keep');
+    expect($patched)->not->toContain('strategy: remapping');
+});
+
+it('exits 0 with cancellation message when user declines the strategy switch', function (): void {
+    Storage::fake('local');
+    $original = makeRemappingYaml();
+    Storage::disk('local')->put('test.cloning.yaml', $original);
+
+    bindExhaustionMocks(new KeyRemappingExhaustedException(
+        table: 'users',
+        column: 'id',
+        columnType: 'tinyint',
+        unsigned: true,
+        typeMax: 255,
+        rowCount: 199,
+        upperSlots: 56,
+        gapSlots: 0,
+    ));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+    ])
+        ->expectsConfirmation("Switch users.id strategy to 'keep' in test.cloning.yaml?", 'no')
+        ->expectsOutputToContain('Cancelled')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toBe($original);
 });
