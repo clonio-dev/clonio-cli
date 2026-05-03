@@ -314,7 +314,7 @@ jobs:
 
       - name: Derive tags and labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/clonio-dev/clonio
           # We control :latest explicitly — default flavor would tag every push :latest.
