@@ -38,6 +38,7 @@
         "illuminate/http": "^12.60.2",
         "illuminate/log": "^12.60.2",
         "laravel-zero/framework": "^12.1.0",
+        "league/flysystem-aws-s3-v3": "^3.0",
         "mpdf/mpdf": "^8.3.1",
         "symfony/yaml": "^8.0.12"
     },
