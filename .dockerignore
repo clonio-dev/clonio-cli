@@ -1,5 +1,46 @@
-# Build context is intentionally minimal — only the static binaries
-# (staged by CI into bin/) and the Dockerfile itself need to be present.
-*
-!Dockerfile
-!bin/
+# Source-based image: COPY . brings the whole tree in, then this file strips
+# anything not needed at runtime. Vendor is reinstalled inside the image, so
+# host vendor/ never enters the context.
+.git
+.github
+.idea
+.worktrees
+.claude
+.DS_Store
+
+# Reinstalled inside the image
+vendor
+node_modules
+
+# Local build outputs
+builds
+bin
+*.phar
+
+# User config / secrets — must NEVER bake into the image
+.env
+clonio.json
+clonio.pii-matchers.yaml
+*.cloning.yaml
+
+# Runtime state
+storage/logs
+storage/framework/cache
+storage/framework/sessions
+storage/framework/views
+
+# Dev / test only
+tests
+docs
+specs
+phpstan.neon
+phpunit.xml.dist
+rector.php
+box.json
+.editorconfig
+.gitignore
+.gitattributes
+.dockerignore
+Makefile
+README.md
+CLAUDE.md

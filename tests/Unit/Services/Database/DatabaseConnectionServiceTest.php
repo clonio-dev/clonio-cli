@@ -14,11 +14,12 @@ function makeConnection(
     DatabaseConnectionType $type,
     string $password = 'secret',
     ?string $schema = null,
+    ?string $host = null,
 ): ConnectionData {
     return new ConnectionData(
         name: 'test',
         type: $type,
-        host: $type === DatabaseConnectionType::Sqlite ? null : '127.0.0.1',
+        host: $type === DatabaseConnectionType::Sqlite ? null : ($host ?? '127.0.0.1'),
         port: $type->defaultPort(),
         database: $type === DatabaseConnectionType::Sqlite ? '/tmp/test.db' : 'mydb',
         schema: $schema,
@@ -112,4 +113,56 @@ it('omits search_path when schema is null', function (): void {
     $config = $service->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL), 'secret');
 
     expect($config)->not->toHaveKey('search_path');
+});
+
+// ── host rewrite when running inside docker ──────────────────────────────────
+
+it('rewrites 127.0.0.1 to host.docker.internal when running in docker', function (): void {
+    $service = new DatabaseConnectionService(inDocker: true);
+    $config = $service->buildConfig(
+        makeConnection(DatabaseConnectionType::Mysql, host: '127.0.0.1'),
+        'secret'
+    );
+
+    expect($config['host'])->toBe('host.docker.internal');
+});
+
+it('rewrites localhost to host.docker.internal when running in docker', function (): void {
+    $service = new DatabaseConnectionService(inDocker: true);
+    $config = $service->buildConfig(
+        makeConnection(DatabaseConnectionType::Mysql, host: 'localhost'),
+        'secret'
+    );
+
+    expect($config['host'])->toBe('host.docker.internal');
+});
+
+it('rewrites ::1 to host.docker.internal when running in docker', function (): void {
+    $service = new DatabaseConnectionService(inDocker: true);
+    $config = $service->buildConfig(
+        makeConnection(DatabaseConnectionType::PostgreSQL, host: '::1'),
+        'secret'
+    );
+
+    expect($config['host'])->toBe('host.docker.internal');
+});
+
+it('leaves non-loopback hosts untouched when running in docker', function (): void {
+    $service = new DatabaseConnectionService(inDocker: true);
+    $config = $service->buildConfig(
+        makeConnection(DatabaseConnectionType::Mysql, host: '192.168.1.50'),
+        'secret'
+    );
+
+    expect($config['host'])->toBe('192.168.1.50');
+});
+
+it('does not rewrite hosts when not running in docker', function (): void {
+    $service = new DatabaseConnectionService(inDocker: false);
+    $config = $service->buildConfig(
+        makeConnection(DatabaseConnectionType::Mysql, host: '127.0.0.1'),
+        'secret'
+    );
+
+    expect($config['host'])->toBe('127.0.0.1');
 });
