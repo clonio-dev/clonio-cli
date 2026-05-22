@@ -57,25 +57,25 @@ class PiiMatcherBaselineProvider
                 $this->make(
                     'national_id', 'government_ids', 'National ID / SSN', PiiSensitivity::Critical,
                     ['/^(ssn|social[-_]?security|national[-_]?id|personal[-_]?id)$/i'],
-                    $this->hash(),
+                    $this->fake('numerify', ['###-##-####']),
                     '123-45-6789',
                 ),
                 $this->make(
                     'passport_number', 'government_ids', 'Passport Number', PiiSensitivity::Critical,
                     ['/^(passport|passport[-_]?number|passport[-_]?no)$/i'],
-                    $this->hash(),
+                    $this->fake('bothify', ['?########']),
                     'A12345678',
                 ),
                 $this->make(
                     'drivers_license', 'government_ids', "Driver's License", PiiSensitivity::Critical,
                     ['/^(drivers?[-_]?licen[sc]e|dl[-_]?number|license[-_]?number|driving[-_]?licen[sc]e)$/i'],
-                    $this->hash(),
+                    $this->fake('bothify', ['DL-#########']),
                     'DL-123456789',
                 ),
                 $this->make(
                     'tax_id', 'government_ids', 'Tax ID / VAT Number', PiiSensitivity::Critical,
                     ['/^(tax[-_]?id|tax[-_]?number|tin|vat[-_]?number|vat[-_]?id|fiscal[-_]?id)$/i'],
-                    $this->hash(),
+                    $this->fake('numerify', ['##-#######']),
                     '12-3456789',
                 ),
             ],
@@ -241,25 +241,25 @@ class PiiMatcherBaselineProvider
                 $this->make(
                     'credit_card', 'financial', 'Credit Card Number', PiiSensitivity::Critical,
                     ['/^(credit[-_]?card|card[-_]?number|cc[-_]?number|payment[-_]?card|pan)$/i'],
-                    $this->mask(4, '*', false),
+                    $this->fake('creditCardNumber'),
                     '4242424242424242',
                 ),
                 $this->make(
                     'iban', 'financial', 'IBAN / Bank Account', PiiSensitivity::Critical,
                     ['/^(iban|bank[-_]?account|kontonummer)$/i'],
-                    $this->mask(4, '*', false),
+                    $this->fake('iban'),
                     'DE89370400440532013000',
                 ),
                 $this->make(
                     'bank_routing_number', 'financial', 'Bank Routing / Sort Code', PiiSensitivity::Critical,
                     ['/^(routing[-_]?number|sort[-_]?code|aba[-_]?number|bank[-_]?code|bic|swift[-_]?code)$/i'],
-                    $this->hash(),
+                    $this->fake('numerify', ['#########']),
                     '021000021',
                 ),
                 $this->make(
                     'crypto_wallet', 'financial', 'Crypto Wallet Address', PiiSensitivity::High,
                     ['/^(wallet[-_]?address|crypto[-_]?wallet|bitcoin[-_]?address|eth[-_]?address|blockchain[-_]?address)$/i'],
-                    $this->hash(),
+                    $this->fake('sha256'),
                     '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
                     enabled: false,
                 ),
@@ -283,19 +283,19 @@ class PiiMatcherBaselineProvider
                 $this->make(
                     'medical_record_id', 'medical', 'Medical Record Number', PiiSensitivity::Critical,
                     ['/^(medical[-_]?record|mrn|medical[-_]?record[-_]?number|chart[-_]?number)$/i'],
-                    $this->hash(),
+                    $this->fake('bothify', ['MRN-######']),
                     'MRN-789456',
                 ),
                 $this->make(
                     'health_insurance_id', 'medical', 'Health Insurance ID', PiiSensitivity::Critical,
                     ['/^(insurance[-_]?id|insurance[-_]?number|health[-_]?plan|policy[-_]?number|member[-_]?id)$/i'],
-                    $this->hash(),
+                    $this->fake('bothify', ['INS-#########']),
                     'INS-123456789',
                 ),
                 $this->make(
                     'patient_id', 'medical', 'Patient ID', PiiSensitivity::Critical,
                     ['/^(patient[-_]?id|patient[-_]?number|patient[-_]?reference)$/i'],
-                    $this->hash(),
+                    $this->fake('bothify', ['PAT-######']),
                     'PAT-001234',
                     enabled: false,
                 ),
@@ -326,13 +326,13 @@ class PiiMatcherBaselineProvider
                 $this->make(
                     'biometric_data', 'biometric', 'Biometric Identifier', PiiSensitivity::Critical,
                     ['/^(fingerprint|face[-_]?(id|encoding|hash|vector)|voice[-_]?print|biometric|retina[-_]?scan)$/i'],
-                    $this->hash(),
+                    $this->nullify(),
                     'base64-biometric-hash',
                 ),
                 $this->make(
                     'dna_profile', 'biometric', 'DNA / Genetic Data', PiiSensitivity::Critical,
                     ['/^(dna|dna[-_]?profile|genetic[-_]?data|genome)$/i'],
-                    $this->hash(),
+                    $this->nullify(),
                     'ATCGATCGATCG',
                     enabled: false,
                 ),
@@ -377,25 +377,25 @@ class PiiMatcherBaselineProvider
                 $this->make(
                     'ip_address', 'digital_identity', 'IP Address', PiiSensitivity::Medium,
                     ['/^(ip|ip[-_]?addr(ess)?|client[-_]?ip|remote[-_]?ip|user[-_]?ip)$/i'],
-                    $this->mask(0, '*', true),
+                    $this->fake('ipv4'),
                     '192.168.1.100',
                 ),
                 $this->make(
                     'device_id', 'digital_identity', 'Device ID / UDID', PiiSensitivity::Medium,
                     ['/^(device[-_]?id|device[-_]?identifier|udid|imei|device[-_]?token)$/i'],
-                    $this->hash(),
+                    $this->fake('uuid'),
                     '550e8400-e29b-41d4-a716-446655440000',
                 ),
                 $this->make(
                     'session_id', 'digital_identity', 'Session ID', PiiSensitivity::High,
                     ['/^(session[-_]?id|session[-_]?token|session[-_]?key)$/i'],
-                    $this->hash(),
+                    $this->nullify(),
                     'sess_abc123xyz789',
                 ),
                 $this->make(
                     'mac_address', 'digital_identity', 'MAC Address', PiiSensitivity::Medium,
                     ['/^(mac[-_]?address|mac[-_]?addr|hardware[-_]?address|physical[-_]?address)$/i'],
-                    $this->hash(),
+                    $this->fake('macAddress'),
                     '00:1A:2B:3C:4D:5E',
                 ),
                 $this->make(
@@ -418,26 +418,26 @@ class PiiMatcherBaselineProvider
                 $this->make(
                     'password', 'authentication', 'Password / Secret', PiiSensitivity::Critical,
                     ['/^(password|passwd|pwd|secret|passwort)$/i'],
-                    $this->hash(),
+                    $this->staticValue('REDACTED'),
                     'mysecretpassword',
                 ),
                 $this->make(
                     'oauth_token', 'authentication', 'OAuth / Access Token', PiiSensitivity::Critical,
                     ['/^(oauth[-_]?token|access[-_]?token|refresh[-_]?token|bearer[-_]?token|auth[-_]?token)$/i'],
-                    $this->hash(),
+                    $this->staticValue('REDACTED'),
                     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
                 ),
                 $this->make(
                     'api_token', 'authentication', 'API Token / Key', PiiSensitivity::Critical,
                     ['/^(token|api[-_]?key)$/i'],
-                    $this->hash(),
+                    $this->staticValue('REDACTED'),
                     'sk_live_abc123xyz789',
                     enabled: false,
                 ),
                 $this->make(
                     'private_key', 'authentication', 'Private / Encryption Key', PiiSensitivity::Critical,
                     ['/^(private[-_]?key|secret[-_]?key|signing[-_]?key|encryption[-_]?key)$/i'],
-                    $this->hash(),
+                    $this->staticValue('REDACTED'),
                     '-----BEGIN RSA PRIVATE KEY-----',
                     enabled: false,
                 ),
@@ -494,7 +494,14 @@ class PiiMatcherBaselineProvider
         );
     }
 
-    private function hash(string $algorithm = 'sha256', string $salt = ''): ColumnCloningConfigData
+    /**
+     * Build a hash transformation. Salt defaults to null so the engine's
+     * per-run random salt is applied at transform time — required for
+     * pseudonymization that defeats cross-run linkability (GDPR Art. 4 Nr. 5).
+     * Pass an explicit salt only if reproducible hashes across runs are
+     * required (e.g. fixture data).
+     */
+    private function hash(string $algorithm = 'sha256', ?string $salt = null): ColumnCloningConfigData
     {
         return new ColumnCloningConfigData(
             columnName: '',
@@ -510,19 +517,19 @@ class PiiMatcherBaselineProvider
         );
     }
 
-    private function mask(int $visibleChars = 0, string $maskChar = '*', bool $preserveFormat = false): ColumnCloningConfigData
+    private function staticValue(string $value): ColumnCloningConfigData
     {
         return new ColumnCloningConfigData(
             columnName: '',
-            strategy: 'mask',
+            strategy: 'static',
             fakerMethod: null,
             fakerArguments: [],
             hashAlgorithm: null,
             hashSalt: null,
-            maskChar: $maskChar,
-            visibleChars: $visibleChars,
-            preserveFormat: $preserveFormat,
-            staticValue: null,
+            maskChar: null,
+            visibleChars: null,
+            preserveFormat: null,
+            staticValue: $value,
         );
     }
 
