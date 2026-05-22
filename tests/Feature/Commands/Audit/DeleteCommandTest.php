@@ -31,7 +31,7 @@ it('deletes channel after user confirms', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
-    $config->shouldReceive('getAuditDefault')->andReturn(null);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
     $config->shouldReceive('deleteAuditChannel')->with('my-local')->once();
     $this->app->instance(ConfigService::class, $config);
 
@@ -47,7 +47,7 @@ it('cancels when user declines confirmation', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
-    $config->shouldReceive('getAuditDefault')->andReturn(null);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
     $config->shouldReceive('deleteAuditChannel')->never();
     $this->app->instance(ConfigService::class, $config);
 
@@ -63,7 +63,7 @@ it('deletes immediately with --force flag', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-s3' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-s3')->andReturn($channel);
-    $config->shouldReceive('getAuditDefault')->andReturn(null);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
     $config->shouldReceive('deleteAuditChannel')->with('my-s3')->once();
     $this->app->instance(ConfigService::class, $config);
 
@@ -72,18 +72,18 @@ it('deletes immediately with --force flag', function (): void {
         ->assertExitCode(0);
 });
 
-it('shows default channel warning when deleting the default', function (): void {
+it('shows active channel warning when deleting a channel in audit.use', function (): void {
     $channel = ['type' => 'local'];
 
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
-    $config->shouldReceive('getAuditDefault')->andReturn('my-local');
+    $config->shouldReceive('getAuditUse')->andReturn(['my-local']);
     $config->shouldReceive('deleteAuditChannel')->with('my-local')->once();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:delete', ['name' => 'my-local', '--force' => true])
-        ->expectsOutputToContain('is the current default')
+        ->expectsOutputToContain('is active')
         ->assertExitCode(0);
 });
 
@@ -93,7 +93,7 @@ it('auto-selects the only channel when no name is given', function (): void {
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getAuditChannels')->andReturn(['only-channel' => $channel]);
     $config->shouldReceive('getAuditChannel')->with('only-channel')->andReturn($channel);
-    $config->shouldReceive('getAuditDefault')->andReturn(null);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
     $config->shouldReceive('deleteAuditChannel')->with('only-channel')->once();
     $this->app->instance(ConfigService::class, $config);
 

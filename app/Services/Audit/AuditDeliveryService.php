@@ -6,7 +6,7 @@ namespace App\Services\Audit;
 
 use App\Contracts\DeliveryAdapterInterface;
 use App\Enums\AuditChannelType;
-use App\Services\Cloning\RunLogWriter;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
 use Throwable;
 
@@ -16,7 +16,6 @@ class AuditDeliveryService
     private readonly array $adapters;
 
     public function __construct(
-        private readonly RunLogWriter $runLog,
         LocalDeliveryAdapter $localAdapter,
         StdoutDeliveryAdapter $stdoutAdapter,
         StderrDeliveryAdapter $stderrAdapter,
@@ -61,16 +60,11 @@ class AuditDeliveryService
         /** @var array<string, mixed> $allChannels */
         $allChannels = is_array($auditConfig['channels'] ?? null) ? $auditConfig['channels'] : [];
 
-        // Determine target channel names
         if ($channelOverride !== []) {
             $targetNames = $channelOverride;
-        } elseif (is_string($auditConfig['default'] ?? null)) {
-            $targetNames = [$auditConfig['default']];
         } else {
-            // Legacy fallback: audit_log.deliver_to
-            $legacySection = $auditConfig['audit_log'] ?? null;
-            $legacyDeliverTo = is_array($legacySection) ? ($legacySection['deliver_to'] ?? null) : null;
-            $targetNames = is_array($legacyDeliverTo) ? array_filter($legacyDeliverTo, is_string(...)) : [];
+            $useList = $auditConfig['use'] ?? null;
+            $targetNames = is_array($useList) ? array_values(array_filter($useList, is_string(...))) : [];
         }
 
         foreach ($targetNames as $channelName) {
@@ -93,7 +87,7 @@ class AuditDeliveryService
         $channelConfig = $allChannels[$channelName] ?? null;
 
         if (! is_array($channelConfig)) {
-            $this->runLog->log('warning', 'audit_channel_not_found', ['channel' => $channelName]);
+            Log::warning('audit_channel_not_found', ['channel' => $channelName]);
 
             return;
         }
@@ -107,7 +101,7 @@ class AuditDeliveryService
         $channelType = AuditChannelType::tryFrom($typeValue);
 
         if ($channelType === null) {
-            $this->runLog->log('warning', 'audit_channel_unsupported', ['channel' => $channelName, 'type' => $typeValue]);
+            Log::warning('audit_channel_unsupported', ['channel' => $channelName, 'type' => $typeValue]);
 
             return;
         }
@@ -140,7 +134,7 @@ class AuditDeliveryService
             .'_process.jsonl';
 
         if (! array_key_exists($channelType->value, $this->adapters)) {
-            $this->runLog->log('warning', 'audit_channel_unsupported', ['channel' => $channelName, 'type' => $typeValue]);
+            Log::warning('audit_channel_unsupported', ['channel' => $channelName, 'type' => $typeValue]);
 
             return;
         }
@@ -171,7 +165,7 @@ class AuditDeliveryService
                 $attempt++;
 
                 if ($attempt >= $maxAttempts) {
-                    $this->runLog->log('error', 'audit_delivery_failed', ['error' => $e->getMessage()]);
+                    Log::error('audit_delivery_failed', ['error' => $e->getMessage()]);
 
                     return;
                 }

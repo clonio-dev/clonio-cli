@@ -112,9 +112,8 @@ class InitCommand extends Command
             }
         }
 
-        // Ensure default channel is set
-        if ($config->getAuditDefault() === null) {
-            $config->setAuditDefault('local');
+        if ($config->getAuditUse() === []) {
+            $config->setAuditUse(['local']);
         }
 
         if ($created !== []) {

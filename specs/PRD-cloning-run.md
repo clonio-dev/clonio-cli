@@ -32,7 +32,7 @@ cloning:run
     {--skip-schema         : Skip schema replication; assume target schema already matches}
     {--skip-tables=        : Comma-separated list of table names to exclude from this run}
     {--only-tables=        : Comma-separated list of table names to include; all others skipped}
-    {--audit-channel=      : Comma-separated list of channel names to use for this run (overrides clonio.json deliver_to)}
+    {--audit-channel=      : Comma-separated list of channel names to use for this run (overrides clonio.json audit.use)}
 ```
 
 `--skip-tables` and `--only-tables` are mutually exclusive. Verbosity flags `-v` / `-vv` / `-vvv` are inherited from Symfony Console (see §6).
@@ -136,7 +136,7 @@ For each table (in resolved order):
 3. `AuditLogRenderer` renders the HTML audit document.
 4. `RunLogWriter` finalises the JSONL run log.
 5. `AuditDeliveryService` dispatches all artefacts to the configured channels.
-   - If `--audit-channel=` is provided, only the named channels receive artefacts (overrides `audit_log.deliver_to` and `run_log.deliver_to` for this run). Unknown channel names are reported as a warning and skipped.
+   - If `--audit-channel=` is provided, only the named channels receive artefacts (overrides `audit.use` for this run). Unknown channel names are reported as a warning and skipped.
    - If `--audit-channel=` is not provided, delivery proceeds as configured in `clonio.json`.
 
 If `audit` is absent from `clonio.json`, this phase is silently skipped.

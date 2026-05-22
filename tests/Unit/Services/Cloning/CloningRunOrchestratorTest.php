@@ -14,13 +14,17 @@ use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
+use App\Logging\AuditBuffer;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\DependencyResolver;
-use App\Services\Cloning\RunLogWriter;
 use App\Services\Cloning\SchemaReplicator;
 use App\Services\Cloning\SkippedRow;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
+
+beforeEach(function (): void {
+    app(AuditBuffer::class)->clear();
+});
 
 function makeOrchestratorConnection(string $name, DatabaseConnectionType $type = DatabaseConnectionType::Mysql): ConnectionData
 {
@@ -88,9 +92,7 @@ function makeOrchestrator(): CloningRunOrchestrator
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
 
-    $runLog = new RunLogWriter;
-
-    return new CloningRunOrchestrator($connector, $replicator, $resolver, $runLog);
+    return new CloningRunOrchestrator($connector, $replicator, $resolver);
 }
 
 it('calls TRUNCATE TABLE for mysql when clear is truncate', function (): void {
@@ -366,9 +368,7 @@ function makeOrchestratorWithSchemaFailures(array $schemaFailures): CloningRunOr
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
 
-    $runLog = new RunLogWriter;
-
-    return new CloningRunOrchestrator($connector, $replicator, $resolver, $runLog);
+    return new CloningRunOrchestrator($connector, $replicator, $resolver);
 }
 
 it('marks table as skipped_by_schema_failure when schema could not be created', function (): void {
@@ -550,7 +550,6 @@ it('captures per-row skip details when bulk insert fails and row-by-row fallback
     });
     DB::shouldReceive('purge')->andReturnNull();
 
-    $runLog = new RunLogWriter;
     $orchestratorWithLog = new CloningRunOrchestrator(
         Mockery::mock(DatabaseConnectionService::class)
             ->shouldReceive('open')
@@ -566,15 +565,14 @@ it('captures per-row skip details when bulk insert fails and row-by-row fallback
             ->shouldReceive('sort')
             ->andReturnUsing(static fn ($s, array $tables): array => $tables)
             ->getMock(),
-        $runLog,
     );
 
     $orchestratorWithLog->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
-    $logged = json_decode('['.str_replace("\n", ',', rtrim($runLog->flush(), "\n,")).']', true);
-    expect($logged)->toBeArray();
-
-    $skipEvents = array_values(array_filter($logged, static fn (array $e): bool => $e['event'] === 'row_skipped'));
+    $skipEvents = array_values(array_filter(
+        app(AuditBuffer::class)->records(),
+        static fn (array $e): bool => $e['event'] === 'row_skipped',
+    ));
     expect($skipEvents)->toHaveCount(2);
 
     $errorMessages = array_column($skipEvents, 'error');
@@ -618,7 +616,6 @@ it('falls back to null pk snapshot when source schema has no primary key column'
     });
     DB::shouldReceive('purge')->andReturnNull();
 
-    $runLog = new RunLogWriter;
     $orchestrator = new CloningRunOrchestrator(
         Mockery::mock(DatabaseConnectionService::class)
             ->shouldReceive('open')
@@ -634,13 +631,14 @@ it('falls back to null pk snapshot when source schema has no primary key column'
             ->shouldReceive('sort')
             ->andReturnUsing(static fn ($s, array $tables): array => $tables)
             ->getMock(),
-        $runLog,
     );
 
     $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
 
-    $logged = json_decode('['.str_replace("\n", ',', rtrim($runLog->flush(), "\n,")).']', true);
-    $skipEvents = array_values(array_filter($logged, static fn (array $e): bool => $e['event'] === 'row_skipped'));
+    $skipEvents = array_values(array_filter(
+        app(AuditBuffer::class)->records(),
+        static fn (array $e): bool => $e['event'] === 'row_skipped',
+    ));
 
     expect($skipEvents)->toHaveCount(1);
     expect($skipEvents[0]['pk'])->toBeNull();
@@ -765,7 +763,6 @@ it('does not fire onTableStart for tables excluded by cascade dependency', funct
         $connector,
         $replicator,
         $resolver,
-        new RunLogWriter,
     );
 
     $orchestrator->run(

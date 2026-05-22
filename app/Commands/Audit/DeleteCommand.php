@@ -65,12 +65,11 @@ class DeleteCommand extends Command
         ];
         $this->table(['Field', 'Value'], $rows);
 
-        // Warn if this is the default channel
-        $default = $config->getAuditDefault();
+        $use = $config->getAuditUse();
 
-        if ($name === $default) {
+        if (in_array($name, $use, true)) {
             $this->warn(sprintf(
-                "Channel '%s' is the current default (audit.default). Deleting it will leave audit.default unset.",
+                "Channel '%s' is active (audit.use). Deleting it will also remove it from the active list.",
                 $name,
             ));
         }

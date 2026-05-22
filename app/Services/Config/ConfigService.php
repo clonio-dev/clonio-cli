@@ -184,8 +184,7 @@ class ConfigService
         if (! isset($data['audit']) || ! is_array($data['audit'])) {
             $data['audit'] = [
                 'channels' => [],
-                'audit_log' => ['deliver_to' => []],
-                'run_log' => ['deliver_to' => []],
+                'use' => [],
             ];
         }
 
@@ -200,26 +199,43 @@ class ConfigService
         $this->save($data);
     }
 
-    public function getAuditDefault(): ?string
+    /** @return list<string> */
+    public function getAuditUse(): array
     {
         $data = $this->load();
         $auditSection = $data['audit'] ?? null;
-        $default = is_array($auditSection) ? ($auditSection['default'] ?? null) : null;
-
-        return is_string($default) ? $default : null;
-    }
-
-    public function setAuditDefault(string $channelName): void
-    {
-        $data = $this->load();
-
-        if (! isset($data['audit']) || ! is_array($data['audit'])) {
-            $data['audit'] = ['channels' => [], 'default' => $channelName];
-        } else {
-            $data['audit']['default'] = $channelName;
+        $raw = is_array($auditSection) ? ($auditSection['use'] ?? null) : null;
+        if (! is_array($raw)) {
+            return [];
         }
 
+        /** @var list<string> $filtered */
+        $filtered = array_values(array_filter($raw, is_string(...)));
+
+        return $filtered;
+    }
+
+    /** @param list<string> $channels */
+    public function setAuditUse(array $channels): void
+    {
+        $data = $this->load();
+        if (! isset($data['audit']) || ! is_array($data['audit'])) {
+            $data['audit'] = ['channels' => [], 'use' => []];
+        }
+
+        $data['audit']['use'] = $channels;
         $this->save($data);
+    }
+
+    public function addAuditUse(string $name): void
+    {
+        $current = $this->getAuditUse();
+        if (in_array($name, $current, true)) {
+            return;
+        }
+
+        $current[] = $name;
+        $this->setAuditUse($current);
     }
 
     public function deleteAuditChannel(string $name): void
@@ -238,58 +254,13 @@ class ConfigService
             $audit['channels'] = $channels;
         }
 
-        // Remove from deliver_to lists
-        foreach (['audit_log', 'run_log'] as $logType) {
-            $logSection = $audit[$logType] ?? null;
-            if (is_array($logSection) && isset($logSection['deliver_to']) && is_array($logSection['deliver_to'])) {
-                /** @var list<string> $deliverTo */
-                $deliverTo = $logSection['deliver_to'];
-                $logSection['deliver_to'] = array_values(array_filter(
-                    $deliverTo,
-                    static fn (string $ch): bool => $ch !== $name
-                ));
-                $audit[$logType] = $logSection;
-            }
+        if (isset($audit['use']) && is_array($audit['use'])) {
+            $audit['use'] = array_values(array_filter(
+                $audit['use'],
+                static fn (mixed $ch): bool => is_string($ch) && $ch !== $name,
+            ));
         }
 
-        $data['audit'] = $audit;
-        $this->save($data);
-    }
-
-    /** @return list<string> */
-    public function getAuditDeliverTo(string $logType): array
-    {
-        $data = $this->load();
-        $auditSection = $data['audit'] ?? null;
-        $logSection = is_array($auditSection) ? ($auditSection[$logType] ?? null) : null;
-        $raw = is_array($logSection) ? ($logSection['deliver_to'] ?? null) : null;
-        if (! is_array($raw)) {
-            return [];
-        }
-
-        /** @var list<string> $raw */
-        return array_values(array_filter($raw, is_string(...)));
-    }
-
-    /** @param list<string> $channels */
-    public function setAuditDeliverTo(string $logType, array $channels): void
-    {
-        $data = $this->load();
-        if (! isset($data['audit']) || ! is_array($data['audit'])) {
-            $data['audit'] = [
-                'channels' => [],
-                'audit_log' => ['deliver_to' => []],
-                'run_log' => ['deliver_to' => []],
-            ];
-        }
-
-        /** @var array<string, mixed> $audit */
-        $audit = $data['audit'];
-        if (! isset($audit[$logType]) || ! is_array($audit[$logType])) {
-            $audit[$logType] = ['deliver_to' => []];
-        }
-
-        $audit[$logType]['deliver_to'] = $channels;
         $data['audit'] = $audit;
         $this->save($data);
     }
