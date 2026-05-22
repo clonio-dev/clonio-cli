@@ -57,7 +57,7 @@ A summary table is displayed before writing. The operation can be cancelled at t
 |---|---|
 | `name` | Channel name (argument, optional) |
 | `--type=` | Channel type: `local`, `s3`, `email`, `ms_teams`, `slack`, `ntfy`, `stack` |
-| `--set-default` | Set this channel as the value of `audit.default` in `clonio.json` |
+| `--enable` | Add this channel to `audit.use` in `clonio.json` (active delivery list) |
 | `--deliver-audit-log` | Enable delivery of the signed HTML audit artefacts via this channel |
 | `--no-deliver-audit-log` | Disable delivery of the signed HTML audit artefacts via this channel |
 | `--deliver-run-log` | Enable delivery of the JSONL process log via this channel |
@@ -195,7 +195,7 @@ clonio audit:update s3-backup
 
 ## `audit:delete`
 
-Deletes an audit delivery channel from `clonio.json`. If the channel is set as `audit.default`, the `default` key is cleared automatically.
+Deletes an audit delivery channel from `clonio.json`. If the channel is referenced by `audit.use`, it is automatically removed from that list as well.
 
 ### Usage
 
@@ -205,7 +205,7 @@ clonio audit:delete [<name>] [--force]
 
 If `name` is omitted and only one channel exists, it is selected automatically. With multiple channels, an interactive selection prompt is shown.
 
-A warning is displayed if the channel is currently set as `audit.default` or is referenced by a `stack` channel.
+A warning is displayed if the channel is currently in `audit.use` or is referenced by a `stack` channel.
 
 ### Options
 
@@ -290,24 +290,25 @@ The `stack` type fans out delivery to multiple child channels. Use it when you w
 }
 ```
 
-### Default Channel
+### Active Channels (`audit.use`)
 
-The `audit.default` key selects which channel receives audit artefacts:
+The `audit.use` array selects which channels actively deliver audit artefacts:
 
 ```json
 "audit": {
-    "default": "local",
+    "use": ["local"],
     "channels": { ... }
 }
 ```
 
-To deliver to multiple channels, set `default` to a `stack` channel.
-The `--audit-channel` CLI flag overrides `default` for a single run.
+Channels configured in `audit.channels` but not listed in `audit.use` are inert — they will not deliver.
+To deliver to multiple channels, list them in `use` or define a `stack` channel and reference it.
+The `--audit-channel` CLI flag overrides `audit.use` for a single run.
 
-Use `--set-default` when adding a channel to set it as the default in one step:
+Use `--enable` when adding a channel to add it to `audit.use` in one step:
 
 ```bash
-clonio audit:add logs --type=local --local-path=./ --set-default
+clonio audit:add logs --type=local --local-path=./ --enable
 ```
 
 ### Secret encryption

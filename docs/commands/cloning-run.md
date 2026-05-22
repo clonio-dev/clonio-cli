@@ -613,7 +613,7 @@ Override the defaults for any individual channel with two optional boolean keys 
 }
 ```
 
-Delivery channels are configured in the `audit` block of `clonio.json`. The `audit.default` key selects which channel receives artefacts by default. Use `--audit-channel=<name>` to override the default for a single run. If `audit` is absent from `clonio.json`, all delivery is silently skipped.
+Delivery channels are configured in the `audit` block of `clonio.json`. The `audit.use` array (list of channel names) selects which channels actively deliver artefacts. Use `--audit-channel=<list>` to override `audit.use` for a single run. If `audit` is absent from `clonio.json`, all delivery is silently skipped.
 
 Verify the integrity of a stored audit log with `clonio cloning:verify-audit`.
 
