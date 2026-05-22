@@ -120,6 +120,8 @@ class CheckCommand extends Command
             $this->line(sprintf('      preserve_format: %s', ($t->preserveFormat ?? false) ? 'true' : 'false'));
         } elseif ($t->strategy === 'static') {
             $this->line(sprintf('      value:          "%s"', $t->staticValue ?? ''));
+        } elseif ($t->strategy === 'template') {
+            $this->line(sprintf('      template:       "%s"', $t->template ?? ''));
         }
 
         $this->line('');

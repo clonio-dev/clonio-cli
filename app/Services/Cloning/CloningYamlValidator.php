@@ -26,7 +26,7 @@ class CloningYamlValidator
 
     private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last', 'skip'];
 
-    private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'remapping'];
+    private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'template', 'remapping'];
 
     private const array VALID_HASH_ALGORITHMS = ['sha256', 'sha512', 'md5', 'sha1'];
 
@@ -411,6 +411,24 @@ class CloningYamlValidator
             case 'static':
                 if (! array_key_exists('value', $config)) {
                     $errors[] = sprintf("%s: 'static' strategy requires 'value'", $prefix);
+                }
+
+                break;
+
+            case 'template':
+                $template = $config['template'] ?? null;
+
+                if (! is_string($template) || $template === '') {
+                    $errors[] = sprintf("%s: 'template' strategy requires non-empty 'template' string", $prefix);
+                    break;
+                }
+
+                if (preg_match_all('/\{([a-zA-Z][a-zA-Z0-9]*)\}/', $template, $matches) > 0) {
+                    foreach ($matches[1] as $method) {
+                        if (! in_array($method, self::KNOWN_FAKER_METHODS, true)) {
+                            $errors[] = sprintf("%s: template references unknown faker method '%s'", $prefix, $method);
+                        }
+                    }
                 }
 
                 break;

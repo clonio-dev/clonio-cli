@@ -180,6 +180,7 @@ class DumpCommand extends Command
                         staticValue: $transformation->staticValue,
                         piiDetected: true,
                         piiCategory: $matcher->name,
+                        template: $transformation->template,
                     );
                 } else {
                     $columnDump = new ColumnDumpData(

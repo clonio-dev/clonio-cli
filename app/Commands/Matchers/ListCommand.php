@@ -97,6 +97,8 @@ class ListCommand extends Command
                         $transformLabel = sprintf('hash → %s', $matcher->transformation->hashAlgorithm ?? 'sha256');
                     } elseif ($matcher->transformation->strategy === 'mask') {
                         $transformLabel = 'mask';
+                    } elseif ($matcher->transformation->strategy === 'template' && $matcher->transformation->template !== null) {
+                        $transformLabel = sprintf('template → %s', $matcher->transformation->template);
                     } else {
                         $transformLabel = $matcher->transformation->strategy;
                     }

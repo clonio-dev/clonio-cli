@@ -260,6 +260,7 @@ class CloningYamlLoader
         $visibleChars = null;
         $preserveFormat = null;
         $staticValue = null;
+        $template = null;
         $remappingUse = null;
         $remappingForeignKeys = null;
 
@@ -286,6 +287,11 @@ class CloningYamlLoader
             case 'static':
                 $rawValue = $config['value'] ?? null;
                 $staticValue = is_scalar($rawValue) ? (string) $rawValue : null;
+                break;
+
+            case 'template':
+                $rawTemplate = $config['template'] ?? null;
+                $template = is_string($rawTemplate) ? $rawTemplate : null;
                 break;
 
             case 'remapping':
@@ -342,6 +348,7 @@ class CloningYamlLoader
             visibleChars: $visibleChars,
             preserveFormat: $preserveFormat,
             staticValue: $staticValue,
+            template: $template,
             remappingUse: $remappingUse,
             remappingForeignKeys: $remappingForeignKeys,
         );
