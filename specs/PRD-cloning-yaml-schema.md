@@ -23,7 +23,9 @@ Define the canonical structure of a `.cloning.yaml` file. This document is the s
 - **One file, one source** — each YAML file describes one source database connection. The target is always supplied at runtime (`--target`).
 - **Human-editable** — the format is intentionally flat and readable; complex nesting is avoided.
 - **Strict but forward-compatible** — `additionalProperties: false` at known paths; a `version` field allows future schema evolution.
-- **Explicit over implicit** — every value that affects behaviour must be stated in the file. No hidden defaults are applied at runtime. A reader must be able to understand the full transfer configuration by reading the YAML alone, without knowing what the tool's built-in defaults are. The single exception to this rule is column listing: columns that are not listed under a table are implicitly treated as `keep` (see §4.3).
+- **Explicit over implicit** — every value that affects behaviour must be stated in the file. No hidden defaults are applied at runtime. A reader must be able to understand the full transfer configuration by reading the YAML alone, without knowing what the tool's built-in defaults are. The exceptions to this rule are:
+  - **Column listing** — columns that are not listed under a table are implicitly treated as `keep` (see §4.3).
+  - **Hash `salt`** — when omitted on a `hash` strategy, the engine applies a per-run random salt (GDPR-aligned pseudonymization; see §5.3). This default is intentional security behaviour and cannot be expressed in the file itself.
 
 ---
 
@@ -128,19 +130,35 @@ email:
 
 ### 5.3 `hash`
 
-Replace the value with a deterministic hash. The same input always produces the same output.
+Replace the value with a hash. Within a single run, the same input always produces the same output — so foreign-key joins on hashed columns stay valid. Across runs, outputs differ when `salt` is omitted (see GDPR note).
+
+> **GDPR note — pseudonymization, not anonymization.**
+> Under GDPR Art. 4 Nr. 5 / Recital 26 and WP29 Opinion 05/2014, a deterministic
+> hash with a known or stable salt is **pseudonymization**: the data remains
+> personal data and stays in GDPR scope, because re-identification via
+> linkability or dictionary attacks is possible. To defeat cross-run
+> linkability, **omit `salt`**: the engine generates a fresh random salt per
+> run, kept only in memory. For high-risk PII (national IDs, payment data,
+> credentials, biometric data), prefer `fake`, `static`, or `null` over `hash`.
 
 ```yaml
-password:
+# Recommended: omit salt — engine applies a per-run random salt.
+loyalty_id:
   strategy: hash
   algorithm: sha256
-  salt: ""
+
+# Discouraged unless you need stable cross-run identifiers (e.g. internal
+# join keys you control); not GDPR-compliant for personal data.
+employee_id:
+  strategy: hash
+  algorithm: sha256
+  salt: "internal-stable-key"
 ```
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `algorithm` | string | yes | PHP `hash()` algorithm: `sha256`, `sha512`, `md5`, `sha1` |
-| `salt` | string | yes | Prefix prepended before hashing. Use `""` when no salt is desired. |
+| `salt` | string | no | Explicit salt prepended before hashing. **Omit** for the GDPR-aligned default: a per-run random salt that defeats cross-run linkability. Set only when you need stable cross-run output. |
 
 ### 5.4 `mask`
 
@@ -461,7 +479,7 @@ A YAML language server hint can be placed at the top of every generated file:
         },
         "salt": {
           "type": "string",
-          "description": "Salt prefix prepended before hashing. Required when strategy is 'hash'. Use empty string for no salt."
+          "description": "Optional salt prefix prepended before hashing. When omitted, the engine applies a per-run random salt (GDPR-aligned default that defeats cross-run linkability). Set only when stable cross-run output is required."
         },
         "visible_chars": {
           "type": "integer",
@@ -490,7 +508,7 @@ A YAML language server hint can be placed at the top of every generated file:
         },
         {
           "if": { "properties": { "strategy": { "const": "hash" } }, "required": ["strategy"] },
-          "then": { "required": ["algorithm", "salt"] }
+          "then": { "required": ["algorithm"] }
         },
         {
           "if": { "properties": { "strategy": { "const": "mask" } }, "required": ["strategy"] },
@@ -554,14 +572,19 @@ tables:
         faker_method: date
         faker_arguments: ["Y-m-d"]
       password:
+        # Credentials must never leak — replace with a fixed marker.
+        strategy: static
+        value: "REDACTED"
+      credit_card:
+        # Payment data: format-preserving synthetic value, never hashed.
+        strategy: fake
+        faker_method: creditCardNumber
+        faker_arguments: []
+      loyalty_id:
+        # Internal join key — hash with per-run random salt (no 'salt' field).
+        # Same input → same output within one run; differs across runs.
         strategy: hash
         algorithm: sha256
-        salt: "clonio"
-      credit_card:
-        strategy: mask
-        visible_chars: 4
-        mask_char: "*"
-        preserve_format: false
       internal_notes:
         strategy: "null"
       account_tag:

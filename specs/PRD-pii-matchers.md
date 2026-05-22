@@ -150,8 +150,18 @@ transformation:
 transformation:
   strategy: hash
   algorithm: sha256
-  salt: ""
+  # salt omitted → engine applies a per-run random salt at transform time
 ```
+
+`salt` is optional. When absent, the cloning engine prepends a 32-byte random salt that is generated once per `cloning:run`. This:
+
+- Defeats **cross-run linkability** (two snapshots of the same source database produce different hashes for the same input).
+- Defeats rainbow-table attacks against small input spaces (SSN, employee numbers, etc.).
+- Preserves **intra-run referential integrity** — identical source values still hash to identical target values within a single run, so foreign-key joins on hashed columns continue to work.
+
+Set an explicit `salt:` string only when reproducible hashes across runs are required (e.g. integration-test fixtures).
+
+> **GDPR.** `hash` produces *pseudonymized* data, not anonymized data (GDPR Art. 4 Nr. 5 / Recital 26). The output remains personal data and is still subject to the GDPR. For columns where any chance of linkage must be eliminated, use `fake`, `null`, or `static` instead.
 
 ### 7.3 `strategy: mask`
 
@@ -192,7 +202,7 @@ The binary baseline is organised into six groups. When `matchers init` writes th
 | `last_name` | Last Name | `/^(last[-_]?name\|sur[-_]?name\|family[-_]?name\|nachname\|nom)$/i` | `fake` → `lastName` |
 | `full_name` | Person Name | `/^(full[-_]?name\|display[-_]?name\|name\|user[-_]?name\|nick[-_]?name)$/i` | `fake` → `name` |
 | `date_of_birth` | Date of Birth | `/^(birth[-_]?date\|date[-_]?of[-_]?birth\|dob\|birthday\|geburtsdatum)$/i` | `fake` → `date` |
-| `national_id` | National ID / SSN | `/^(ssn\|social[-_]?security\|national[-_]?id\|tax[-_]?id\|personal[-_]?id)$/i` | `hash` → `sha256` |
+| `national_id` | National ID / SSN | `/^(ssn\|social[-_]?security\|national[-_]?id\|tax[-_]?id\|personal[-_]?id)$/i` | `fake` → `numerify('###-##-####')` |
 
 ### Group: `contact` — Contact Information
 
@@ -217,22 +227,22 @@ The binary baseline is organised into six groups. When `matchers init` writes th
 
 | Matcher key | Name | Patterns (non-exhaustive) | Strategy |
 |-------------|------|---------------------------|----------|
-| `credit_card` | Credit Card Number | `/^(credit[-_]?card\|card[-_]?number\|cc[-_]?number\|payment[-_]?card\|pan)$/i` | `mask` (visible_chars: 4, mask_char: `*`, preserve_format: false) |
-| `iban` | IBAN / Bank Account | `/^(iban\|bank[-_]?account\|kontonummer\|bic\|swift)$/i` | `mask` (visible_chars: 4, mask_char: `*`, preserve_format: false) |
+| `credit_card` | Credit Card Number | `/^(credit[-_]?card\|card[-_]?number\|cc[-_]?number\|payment[-_]?card\|pan)$/i` | `fake` → `creditCardNumber` |
+| `iban` | IBAN / Bank Account | `/^(iban\|bank[-_]?account\|kontonummer\|bic\|swift)$/i` | `fake` → `iban` |
 | `company_name` | Company Name | `/^(company\|company[-_]?name\|organization\|org[-_]?name\|firma)$/i` | `fake` → `company` |
 
 ### Group: `authentication` — Authentication & Secrets
 
 | Matcher key | Name | Patterns (non-exhaustive) | Strategy |
 |-------------|------|---------------------------|----------|
-| `password` | Password / Secret | `/^(password\|passwd\|pwd\|secret\|passwort)$/i` | `hash` → `sha256`, salt: `""` |
-| `api_token` | API Token / Key | `/^(token\|api[-_]?key\|access[-_]?token\|refresh[-_]?token\|auth[-_]?token)$/i` | `hash` → `sha256`, salt: `""` |
+| `password` | Password / Secret | `/^(password\|passwd\|pwd\|secret\|passwort)$/i` | `static` → `"REDACTED"` |
+| `api_token` | API Token / Key | `/^(token\|api[-_]?key\|access[-_]?token\|refresh[-_]?token\|auth[-_]?token)$/i` | `static` → `"REDACTED"` |
 
 ### Group: `network` — Network & Technical
 
 | Matcher key | Name | Patterns (non-exhaustive) | Strategy |
 |-------------|------|---------------------------|----------|
-| `ip_address` | IP Address | `/^(ip\|ip[-_]?addr(ess)?\|client[-_]?ip\|remote[-_]?ip\|user[-_]?ip)$/i` | `mask` (visible_chars: 0, mask_char: `*`, preserve_format: true) |
+| `ip_address` | IP Address | `/^(ip\|ip[-_]?addr(ess)?\|client[-_]?ip\|remote[-_]?ip\|user[-_]?ip)$/i` | `fake` → `ipv4` |
 
 ---
 
@@ -282,9 +292,9 @@ groups:
         patterns:
           - "/^(ssn|social[-_]?security|national[-_]?id|tax[-_]?id|personal[-_]?id)$/i"
         transformation:
-          strategy: hash
-          algorithm: sha256
-          salt: ""
+          strategy: fake
+          faker_method: numerify
+          faker_arguments: ["###-##-####"]
 
   contact:
     name: "Contact Information"
@@ -320,10 +330,9 @@ groups:
         patterns:
           - "/^(credit[-_]?card|card[-_]?number|cc[-_]?number|payment[-_]?card|pan)$/i"
         transformation:
-          strategy: mask
-          visible_chars: 4
-          mask_char: "*"
-          preserve_format: false
+          strategy: fake
+          faker_method: creditCardNumber
+          faker_arguments: []
 
       iban:
         name: "IBAN / Bank Account"
@@ -331,10 +340,9 @@ groups:
         patterns:
           - "/^(iban|bank[-_]?account|kontonummer)$/i"
         transformation:
-          strategy: mask
-          visible_chars: 4
-          mask_char: "*"
-          preserve_format: false
+          strategy: fake
+          faker_method: iban
+          faker_arguments: []
 
   authentication:
     name: "Authentication & Secrets"
@@ -345,9 +353,8 @@ groups:
         patterns:
           - "/^(password|passwd|pwd|secret|passwort)$/i"
         transformation:
-          strategy: hash
-          algorithm: sha256
-          salt: ""
+          strategy: static
+          value: "REDACTED"
 
       api_token:
         name: "API Token / Key"
@@ -366,7 +373,9 @@ groups:
         transformation:
           strategy: hash
           algorithm: sha256
-          salt: "loyalty"
+          # salt omitted on purpose — engine prepends a per-run random salt
+          # so joins stay valid within the run but the values are unrelatable
+          # to any other run / snapshot.
 ```
 
 ---
