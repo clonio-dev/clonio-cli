@@ -12,9 +12,28 @@ class AnonymizationEngine
 {
     private readonly Generator $faker;
 
-    public function __construct(string $locale = 'en_US')
+    private readonly string $runSalt;
+
+    /**
+     * The runSalt is a per-run random secret prepended to all unsalted hash
+     * operations. It defeats cross-run linkability (rainbow tables, joining
+     * hashed identifiers across multiple snapshots) while preserving intra-run
+     * referential integrity (the same source value hashes to the same target
+     * value across all tables of a single run).
+     *
+     * Pass an explicit salt only when reproducible hashes are required
+     * across runs (e.g. integration-test fixtures); production runs should
+     * always rely on the random default.
+     */
+    public function __construct(string $locale = 'en_US', ?string $runSalt = null)
     {
         $this->faker = Factory::create($locale);
+        $this->runSalt = $runSalt ?? bin2hex(random_bytes(32));
+    }
+
+    public function getRunSalt(): string
+    {
+        return $this->runSalt;
     }
 
     /**
@@ -54,7 +73,9 @@ class AnonymizationEngine
 
     private function applyHash(string $value, ColumnCloningConfigData $config): string
     {
-        return hash($config->hashAlgorithm ?? 'sha256', ($config->hashSalt ?? '').$value);
+        $salt = $config->hashSalt ?? $this->runSalt;
+
+        return hash($config->hashAlgorithm ?? 'sha256', $salt.$value);
     }
 
     private function applyMask(string $value, ColumnCloningConfigData $config): string

@@ -202,12 +202,26 @@ it('returns error when hash strategy has invalid algorithm', function (): void {
     expect(implode(' ', $errors))->toContain('algorithm');
 });
 
-it('returns error when hash strategy has no salt', function (): void {
+it('accepts hash strategy without salt (per-run random salt applied at transform time)', function (): void {
     $validator = new CloningYamlValidator;
     $config = makeValidConfig();
     $config['tables']['users']['columns']['password'] = [
         'strategy' => 'hash',
         'algorithm' => 'sha256',
+    ];
+
+    $errors = $validator->validate($config);
+
+    expect($errors)->toBe([]);
+});
+
+it('returns error when hash strategy has non-string salt', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['password'] = [
+        'strategy' => 'hash',
+        'algorithm' => 'sha256',
+        'salt' => 123,
     ];
 
     $errors = $validator->validate($config);

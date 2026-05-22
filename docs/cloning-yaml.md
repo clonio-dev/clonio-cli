@@ -186,19 +186,21 @@ age:
 
 ### `hash`
 
-Replace the value with a deterministic one-way hash. The same input always produces the same output — useful for preserving referential integrity across tables without exposing real values.
+Replace the value with a one-way hash so the same input produces the same output within a single run — useful for preserving referential integrity across tables without exposing real values.
 
 ```yaml
-password:
+employee_id:
   strategy: hash
   algorithm: sha256
-  salt: ""
+  # salt is optional; omit it to let Clonio apply a per-run random salt.
 ```
 
 | Field | Required | Values | Description |
 |-------|:--------:|--------|-------------|
-| `algorithm` | yes | `sha256` \| `sha512` \| `md5` \| `sha1` | PHP `hash()` algorithm. |
-| `salt` | yes | string | Prefix prepended to the value before hashing. Use `""` for no salt. |
+| `algorithm` | yes | `sha256` \| `sha512` \| `md5` \| `sha1` | PHP `hash()` algorithm. SHA-256 is recommended; SHA-1 / MD5 are accepted only for legacy use. |
+| `salt` | no | string | Prefix prepended to the value before hashing. **When omitted, Clonio generates a 32-byte random salt per run.** Hashes are stable inside one run (joins work) but unrelatable across runs (rainbow tables and cross-snapshot linking are defeated). Set an explicit salt only if reproducible hashes across runs are required (e.g. test fixtures). |
+
+> **GDPR notice.** `hash` is a *pseudonymization* technique, not anonymization (GDPR Art. 4 Nr. 5 / Recital 26). The output is still personal data and remains in scope of the GDPR. For columns where re-identification by linkage must be impossible, prefer `fake` or `null`.
 
 ---
 
@@ -473,9 +475,12 @@ tables:
         faker_method: date
         faker_arguments: ["Y-m-d"]
       password:
+        strategy: static
+        value: "REDACTED"
+      employee_id:
         strategy: hash
         algorithm: sha256
-        salt: "clonio"
+        # salt omitted on purpose — engine uses its per-run random salt.
       internal_notes:
         strategy: "null"
       account_tag:
