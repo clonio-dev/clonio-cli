@@ -60,7 +60,7 @@ it('delivers to the default channel', function (): void {
 
     $service->deliver(
         auditConfig: [
-            'default' => 'local-main',
+            'use' => ['local-main'],
             'channels' => [
                 'local-main' => ['type' => 'local', 'path' => 'clonio-logs'],
             ],
@@ -82,7 +82,7 @@ it('delivers only audit when delivers_process_log is false', function (): void {
 
     $service->deliver(
         auditConfig: [
-            'default' => 'local-main',
+            'use' => ['local-main'],
             'channels' => [
                 'local-main' => ['type' => 'local', 'path' => 'clonio-logs', 'delivers_process_log' => false],
             ],
@@ -104,7 +104,7 @@ it('channel override overrides default', function (): void {
 
     $service->deliver(
         auditConfig: [
-            'default' => 'local-secondary',
+            'use' => ['local-secondary'],
             'channels' => [
                 'local-main' => ['type' => 'local', 'path' => 'clonio-logs'],
                 'local-secondary' => ['type' => 'local', 'path' => 'clonio-logs-2'],
@@ -129,7 +129,7 @@ it('stack channel fans out to child channels', function (): void {
 
     $service->deliver(
         auditConfig: [
-            'default' => 'all',
+            'use' => ['all'],
             'channels' => [
                 'local-a' => ['type' => 'local', 'path' => './a'],
                 'local-b' => ['type' => 'local', 'path' => './b'],
@@ -150,7 +150,7 @@ it('logs warning for unknown channel name', function (): void {
 
     $service->deliver(
         auditConfig: [
-            'default' => 'nonexistent',
+            'use' => ['nonexistent'],
             'channels' => [],
         ],
         auditArtefacts: ['audit.html' => '<html/>'],
@@ -163,11 +163,11 @@ it('logs warning for unknown channel name', function (): void {
     expect($events)->toContain('audit_channel_not_found');
 });
 
-it('falls back to legacy deliver_to when default is missing', function (): void {
+it('skips delivery when use list is empty', function (): void {
     Storage::fake('local');
 
     $adapter = Mockery::mock(LocalDeliveryAdapter::class);
-    $adapter->shouldReceive('deliver')->twice()->andReturn();
+    $adapter->shouldNotReceive('deliver');
 
     $service = makeDeliveryService(localOverride: $adapter);
 
@@ -176,7 +176,7 @@ it('falls back to legacy deliver_to when default is missing', function (): void 
             'channels' => [
                 'local-main' => ['type' => 'local', 'path' => 'clonio-logs'],
             ],
-            'audit_log' => ['deliver_to' => ['local-main']],
+            'use' => [],
         ],
         auditArtefacts: ['audit.html' => '<html/>'],
         processLogContent: '{"event": "test"}',

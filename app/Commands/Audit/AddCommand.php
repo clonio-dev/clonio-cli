@@ -41,7 +41,7 @@ class AddCommand extends Command
         {--ntfy-token=              : (ntfy) ntfy bearer token — stored encrypted}
         {--ntfy-priority=           : (ntfy) Notification priority — min|low|default|high|max}
         {--ntfy-tags=               : (ntfy) Comma-separated tag strings}
-        {--set-default              : Set this channel as audit.default}';
+        {--enable                   : Add this channel to audit.use (active delivery list)}';
 
     /**
      * @var string
@@ -120,8 +120,8 @@ class AddCommand extends Command
         try {
             $config->setAuditChannel($name, $channelConfig);
 
-            if ((bool) $this->option('set-default')) {
-                $config->setAuditDefault($name);
+            if ((bool) $this->option('enable')) {
+                $config->addAuditUse($name);
             }
         } catch (RuntimeException $runtimeException) {
             $this->error('Failed to save channel: '.$runtimeException->getMessage());

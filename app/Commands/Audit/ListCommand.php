@@ -24,7 +24,7 @@ class ListCommand extends Command
     public function handle(ConfigService $config): int
     {
         $channels = $config->getAuditChannels();
-        $default = $config->getAuditDefault();
+        $use = $config->getAuditUse();
 
         if ($channels === []) {
             $this->line('No audit channels configured. Run `audit:add` to add one.');
@@ -39,14 +39,14 @@ class ListCommand extends Command
             $type = AuditChannelType::tryFrom($typeValue);
             $typeLabel = $type?->label() ?? $typeValue;
 
-            $isDefault = ($name === $default) ? '★' : '';
+            $isActive = in_array($name, $use, true) ? '★' : '';
 
             $details = $this->getDetails($type, $channel);
 
-            $rows[] = [$name, $typeLabel, $isDefault, $details];
+            $rows[] = [$name, $typeLabel, $isActive, $details];
         }
 
-        $this->table(['Name', 'Type', 'Default', 'Details'], $rows);
+        $this->table(['Name', 'Type', 'Active', 'Details'], $rows);
 
         return ExitCode::Success->value;
     }

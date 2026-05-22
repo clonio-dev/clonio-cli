@@ -195,39 +195,46 @@ it('saves multiple audit channels independently', function (): void {
         ->and(array_keys($channels))->toBe(['ch1', 'ch2']);
 });
 
-it('deletes an audit channel and removes it from deliver_to lists', function (): void {
+it('deletes an audit channel and removes it from the use list', function (): void {
     $config = new ConfigService;
 
     $config->setAuditChannel('ch1', ['type' => 'local']);
-    $config->setAuditDeliverTo('audit_log', ['ch1']);
-    $config->setAuditDeliverTo('run_log', ['ch1']);
+    $config->setAuditChannel('ch2', ['type' => 'stdout']);
+    $config->setAuditUse(['ch1', 'ch2']);
 
     $config->deleteAuditChannel('ch1');
 
     expect($config->hasAuditChannel('ch1'))->toBeFalse()
-        ->and($config->getAuditDeliverTo('audit_log'))->toBeEmpty()
-        ->and($config->getAuditDeliverTo('run_log'))->toBeEmpty();
+        ->and($config->getAuditUse())->toBe(['ch2']);
 });
 
 it('deleteAuditChannel is a no-op when audit section is missing', function (): void {
     $config = new ConfigService;
-    // Should not throw
     $config->deleteAuditChannel('nonexistent');
     expect($config->getAuditChannels())->toBeEmpty();
 });
 
-it('saves and retrieves audit deliver_to lists', function (): void {
+it('saves and retrieves audit use list', function (): void {
     $config = new ConfigService;
 
     $config->setAuditChannel('ch1', ['type' => 'local']);
-    $config->setAuditDeliverTo('audit_log', ['ch1']);
-    $config->setAuditDeliverTo('run_log', []);
+    $config->setAuditUse(['ch1']);
 
-    expect($config->getAuditDeliverTo('audit_log'))->toBe(['ch1'])
-        ->and($config->getAuditDeliverTo('run_log'))->toBeEmpty();
+    expect($config->getAuditUse())->toBe(['ch1']);
 });
 
-it('getAuditDeliverTo returns empty array when audit section is absent', function (): void {
+it('addAuditUse appends and is idempotent', function (): void {
     $config = new ConfigService;
-    expect($config->getAuditDeliverTo('audit_log'))->toBeEmpty();
+
+    $config->setAuditChannel('ch1', ['type' => 'local']);
+    $config->addAuditUse('ch1');
+    $config->addAuditUse('ch1');
+    $config->addAuditUse('ch2');
+
+    expect($config->getAuditUse())->toBe(['ch1', 'ch2']);
+});
+
+it('getAuditUse returns empty array when audit section is absent', function (): void {
+    $config = new ConfigService;
+    expect($config->getAuditUse())->toBeEmpty();
 });

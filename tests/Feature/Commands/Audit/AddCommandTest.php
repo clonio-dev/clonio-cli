@@ -55,14 +55,14 @@ it('successfully adds a local channel with all options', function (): void {
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-local')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-local', Mockery::type('array'))->once();
-    $config->shouldReceive('setAuditDefault')->with('my-local')->once();
+    $config->shouldReceive('addAuditUse')->with('my-local')->once();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
         'name' => 'my-local',
         '--type' => 'local',
         '--local-path' => './clonio-logs/{year}',
-        '--set-default' => true,
+        '--enable' => true,
     ])
         ->expectsConfirmation('Save this channel?', 'yes')
         ->expectsOutputToContain("Channel 'my-local' added successfully.")
@@ -175,7 +175,7 @@ it('successfully adds an s3 channel with all options via flags', function (): vo
     $config->shouldReceive('exists')->andReturn(true);
     $config->shouldReceive('hasAuditChannel')->with('my-s3')->andReturn(false);
     $config->shouldReceive('setAuditChannel')->with('my-s3', Mockery::type('array'))->once();
-    $config->shouldReceive('setAuditDefault')->with('my-s3')->once();
+    $config->shouldReceive('addAuditUse')->with('my-s3')->once();
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', [
@@ -187,7 +187,7 @@ it('successfully adds an s3 channel with all options via flags', function (): vo
         '--s3-access-key' => 'AKIA123',
         '--s3-secret-key' => 'my-secret',
         '--s3-path-prefix' => 'clonio/logs/',
-        '--set-default' => true,
+        '--enable' => true,
     ])
         ->expectsConfirmation('Override retry settings?', 'no')
         ->expectsConfirmation('Save this channel?', 'yes')

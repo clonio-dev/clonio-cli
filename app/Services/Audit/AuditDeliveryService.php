@@ -60,16 +60,11 @@ class AuditDeliveryService
         /** @var array<string, mixed> $allChannels */
         $allChannels = is_array($auditConfig['channels'] ?? null) ? $auditConfig['channels'] : [];
 
-        // Determine target channel names
         if ($channelOverride !== []) {
             $targetNames = $channelOverride;
-        } elseif (is_string($auditConfig['default'] ?? null)) {
-            $targetNames = [$auditConfig['default']];
         } else {
-            // Legacy fallback: audit_log.deliver_to
-            $legacySection = $auditConfig['audit_log'] ?? null;
-            $legacyDeliverTo = is_array($legacySection) ? ($legacySection['deliver_to'] ?? null) : null;
-            $targetNames = is_array($legacyDeliverTo) ? array_filter($legacyDeliverTo, is_string(...)) : [];
+            $useList = $auditConfig['use'] ?? null;
+            $targetNames = is_array($useList) ? array_values(array_filter($useList, is_string(...))) : [];
         }
 
         foreach ($targetNames as $channelName) {
