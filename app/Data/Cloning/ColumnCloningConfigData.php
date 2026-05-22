@@ -21,6 +21,7 @@ final readonly class ColumnCloningConfigData
         public ?int $visibleChars,
         public ?bool $preserveFormat,
         public ?string $staticValue,
+        public ?string $template = null,
         public ?string $remappingUse = null,
         public ?array $remappingForeignKeys = null,
     ) {}

@@ -28,7 +28,7 @@ class ColumnEditCommand extends Command
         {file?              : Path to the .cloning.yaml file}
         {--table=           : Table name}
         {--column=          : Column name}
-        {--strategy=        : Strategy to apply (keep, fake, hash, mask, static, remapping)}
+        {--strategy=        : Strategy to apply (keep, fake, hash, mask, static, template, remapping)}
         {--faker-method=    : (fake) Faker method name}
         {--faker-arguments= : (fake) Comma-separated faker arguments}
         {--algorithm=       : (hash) Hash algorithm}
@@ -37,6 +37,7 @@ class ColumnEditCommand extends Command
         {--visible-chars=   : (mask) Number of visible characters}
         {--preserve-format  : (mask) Preserve original format}
         {--value=           : (static) Static replacement value}
+        {--template=        : (template) Template with {fakerMethod} placeholders}
         {--remapping-use=   : (remapping) random_integer | new_uuid}';
 
     /**
@@ -87,6 +88,13 @@ class ColumnEditCommand extends Command
                 'description' => 'Replace every value with a fixed string.',
                 'parameters' => [
                     ['name' => 'value', 'label' => 'Static value', 'type' => 'string', 'default' => ''],
+                ],
+            ],
+            'template' => [
+                'label' => 'Template',
+                'description' => 'Build a string by mixing literal text with {fakerMethod} placeholders. Example: {userName}@acme.test',
+                'parameters' => [
+                    ['name' => 'template', 'label' => 'Template (use {fakerMethod} for placeholders)', 'type' => 'string', 'default' => ''],
                 ],
             ],
             'remapping' => [

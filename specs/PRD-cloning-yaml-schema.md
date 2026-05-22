@@ -80,7 +80,7 @@ tables:
       clear: false       # optional; false | truncate | delete — default false
     columns:             # optional section; see column rule below
       <column_name>:
-        strategy: keep   # keep | fake | hash | mask | null | static
+        strategy: keep   # keep | fake | hash | mask | null | static | template
         # strategy-specific options follow (see §5)
 ```
 
@@ -202,6 +202,24 @@ environment_tag:
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `value` | string | yes | The fixed value to use (may be empty string) |
+
+### 5.7 `template`
+
+Build a string from literal text mixed with `{fakerMethod}` placeholders. Each placeholder is replaced with the no-argument output of the named Faker method. The original column value is **not** read — every output is freshly generated.
+
+```yaml
+email:
+  strategy: template
+  template: "{userName}@acme.test"
+```
+
+| Field | Type | Required | Description |
+|-------|------|:--------:|-------------|
+| `template` | string | yes | Non-empty template. Tokens `{methodName}` are expanded; other text passes through. Methods must be in §6. |
+
+Constraints:
+- Only no-argument Faker methods are accepted inside `{…}`. For methods with arguments (e.g. `numerify`), use the `fake` strategy instead.
+- The validator rejects unknown method names at config-load time.
 
 ---
 
@@ -458,7 +476,7 @@ A YAML language server hint can be placed at the top of every generated file:
       "properties": {
         "strategy": {
           "type": "string",
-          "enum": ["keep", "fake", "hash", "mask", "null", "static"]
+          "enum": ["keep", "fake", "hash", "mask", "null", "static", "template"]
         },
         "faker_method": {
           "type": "string",
@@ -499,6 +517,11 @@ A YAML language server hint can be placed at the top of every generated file:
         "value": {
           "type": "string",
           "description": "Fixed replacement value. Required when strategy is 'static'."
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Template string with {fakerMethod} placeholders. Required when strategy is 'template'."
         }
       },
       "allOf": [
@@ -517,6 +540,10 @@ A YAML language server hint can be placed at the top of every generated file:
         {
           "if": { "properties": { "strategy": { "const": "static" } }, "required": ["strategy"] },
           "then": { "required": ["value"] }
+        },
+        {
+          "if": { "properties": { "strategy": { "const": "template" } }, "required": ["strategy"] },
+          "then": { "required": ["template"] }
         }
       ]
     }
@@ -552,9 +579,9 @@ tables:
       # Only columns that need transformation are listed.
       # All other columns (id, status, created_at, …) are implicitly kept as-is.
       email:
-        strategy: fake
-        faker_method: safeEmail
-        faker_arguments: []
+        # Template: fixed domain, randomized local part.
+        strategy: template
+        template: "{userName}@acme.test"
       first_name:
         strategy: fake
         faker_method: firstName

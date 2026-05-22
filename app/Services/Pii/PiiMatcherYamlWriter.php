@@ -68,6 +68,8 @@ class PiiMatcherYamlWriter
                     }
                 } elseif ($t->strategy === 'static') {
                     $transformationData['value'] = $t->staticValue ?? '';
+                } elseif ($t->strategy === 'template') {
+                    $transformationData['template'] = $t->template ?? '';
                 }
 
                 $matcherEntry['transformation'] = $transformationData;

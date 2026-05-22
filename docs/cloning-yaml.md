@@ -261,6 +261,36 @@ environment_tag:
 
 ---
 
+### `template`
+
+Build a string by mixing literal text with `{fakerMethod}` placeholders. Each placeholder is expanded to the output of the named [Faker method](#supported-faker-methods) (no-argument form). Useful when only part of a value needs to be randomized — typically a fixed email domain, a fixed phone prefix, or a fixed organizational suffix.
+
+```yaml
+email:
+  strategy: template
+  template: "{userName}@acme.test"
+
+display_name:
+  strategy: template
+  template: "{firstName} {lastName}"
+
+support_ref:
+  strategy: template
+  template: "ACME-{uuid}"
+```
+
+| Field | Required | Description |
+|-------|:--------:|-------------|
+| `template` | yes | Non-empty string. Tokens of the form `{methodName}` are replaced; everything else is passed through. The validator rejects unknown faker methods at config-load time. |
+
+Notes:
+
+- Only no-argument Faker methods are supported inside `{…}`. For arguments, use the regular `fake` strategy.
+- The original column value is **not** read. Each output is freshly generated per row, so cross-run linkability is defeated by design.
+- Validators reject `{unknown}` tokens; at runtime, unknown methods render as the empty string (defense in depth).
+
+---
+
 ### `remapping`
 
 Assign a new primary key value to each transferred row and rewrite all foreign key columns that reference it, preventing ID collisions on the target.

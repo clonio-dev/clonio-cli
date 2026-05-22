@@ -188,6 +188,22 @@ transformation:
   value: "[REDACTED]"
 ```
 
+### 7.6 `strategy: template`
+
+Build a string from literal text plus `{fakerMethod}` placeholders. Each placeholder is replaced with the no-argument output of the named Faker method. Useful when only part of a value needs to be randomized (e.g. fixed email domain).
+
+```yaml
+transformation:
+  strategy: template
+  template: "{userName}@acme.test"
+```
+
+| Field | Required | Description |
+|-------|:--------:|-------------|
+| `template` | yes | Non-empty template string. Unknown method names are rejected at config-load time. |
+
+Only no-argument Faker methods may appear inside `{…}`. For arguments, use `strategy: fake` instead.
+
 ---
 
 ## 8. Baseline Groups and Matchers

@@ -49,6 +49,7 @@ class AnonymizationEngine
             'fake' => $this->applyFake($config),
             'hash' => $this->applyHash(is_scalar($value) ? (string) $value : '', $config),
             'mask' => $this->applyMask(is_scalar($value) ? (string) $value : '', $config),
+            'template' => $this->applyTemplate($config),
             default => $value,
         };
     }
@@ -76,6 +77,46 @@ class AnonymizationEngine
         $salt = $config->hashSalt ?? $this->runSalt;
 
         return hash($config->hashAlgorithm ?? 'sha256', $salt.$value);
+    }
+
+    /**
+     * Expand a template string by replacing `{fakerMethod}` placeholders with
+     * Faker output. Literal text passes through unchanged. Useful for mixing
+     * randomized parts with fixed parts (e.g. fixed email domain).
+     *
+     * Example: `{userName}@acme.test` → `alice.j42@acme.test`
+     *
+     * Unknown methods on the Faker generator render as the empty string so
+     * pipelines fail soft; the validator rejects them at config-load time.
+     */
+    private function applyTemplate(ColumnCloningConfigData $config): string
+    {
+        $template = $config->template;
+
+        if ($template === null || $template === '') {
+            return '';
+        }
+
+        return (string) preg_replace_callback(
+            '/\{([a-zA-Z][a-zA-Z0-9]*)\}/',
+            function (array $matches): string {
+                $method = $matches[1];
+
+                if (! method_exists($this->faker, $method)) {
+                    return '';
+                }
+
+                /** @var mixed $result */
+                $result = $this->faker->{$method}();
+
+                if (is_array($result)) {
+                    return implode(' ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $result));
+                }
+
+                return is_scalar($result) ? (string) $result : '';
+            },
+            $template,
+        );
     }
 
     private function applyMask(string $value, ColumnCloningConfigData $config): string

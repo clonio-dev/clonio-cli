@@ -174,6 +174,10 @@ class PiiMatcherYamlReader
             ? $rawTransformation['value']
             : null;
 
+        $template = isset($rawTransformation['template']) && is_string($rawTransformation['template'])
+            ? $rawTransformation['template']
+            : null;
+
         /** @var list<scalar> $fakerArguments */
         return new ColumnCloningConfigData(
             columnName: $columnName,
@@ -186,6 +190,7 @@ class PiiMatcherYamlReader
             visibleChars: $visibleChars,
             preserveFormat: $preserveFormat,
             staticValue: $staticValue,
+            template: $template,
         );
     }
 }

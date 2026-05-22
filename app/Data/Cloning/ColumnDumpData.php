@@ -20,5 +20,6 @@ final readonly class ColumnDumpData
         public ?string $staticValue,
         public bool $piiDetected,
         public ?string $piiCategory,
+        public ?string $template = null,
     ) {}
 }

@@ -14,6 +14,7 @@ function makeColumn(
     ?string $maskChar = null,
     ?int $visibleChars = null,
     ?bool $preserveFormat = null,
+    ?string $template = null,
 ): ColumnCloningConfigData {
     return new ColumnCloningConfigData(
         columnName: 'test_col',
@@ -26,6 +27,7 @@ function makeColumn(
         visibleChars: $visibleChars,
         preserveFormat: $preserveFormat,
         staticValue: $staticValue,
+        template: $template,
     );
 }
 
@@ -146,4 +148,51 @@ it('does not mask when value is shorter than visible chars', function (): void {
     $engine = new AnonymizationEngine;
     $col = makeColumn('mask', maskChar: '*', visibleChars: 100, preserveFormat: false);
     expect($engine->transform('hi', $col))->toBe('hi');
+});
+
+it('expands template placeholders with faker output', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: '{userName}@acme.test');
+    $result = $engine->transform('alice@somewhere.com', $col);
+
+    expect($result)->toBeString();
+    expect($result)->toEndWith('@acme.test');
+    expect($result)->not->toBe('{userName}@acme.test');
+});
+
+it('keeps literal text outside placeholders', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: 'static-prefix-{uuid}-suffix');
+    $result = $engine->transform('input', $col);
+
+    expect($result)->toBeString();
+    expect($result)->toStartWith('static-prefix-');
+    expect($result)->toEndWith('-suffix');
+});
+
+it('renders unknown faker method as empty string in template', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: 'before-{thisMethodDoesNotExist}-after');
+    $result = $engine->transform('input', $col);
+
+    expect($result)->toBe('before--after');
+});
+
+it('returns empty string when template is null or empty', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: null);
+    expect($engine->transform('input', $col))->toBe('');
+
+    $col = makeColumn('template', template: '');
+    expect($engine->transform('input', $col))->toBe('');
+});
+
+it('expands multiple placeholders in one template', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: '{firstName}.{lastName}@firma.de');
+    $result = $engine->transform('input', $col);
+
+    expect($result)->toBeString();
+    expect($result)->toEndWith('@firma.de');
+    expect($result)->toContain('.');
 });

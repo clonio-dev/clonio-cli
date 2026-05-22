@@ -126,6 +126,10 @@ class CloningYamlWriter
                             $lines[] = sprintf('        value: %s', $this->encodeYamlScalar($column->staticValue));
                             break;
 
+                        case 'template':
+                            $lines[] = sprintf('        template: %s', $this->encodeYamlScalar($column->template));
+                            break;
+
                         case 'keep':
                             // no extra fields needed
                             break;
