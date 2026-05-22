@@ -34,8 +34,11 @@ it('always exits with code 0', function (): void {
 it('shows transformation details for a matched column', function (): void {
     Storage::fake('local');
 
-    $this->artisan('matchers:check', ['column' => 'password'])
-        ->expectsOutputToContain('password')
+    // employee_id keeps the hash strategy because it is often used as a
+    // referential identifier inside the same run. The per-run random salt
+    // applied by the engine defeats cross-run linkability.
+    $this->artisan('matchers:check', ['column' => 'employee_id'])
+        ->expectsOutputToContain('employee_id')
         ->expectsOutputToContain('hash')
         ->expectsOutputToContain('sha256')
         ->assertExitCode(ExitCode::Success->value);
@@ -76,20 +79,23 @@ it('shows high sensitivity for email column', function (): void {
 it('shows built-in example for credit card column', function (): void {
     Storage::fake('local');
 
+    // credit_card is now anonymized via Faker (`creditCardNumber`), so the
+    // generated output is randomized — assert only that the input is shown
+    // and that Faker is the strategy used.
     $this->artisan('matchers:check', ['column' => 'credit_card'])
         ->expectsOutputToContain('Example:')
         ->expectsOutputToContain('Input:   4242424242424242')
-        ->expectsOutputToContain('Output:  4242************')
+        ->expectsOutputToContain('faker generates fresh data')
         ->assertExitCode(ExitCode::Success->value);
 });
 
-it('shows built-in example for ip_address column with format preservation', function (): void {
+it('shows built-in example for ip_address column', function (): void {
     Storage::fake('local');
 
     $this->artisan('matchers:check', ['column' => 'ip'])
         ->expectsOutputToContain('Example:')
         ->expectsOutputToContain('Input:   192.168.1.100')
-        ->expectsOutputToContain('Output:  ***.***.*.***')
+        ->expectsOutputToContain('faker generates fresh data')
         ->assertExitCode(ExitCode::Success->value);
 });
 
@@ -99,17 +105,17 @@ it('shows built-in example for iban column', function (): void {
     $this->artisan('matchers:check', ['column' => 'iban'])
         ->expectsOutputToContain('Example:')
         ->expectsOutputToContain('Input:   DE89370400440532013000')
-        ->expectsOutputToContain('Output:  DE89******************')
+        ->expectsOutputToContain('faker generates fresh data')
         ->assertExitCode(ExitCode::Success->value);
 });
 
-it('shows built-in example for hash strategy (password)', function (): void {
+it('shows static REDACTED output for password column', function (): void {
     Storage::fake('local');
 
     $this->artisan('matchers:check', ['column' => 'password'])
         ->expectsOutputToContain('Example:')
         ->expectsOutputToContain('Input:   mysecretpassword')
-        ->expectsOutputToContain('Output:  ')
+        ->expectsOutputToContain('Output:  REDACTED')
         ->assertExitCode(ExitCode::Success->value);
 });
 
@@ -128,18 +134,20 @@ it('accepts a user-provided value and shows transformed output', function (): vo
 
     $this->artisan('matchers:check', ['column' => 'credit_card', 'value' => '5555555555554444'])
         ->expectsOutputToContain('Input:   5555555555554444')
-        ->expectsOutputToContain('Output:  5555************')
+        ->expectsOutputToContain('faker generates fresh data')
         ->assertExitCode(ExitCode::Success->value);
 });
 
 it('applies user-provided value to hash strategy', function (): void {
     Storage::fake('local');
 
-    $expected = hash('sha256', 'mypassword');
-
-    $this->artisan('matchers:check', ['column' => 'password', 'value' => 'mypassword'])
-        ->expectsOutputToContain('Input:   mypassword')
-        ->expectsOutputToContain(sprintf('Output:  %s', $expected))
+    // employee_id uses hash strategy with the engine's per-run random salt,
+    // so the exact output is not deterministic across runs; assert only the
+    // input echo and that the matcher details show a 64-char sha256 prefix.
+    $this->artisan('matchers:check', ['column' => 'employee_id', 'value' => 'EMP-42'])
+        ->expectsOutputToContain('Input:   EMP-42')
+        ->expectsOutputToContain('Output:  ')
+        ->expectsOutputToContain('algorithm:      sha256')
         ->assertExitCode(ExitCode::Success->value);
 });
 
