@@ -20,6 +20,7 @@ use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class CloningRunOrchestrator
@@ -28,7 +29,6 @@ class CloningRunOrchestrator
         private readonly DatabaseConnectionService $connector,
         private readonly SchemaReplicator $replicator,
         private readonly DependencyResolver $resolver,
-        private readonly RunLogWriter $runLog,
     ) {}
 
     /**
@@ -89,10 +89,10 @@ class CloningRunOrchestrator
             );
 
             if ($schemaFailures === []) {
-                $this->runLog->log('info', 'schema_replicated', ['tables' => $sortedTables]);
+                Log::info('schema_replicated', ['tables' => $sortedTables]);
             } else {
                 foreach ($schemaFailures as $failedTable => $errorMsg) {
-                    $this->runLog->log('error', 'schema_table_failed', ['table' => $failedTable, 'error' => $errorMsg]);
+                    Log::error('schema_table_failed', ['table' => $failedTable, 'error' => $errorMsg]);
                 }
             }
         }
@@ -108,13 +108,13 @@ class CloningRunOrchestrator
         foreach ($explicitlyExcluded as $tableName) {
             $reason = $onlyTables !== [] ? 'excluded by --only filter' : 'explicitly excluded via --skip';
             $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByFlag, 0, 0, 0.0, $reason);
-            $this->runLog->log('info', 'table_skipped_by_flag', ['table' => $tableName, 'reason' => $reason]);
+            Log::info('table_skipped_by_flag', ['table' => $tableName, 'reason' => $reason]);
         }
 
         foreach ($cascadeExclusions as $tableName) {
             $reason = 'excluded due to foreign key dependency';
             $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByCascade, 0, 0, 0.0, $reason);
-            $this->runLog->log('info', 'table_skipped_by_cascade', ['table' => $tableName, 'reason' => $reason]);
+            Log::info('table_skipped_by_cascade', ['table' => $tableName, 'reason' => $reason]);
         }
 
         // Transfer each remaining table
@@ -129,7 +129,7 @@ class CloningRunOrchestrator
             if (array_key_exists($tableName, $schemaFailures)) {
                 $reason = $schemaFailures[$tableName];
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $reason);
-                $this->runLog->log('warning', 'table_skipped_schema_failure', ['table' => $tableName, 'reason' => $reason]);
+                Log::warning('table_skipped_schema_failure', ['table' => $tableName, 'reason' => $reason]);
                 $success = false;
                 ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
@@ -143,7 +143,7 @@ class CloningRunOrchestrator
             // Check if table exists in source
             if (! $sourceSchema->hasTable($tableName)) {
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::NotFound, 0, 0, 0.0, null);
-                $this->runLog->log('warning', 'table_not_found', ['table' => $tableName]);
+                Log::warning('table_not_found', ['table' => $tableName]);
                 ($onProgress)($tableName, TableRunStatus::NotFound, 0, 0, []);
 
                 continue;
@@ -179,9 +179,9 @@ class CloningRunOrchestrator
 
             if ($failed) {
                 $success = false;
-                $this->runLog->log('error', 'table_transfer_failed', ['table' => $tableName, 'reason' => $reason]);
+                Log::error('table_transfer_failed', ['table' => $tableName, 'reason' => $reason]);
             } else {
-                $this->runLog->log('info', 'table_transferred', ['table' => $tableName, 'rows' => $rows, 'skipped' => $skipped]);
+                Log::info('table_transferred', ['table' => $tableName, 'rows' => $rows, 'skipped' => $skipped]);
             }
 
             $tableResults[] = new TableRunResultData($tableName, $status, $rows, $skipped, $tableDuration, $reason);
@@ -199,7 +199,7 @@ class CloningRunOrchestrator
                     try {
                         $this->replicator->correctAutoIncrement($target, $tableName, $pkColumn);
                     } catch (Throwable $e) {
-                        $this->runLog->log('warning', 'auto_increment_correction_failed', ['table' => $tableName, 'error' => $e->getMessage()]);
+                        Log::warning('auto_increment_correction_failed', ['table' => $tableName, 'error' => $e->getMessage()]);
                     }
                 }
             }
@@ -339,7 +339,7 @@ class CloningRunOrchestrator
                                 sqlError: $rowError->getMessage(),
                             );
                             $skippedRows[] = $skippedRow;
-                            $this->runLog->log('warning', 'row_skipped', [
+                            Log::warning('row_skipped', [
                                 'table' => $skippedRow->tableName,
                                 'chunk_offset' => $skippedRow->chunkOffset,
                                 'row_index' => $skippedRow->rowIndex,

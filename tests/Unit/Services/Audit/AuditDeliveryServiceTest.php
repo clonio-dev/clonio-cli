@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\DeliveryAdapterInterface;
 use App\Enums\AuditChannelType;
+use App\Logging\AuditBuffer;
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\EmailDeliveryAdapter;
 use App\Services\Audit\LocalDeliveryAdapter;
@@ -12,13 +13,15 @@ use App\Services\Audit\S3DeliveryAdapter;
 use App\Services\Audit\StderrDeliveryAdapter;
 use App\Services\Audit\StdoutDeliveryAdapter;
 use App\Services\Audit\WebhookDeliveryAdapter;
-use App\Services\Cloning\RunLogWriter;
 use Illuminate\Support\Facades\Storage;
 
-function makeDeliveryService(RunLogWriter $runLog, ?DeliveryAdapterInterface $localOverride = null, ?DeliveryAdapterInterface $stdoutOverride = null, ?DeliveryAdapterInterface $stderrOverride = null): AuditDeliveryService
+beforeEach(function (): void {
+    app(AuditBuffer::class)->clear();
+});
+
+function makeDeliveryService(?DeliveryAdapterInterface $localOverride = null, ?DeliveryAdapterInterface $stdoutOverride = null, ?DeliveryAdapterInterface $stderrOverride = null): AuditDeliveryService
 {
     return new AuditDeliveryService(
-        runLog: $runLog,
         localAdapter: $localOverride ?? new LocalDeliveryAdapter,
         stdoutAdapter: $stdoutOverride ?? new StdoutDeliveryAdapter,
         stderrAdapter: $stderrOverride ?? new StderrDeliveryAdapter,
@@ -36,8 +39,7 @@ it('silently skips delivery when audit config is null', function (): void {
     $adapter = Mockery::mock(LocalDeliveryAdapter::class);
     $adapter->shouldNotReceive('deliver');
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog, localOverride: $adapter);
+    $service = makeDeliveryService(localOverride: $adapter);
 
     $service->deliver(
         auditConfig: null,
@@ -54,8 +56,7 @@ it('delivers to the default channel', function (): void {
     $adapter = Mockery::mock(LocalDeliveryAdapter::class);
     $adapter->shouldReceive('deliver')->twice()->andReturn();
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog, localOverride: $adapter);
+    $service = makeDeliveryService(localOverride: $adapter);
 
     $service->deliver(
         auditConfig: [
@@ -77,8 +78,7 @@ it('delivers only audit when delivers_process_log is false', function (): void {
     $adapter = Mockery::mock(LocalDeliveryAdapter::class);
     $adapter->shouldReceive('deliver')->once()->andReturn();
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog, localOverride: $adapter);
+    $service = makeDeliveryService(localOverride: $adapter);
 
     $service->deliver(
         auditConfig: [
@@ -100,8 +100,7 @@ it('channel override overrides default', function (): void {
     $adapter = Mockery::mock(LocalDeliveryAdapter::class);
     $adapter->shouldReceive('deliver')->twice()->andReturn();
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog, localOverride: $adapter);
+    $service = makeDeliveryService(localOverride: $adapter);
 
     $service->deliver(
         auditConfig: [
@@ -126,8 +125,7 @@ it('stack channel fans out to child channels', function (): void {
     // local-b gets audit + process log (2 calls)
     $localAdapter->shouldReceive('deliver')->times(4)->andReturn();
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog, localOverride: $localAdapter);
+    $service = makeDeliveryService(localOverride: $localAdapter);
 
     $service->deliver(
         auditConfig: [
@@ -148,8 +146,7 @@ it('stack channel fans out to child channels', function (): void {
 it('logs warning for unknown channel name', function (): void {
     Storage::fake('local');
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog);
+    $service = makeDeliveryService();
 
     $service->deliver(
         auditConfig: [
@@ -162,8 +159,8 @@ it('logs warning for unknown channel name', function (): void {
         templateVars: [],
     );
 
-    $log = $runLog->flush();
-    expect($log)->toContain('audit_channel_not_found');
+    $events = array_column(app(AuditBuffer::class)->records(), 'event');
+    expect($events)->toContain('audit_channel_not_found');
 });
 
 it('falls back to legacy deliver_to when default is missing', function (): void {
@@ -172,8 +169,7 @@ it('falls back to legacy deliver_to when default is missing', function (): void 
     $adapter = Mockery::mock(LocalDeliveryAdapter::class);
     $adapter->shouldReceive('deliver')->twice()->andReturn();
 
-    $runLog = new RunLogWriter;
-    $service = makeDeliveryService($runLog, localOverride: $adapter);
+    $service = makeDeliveryService(localOverride: $adapter);
 
     $service->deliver(
         auditConfig: [

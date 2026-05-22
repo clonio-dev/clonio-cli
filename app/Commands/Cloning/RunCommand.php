@@ -19,6 +19,7 @@ use App\Data\Schema\SchemaDiffData;
 use App\Enums\AuditChannelType;
 use App\Enums\ExitCode;
 use App\Exceptions\KeyRemappingExhaustedException;
+use App\Logging\AuditBuffer;
 use App\Services\Audit\AuditDeliveryService;
 use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogRenderer;
@@ -35,7 +36,6 @@ use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
-use App\Services\Cloning\RunLogWriter;
 use App\Services\Cloning\SkippedRow;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
@@ -46,6 +46,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
@@ -91,24 +92,17 @@ class RunCommand extends Command
         DatabaseConnectionService $connector,
         SchemaInspector $inspector,
         CloningRunOrchestrator $orchestrator,
-        RunLogWriter $runLog,
+        AuditBuffer $auditBuffer,
     ): int {
         $ci = (bool) $this->option('ci');
         $verbosity = $this->getOutput()->getVerbosity();
         $isVerbose = $verbosity >= OutputInterface::VERBOSITY_VERBOSE;
         $isVeryVerbose = $verbosity >= OutputInterface::VERBOSITY_VERY_VERBOSE;
 
-        if ($isVeryVerbose) {
-            /** @param array<string, mixed> $extra */
-            $runLog->setLiveOutput(function (string $level, string $event, array $extra): void {
-                $formatted = sprintf('[%s] %s', strtoupper($level), $event);
-                if ($extra !== []) {
-                    $formatted .= ' '.json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                }
-
-                fwrite(STDERR, $formatted."\n");
-            });
-        }
+        // Map Symfony verbosity to stderr log threshold so `-v` / `-vv` surface
+        // info / debug events on stderr without needing a separate live-output path.
+        $stderrLevel = $isVeryVerbose ? 'debug' : ($isVerbose ? 'info' : ($ci ? 'error' : 'warning'));
+        config(['logging.channels.stderr.level' => $stderrLevel]);
 
         $step = new VerboseStepRenderer($this->output, $ci);
 
@@ -297,7 +291,7 @@ class RunCommand extends Command
 
         // ─── Phase 4-6: Full Run ───────────────────────────────────────────────
         $startedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $runLog->log('info', 'run_started', ['source' => $config->connectionName, 'target' => $targetName]);
+        Log::info('run_started', ['source' => $config->connectionName, 'target' => $targetName]);
 
         try {
             $sourceSchema = $step->run('Resolving table order', fn (): DatabaseSchemaData => $inspector->inspect($sourceConnection));
@@ -467,12 +461,12 @@ class RunCommand extends Command
         );
 
         $finishedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $runLog->log('info', 'run_finished', ['success' => $result->success, 'rows' => $result->totalRows]);
+        Log::info('run_finished', ['success' => $result->success, 'rows' => $result->totalRows]);
 
         // ─── Phase 6b: Key Mapping Cleanup ────────────────────────────────────
         if ($keyRemappingService instanceof KeyRemappingService) {
             $keyRemappingService->cleanup();
-            $runLog->log('info', 'key_mapping_cleanup_completed', []);
+            Log::info('key_mapping_cleanup_completed', []);
         }
 
         // ─── Phase 7: Audit ────────────────────────────────────────────────────
@@ -486,7 +480,6 @@ class RunCommand extends Command
             $builder = new AuditLogBuilder($signer);
             $renderer = new AuditLogRenderer;
             $deliveryService = new AuditDeliveryService(
-                runLog: $runLog,
                 localAdapter: new LocalDeliveryAdapter,
                 stdoutAdapter: new StdoutDeliveryAdapter,
                 stderrAdapter: new StderrDeliveryAdapter,
@@ -502,7 +495,7 @@ class RunCommand extends Command
             /**
              * @var array{auditArtefacts: array<string, string>, templateVars: array<string, string>, processLogContent: string} $auditPayload
              */
-            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $runLog, $sourceConnection, $targetConnection): array {
+            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $auditBuffer, $sourceConnection, $targetConnection): array {
                 $auditRecord = $builder->build(
                     config: $config,
                     result: $result,
@@ -535,7 +528,7 @@ class RunCommand extends Command
                     'timestamp' => $timestamp,
                 ];
 
-                $processLogContent = $runLog->flush();
+                $processLogContent = $auditBuffer->flush();
 
                 return [
                     'auditArtefacts' => $auditArtefacts,
