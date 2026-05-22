@@ -13,6 +13,20 @@ use Throwable;
 
 class DatabaseConnectionService
 {
+    /** Hosts that mean "this machine" — rewritten to host.docker.internal inside a container. */
+    private const array LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+
+    private const string DOCKER_HOST_GATEWAY = 'host.docker.internal';
+
+    private readonly bool $inDocker;
+
+    public function __construct(?bool $inDocker = null)
+    {
+        // /.dockerenv is created by the Docker engine inside every container and
+        // is the most portable signal across Linux, macOS, and Windows daemons.
+        $this->inDocker = $inDocker ?? is_file('/.dockerenv');
+    }
+
     /**
      * Returns the plain-text password, decrypting the 'encrypted:' prefix if present.
      *
@@ -51,7 +65,7 @@ class DatabaseConnectionService
         /** @var array<string, mixed> $config */
         $config = [
             'driver' => $connection->type->value,
-            'host' => $connection->host,
+            'host' => $this->resolveHost($connection->host),
             'port' => $connection->port,
             'database' => $connection->database,
             'username' => $connection->username,
@@ -77,6 +91,23 @@ class DatabaseConnectionService
         }
 
         return $config;
+    }
+
+    /**
+     * Rewrite loopback hostnames to host.docker.internal when running inside a
+     * container — inside the container, 127.0.0.1 is the container itself and
+     * cannot reach a database running on the host. Non-loopback hostnames are
+     * left untouched so user-specified addresses still win.
+     */
+    private function resolveHost(?string $host): ?string
+    {
+        if (! $this->inDocker || $host === null) {
+            return $host;
+        }
+
+        return in_array(strtolower($host), self::LOOPBACK_HOSTS, true)
+            ? self::DOCKER_HOST_GATEWAY
+            : $host;
     }
 
     /**
