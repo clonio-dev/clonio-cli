@@ -2,26 +2,14 @@
 
 namespace App\Providers;
 
-use App\Enums\AuditChannelType;
-use App\Services\Audit\AuditDeliveryService;
-use App\Services\Audit\EmailDeliveryAdapter;
-use App\Services\Audit\LocalDeliveryAdapter;
-use App\Services\Audit\NtfyDeliveryAdapter;
-use App\Services\Audit\S3DeliveryAdapter;
-use App\Services\Audit\StderrDeliveryAdapter;
-use App\Services\Audit\StdoutDeliveryAdapter;
-use App\Services\Audit\WebhookDeliveryAdapter;
-use App\Services\Cloning\CloningRunOrchestrator;
-use App\Services\Cloning\DependencyResolver;
-use App\Services\Cloning\RunLogWriter;
-use App\Services\Cloning\SchemaReplicator;
-use App\Services\Database\DatabaseConnectionService;
-use App\Services\Schema\SchemaInspector;
+use App\Logging\AuditBuffer;
+use App\Services\Config\ConfigService;
 use Composer\InstalledVersions;
 use Dotenv\Dotenv;
 use Illuminate\Support\Env;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -78,32 +66,37 @@ class AppServiceProvider extends ServiceProvider
             return InstalledVersions::getPrettyVersion('clonio-dev/clonio-cli') ?? 'unreleased';
         });
 
-        // Bind RunLogWriter as a singleton per-request so the same instance is shared
-        // between CloningRunOrchestrator and AuditDeliveryService during a single run.
-        $this->app->singleton(RunLogWriter::class, static fn (): RunLogWriter => new RunLogWriter);
+        // Shared singleton: the audit_buffer log channel records into this instance,
+        // and the cloning:run command reads `flush()` to embed JSONL in the audit artefact.
+        $this->app->singleton(AuditBuffer::class, static fn (): AuditBuffer => new AuditBuffer);
 
-        // Bind CloningRunOrchestrator with all dependencies
-        $this->app->bind(CloningRunOrchestrator::class, fn (): CloningRunOrchestrator => new CloningRunOrchestrator(
-            connector: $this->app->make(DatabaseConnectionService::class),
-            replicator: new SchemaReplicator(
-                $this->app->make(SchemaInspector::class),
-                $this->app->make(DatabaseConnectionService::class),
-            ),
-            resolver: new DependencyResolver,
-            runLog: $this->app->make(RunLogWriter::class),
-        ));
+        $this->mergeClonioJsonLogging();
+    }
 
-        // Bind AuditDeliveryService
-        $this->app->bind(AuditDeliveryService::class, fn (): AuditDeliveryService => new AuditDeliveryService(
-            runLog: $this->app->make(RunLogWriter::class),
-            localAdapter: new LocalDeliveryAdapter,
-            stdoutAdapter: new StdoutDeliveryAdapter,
-            stderrAdapter: new StderrDeliveryAdapter,
-            s3Adapter: new S3DeliveryAdapter,
-            emailAdapter: new EmailDeliveryAdapter,
-            teamsAdapter: new WebhookDeliveryAdapter(AuditChannelType::MsTeams),
-            slackAdapter: new WebhookDeliveryAdapter(AuditChannelType::Slack),
-            ntfyAdapter: new NtfyDeliveryAdapter,
-        ));
+    /**
+     * Merge the `logging` section of clonio.json over the defaults in config/logging.php.
+     *
+     * Lets users override the default stderr level, swap channels, or add their own
+     * channels (e.g. a file handler) without forking the package config. Runs in
+     * register() before any Log call, so Laravel's LogManager sees the merged config
+     * on first channel resolution.
+     */
+    private function mergeClonioJsonLogging(): void
+    {
+        try {
+            $config = $this->app->make(ConfigService::class)->load();
+        } catch (Throwable) {
+            return;
+        }
+
+        $override = $config['logging'] ?? null;
+
+        if (! is_array($override)) {
+            return;
+        }
+
+        /** @var array<string, mixed> $current */
+        $current = (array) config('logging');
+        config(['logging' => array_replace_recursive($current, $override)]);
     }
 }
