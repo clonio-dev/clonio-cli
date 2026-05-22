@@ -97,6 +97,10 @@ class CloningRunOrchestrator
             }
         }
 
+        // Single engine per run: shared per-run random salt across all tables
+        // preserves intra-run hash joinability while defeating cross-run linkability.
+        $engine = new AnonymizationEngine($config->options->fakerLocale);
+
         // Transfer data
         /** @var list<TableRunResultData> $tableResults */
         $tableResults = [];
@@ -169,6 +173,7 @@ class CloningRunOrchestrator
                 $source,
                 $target,
                 $pkColumns,
+                $engine,
                 $keyRemapping,
                 $config->keyRemapping,
             );
@@ -254,10 +259,10 @@ class CloningRunOrchestrator
         ConnectionData $source,
         ConnectionData $target,
         array $pkColumns,
+        AnonymizationEngine $engine,
         ?KeyRemappingService $keyRemapping = null,
         ?KeyRemappingConfigData $keyRemappingConfig = null,
     ): array {
-        $engine = new AnonymizationEngine($options->fakerLocale);
         $sourceConn = $this->connector->open($source);
         $targetConn = $this->connector->open($target);
 

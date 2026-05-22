@@ -48,7 +48,12 @@ class PiiMatcherYamlWriter
                         $transformationData['algorithm'] = $t->hashAlgorithm;
                     }
 
-                    $transformationData['salt'] = $t->hashSalt ?? '';
+                    // Only write 'salt' when the matcher carries an explicit
+                    // override. Omitting it instructs the engine to apply its
+                    // per-run random salt (GDPR-aligned pseudonymization).
+                    if ($t->hashSalt !== null) {
+                        $transformationData['salt'] = $t->hashSalt;
+                    }
                 } elseif ($t->strategy === 'mask') {
                     if ($t->visibleChars !== null) {
                         $transformationData['visible_chars'] = $t->visibleChars;

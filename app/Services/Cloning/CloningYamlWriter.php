@@ -107,7 +107,13 @@ class CloningYamlWriter
 
                         case 'hash':
                             $lines[] = sprintf('        algorithm: %s', $column->hashAlgorithm ?? 'sha256');
-                            $lines[] = sprintf('        salt: "%s"', addslashes($column->hashSalt ?? ''));
+                            // Salt is only written when explicitly configured.
+                            // An absent 'salt' key tells the engine to apply
+                            // a per-run random salt (GDPR-aligned default).
+                            if ($column->hashSalt !== null) {
+                                $lines[] = sprintf('        salt: "%s"', addslashes($column->hashSalt));
+                            }
+
                             break;
 
                         case 'mask':

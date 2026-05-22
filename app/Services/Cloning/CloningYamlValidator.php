@@ -383,8 +383,12 @@ class CloningYamlValidator
                     $errors[] = sprintf("%s: 'hash' strategy requires 'algorithm' (one of: %s)", $prefix, implode(', ', self::VALID_HASH_ALGORITHMS));
                 }
 
-                if (! array_key_exists('salt', $config)) {
-                    $errors[] = sprintf("%s: 'hash' strategy requires 'salt'", $prefix);
+                // 'salt' is optional — when omitted, the engine applies a
+                // per-run random salt that defeats cross-run linkability.
+                // An explicit string salt is honored for reproducible hashes
+                // across runs (e.g. integration-test fixtures).
+                if (array_key_exists('salt', $config) && ! is_string($config['salt'])) {
+                    $errors[] = sprintf("%s: 'hash' strategy 'salt' must be a string when provided", $prefix);
                 }
 
                 break;
