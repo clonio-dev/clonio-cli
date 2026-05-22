@@ -449,6 +449,7 @@ jobs:
             ### Docker
 
             ```bash
+            docker pull ghcr.io/clonio-dev/clonio:${{ github.ref_name }}
             docker run --rm -v "$(pwd)":/workspace \
               ghcr.io/clonio-dev/clonio:${{ github.ref_name }} --version
             ```
