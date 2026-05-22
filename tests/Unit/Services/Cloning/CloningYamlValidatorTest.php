@@ -269,6 +269,47 @@ it('passes a valid static column', function (): void {
     expect($errors)->toBe([]);
 });
 
+it('passes a valid template column', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['email'] = [
+        'strategy' => 'template',
+        'template' => '{userName}@acme.test',
+    ];
+
+    $errors = $validator->validate($config);
+
+    expect($errors)->toBe([]);
+});
+
+it('returns error when template strategy has empty template', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['email'] = [
+        'strategy' => 'template',
+        'template' => '',
+    ];
+
+    $errors = $validator->validate($config);
+
+    expect($errors)->not->toBe([]);
+    expect(implode(' ', $errors))->toContain('template');
+});
+
+it('returns error when template references unknown faker method', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['email'] = [
+        'strategy' => 'template',
+        'template' => '{notAFakerMethod}@acme.test',
+    ];
+
+    $errors = $validator->validate($config);
+
+    expect($errors)->not->toBe([]);
+    expect(implode(' ', $errors))->toContain('notAFakerMethod');
+});
+
 // ─── key_remapping validation ─────────────────────────────────────────────────
 
 it('passes validation for a valid key_remapping section with new_uuid strategy', function (): void {
