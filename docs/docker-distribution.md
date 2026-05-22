@@ -92,10 +92,73 @@ Prefer an exact `:1.2.3` tag in CI. `:latest` is safe for interactive use but dr
 
 ## Image internals
 
-- **Base:** `alpine:3` with `ca-certificates` and `tzdata` installed.
-- **Binary:** the same static `clonio-linux-x86_64` and `clonio-linux-aarch64` artifacts that are attached to each GitHub Release — placed at `/usr/local/bin/clonio` inside the image.
-- **Entrypoint:** `/usr/local/bin/clonio`. Any arguments after `docker run … image` are passed straight through.
-- **Workdir:** `/workspace`. Mount your project root here.
+- **Base:** `php:8.5-cli-alpine` with `ca-certificates`, `tzdata`, and the PHP extensions Clonio needs (`gd`, `pcntl`, `pdo_mysql`, `pdo_pgsql` on top of the bundled set).
+- **Source layout:** application code + vendor live at `/app`. The CLI entrypoint is `/app/clonio` (the same script you run as `php clonio` in development).
+- **Entrypoint:** `php /app/clonio`. Any arguments after `docker run … image` are passed straight through.
+- **Workdir:** `/workspace`. Mount your project root here so `clonio.json`, `.env`, and `.cloning.yaml` resolve against the same `getcwd()` Clonio uses on the host.
+- **Build:** the image is built from source (no static binary dependency), so the publish step can run in parallel with the platform-specific binary builds.
+
+### Mounting host files
+
+Clonio reads `clonio.json` and `.env` from `getcwd()` — inside the container that's `/workspace`. The `.env` file holds `APP_KEY`, which is required to decrypt any `encrypted:…` connection passwords. **Both files must be on the mounted volume**, otherwise the container will either skip configuration entirely or fail to decrypt credentials.
+
+```bash
+docker run --rm -v "$(pwd)":/workspace \
+  ghcr.io/clonio-dev/clonio:latest connection:list
+```
+
+If you keep `clonio.json` / `.env` outside your project root, mount that directory instead and pass `-w /workspace` is unnecessary (`WORKDIR` already points there).
+
+### Connecting to a database on the host
+
+Inside the container, `127.0.0.1` and `localhost` refer to the container itself — not your host machine. If MySQL / PostgreSQL is running on your laptop, the container needs a different hostname to reach it.
+
+**macOS and Windows Docker Desktop** — use the magic DNS name `host.docker.internal`:
+
+```bash
+docker run --rm -v "$(pwd)":/workspace ghcr.io/clonio-dev/clonio:latest \
+  connection:update source --host=host.docker.internal --no-interaction
+```
+
+Then test:
+
+```bash
+docker run --rm -v "$(pwd)":/workspace ghcr.io/clonio-dev/clonio:latest \
+  connection:test source
+```
+
+**Linux** — `host.docker.internal` is not enabled by default. Either:
+
+```bash
+# Option A: add the gateway hostname explicitly
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -v "$(pwd)":/workspace ghcr.io/clonio-dev/clonio:latest \
+  connection:test source
+
+# Option B: share the host network (simplest, Linux-only)
+docker run --rm --network=host \
+  -v "$(pwd)":/workspace ghcr.io/clonio-dev/clonio:latest \
+  connection:test source
+```
+
+**MySQL bind address.** Default MySQL listens on `127.0.0.1` only and will reject the container's bridge IP. Verify and adjust if needed:
+
+```bash
+mysql -uroot -e "SHOW VARIABLES LIKE 'bind_address';"
+# if 127.0.0.1 only: set `bind-address = 0.0.0.0` in my.cnf and restart mysqld.
+```
+
+(Same applies to PostgreSQL's `listen_addresses` in `postgresql.conf`, plus a matching `pg_hba.conf` entry for the bridge subnet.)
+
+### Building locally
+
+```bash
+make docker-build          # host arch only — fast
+make docker-build-multiarch # linux/amd64 + linux/arm64 via QEMU
+make docker-test           # build + run the docker smoke test
+make docker-shell          # interactive sh inside the image, with $(pwd) mounted
+```
 
 ---
 
