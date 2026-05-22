@@ -111,16 +111,9 @@ If you keep `clonio.json` / `.env` outside your project root, mount that directo
 
 ### Connecting to a database on the host
 
-Inside the container, `127.0.0.1` and `localhost` refer to the container itself — not your host machine. If MySQL / PostgreSQL is running on your laptop, the container needs a different hostname to reach it.
+Inside the container, `127.0.0.1` and `localhost` refer to the container itself — not your host machine. Clonio detects when it is running inside a container (via `/.dockerenv`) and automatically rewrites loopback hostnames (`127.0.0.1`, `localhost`, `::1`) to `host.docker.internal` at connection time. Your `clonio.json` stays unchanged; the rewrite happens in memory only.
 
-**macOS and Windows Docker Desktop** — use the magic DNS name `host.docker.internal`:
-
-```bash
-docker run --rm -v "$(pwd)":/workspace ghcr.io/clonio-dev/clonio:latest \
-  connection:update source --host=host.docker.internal --no-interaction
-```
-
-Then test:
+Non-loopback hostnames are passed through untouched, so explicit addresses still win.
 
 ```bash
 docker run --rm -v "$(pwd)":/workspace ghcr.io/clonio-dev/clonio:latest \
@@ -142,14 +135,14 @@ docker run --rm --network=host \
   connection:test source
 ```
 
-**MySQL bind address.** Default MySQL listens on `127.0.0.1` only and will reject the container's bridge IP. Verify and adjust if needed:
+**MySQL bind address.** Default MySQL listens on `127.0.0.1` only and will reject the container's bridge IP even after the hostname rewrite. Verify and adjust if needed:
 
 ```bash
 mysql -uroot -e "SHOW VARIABLES LIKE 'bind_address';"
 # if 127.0.0.1 only: set `bind-address = 0.0.0.0` in my.cnf and restart mysqld.
 ```
 
-(Same applies to PostgreSQL's `listen_addresses` in `postgresql.conf`, plus a matching `pg_hba.conf` entry for the bridge subnet.)
+The matching MySQL user grant must allow non-loopback origins (`'root'@'%'` instead of `'root'@'localhost'`). Same applies to PostgreSQL's `listen_addresses` in `postgresql.conf`, plus a matching `pg_hba.conf` entry for the bridge subnet.
 
 ### Building locally
 
