@@ -28,6 +28,8 @@ class DumpArchiver
         $zipPath = Storage::disk('local')->path($zipFileName);
         $entryName = basename($sqlFileName);
 
+        throw_unless(is_file($sqlPath), RuntimeException::class, sprintf('Dump file not found: %s', $sqlFileName));
+
         $zip = new ZipArchive;
         $opened = $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
