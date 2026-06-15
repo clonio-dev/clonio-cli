@@ -238,3 +238,61 @@ it('getAuditUse returns empty array when audit section is absent', function (): 
     $config = new ConfigService;
     expect($config->getAuditUse())->toBeEmpty();
 });
+
+// ─── Error / edge paths ───────────────────────────────────────────────────────
+
+it('throws when clonio.json exists but cannot be read', function (): void {
+    Storage::shouldReceive('exists')->with('clonio.json')->andReturnTrue();
+    Storage::shouldReceive('get')->with('clonio.json')->andReturnNull();
+    Storage::shouldReceive('path')->andReturn('/tmp/clonio.json');
+
+    expect(fn () => (new ConfigService)->load())
+        ->toThrow(RuntimeException::class, 'permission denied');
+});
+
+it('throws when the configuration cannot be written', function (): void {
+    Storage::shouldReceive('put')->andReturnFalse();
+    Storage::shouldReceive('path')->andReturn('/tmp/clonio.json');
+
+    expect(fn () => (new ConfigService)->save(['connections' => []]))
+        ->toThrow(RuntimeException::class, 'permission denied');
+});
+
+it('returns empty connections when the connections key is not an array', function (): void {
+    Storage::put('clonio.json', json_encode(['connections' => 'not-an-array']));
+
+    expect((new ConfigService)->getConnections())->toBe([]);
+});
+
+it('skips non-string connection names and non-array connection entries', function (): void {
+    // "0" decodes to an int PHP array key (skipped); "broken" maps to a string (skipped)
+    $json = '{"connections":{"0":{"type":"mysql","host":"h","database":"d"},"broken":"not-an-array"}}';
+    Storage::put('clonio.json', $json);
+
+    expect((new ConfigService)->getConnections())->toBe([]);
+});
+
+it('returns null when a named connection entry is not an array', function (): void {
+    Storage::put('clonio.json', '{"connections":{"weird":"not-an-array"}}');
+
+    $config = new ConfigService;
+    expect($config->getConnection('weird'))->toBeNull()
+        ->and($config->hasConnection('weird'))->toBeFalse();
+});
+
+it('resets a non-array channels section when saving an audit channel', function (): void {
+    Storage::put('clonio.json', '{"audit":{"channels":"corrupt"}}');
+
+    $config = new ConfigService;
+    $config->setAuditChannel('local-main', ['type' => 'local']);
+
+    expect($config->getAuditChannel('local-main'))->toBe(['type' => 'local']);
+});
+
+it('initialises the audit section when setting the use list on a fresh config', function (): void {
+    $config = new ConfigService;
+    $config->setAuditUse(['ch1']);
+
+    expect($config->getAuditUse())->toBe(['ch1'])
+        ->and($config->getAuditChannels())->toBe([]);
+});
