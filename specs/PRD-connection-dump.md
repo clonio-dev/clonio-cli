@@ -1,6 +1,6 @@
-# PRD — Dump Connection Type & SQL Dump Export
+# PRD — `dump` Connection Type
 
-**Version:** 0.1
+**Version:** 0.2
 **Status:** Draft
 **Date:** 2026-05-24
 
@@ -8,24 +8,31 @@
 
 ## 1. Goal
 
-Introduce a `dump` connection type that, when used as a target in `cloning:run`, writes the entire transformation as a dialect-correct SQL file compressed into a password-protected ZIP archive. This enables transferring data in multi-stage environments where the source and target databases are never network-adjacent.
+Introduce a **`dump`** connection type that, when used as the target in `cloning:run`, produces a dialect-correct SQL file compressed into a password-protected ZIP archive — no live target database required. This enables database transfers across multi-stage environments where the source and target systems are never directly connected.
 
 ---
 
 ## 2. Background
 
-The current pipeline requires both source and target database connections to be live simultaneously. In regulated or air-gapped environments this is not always possible. A "dump" connection decouples the transfer into two stages:
+Today `cloning:run` requires a live target database connection. Teams operating in air-gapped or multi-stage environments (e.g. source is production, target is a staging cluster in a different network segment) cannot use a direct connection. A dump connection type allows the transfer to produce a portable SQL file that can be securely transported and applied to the target system at any time.
 
-1. **Stage A** — Run `cloning:run` with a dump target: connects to source, produces a `.zip` SQL file.
-2. **Stage B** — Ship the zip file to the target environment; decrypt and import with any standard client (`psql`, `mysql`, `sqlcmd`, `sqlite3`).
-
-Because the output file may contain sensitive (though anonymised) data, it is always compressed and password-protected.
+See **PRD-cloning-run.md** for the full pipeline description. See **PRD-cloning-yaml-schema.md** for the YAML options (`chunk_size`, `drop_unknown_tables`, `disable_foreign_key_checks`) that govern dump behaviour.
 
 ---
 
-## 3. New Connection Type: `dump`
+## 3. Connection Configuration
 
-### 3.1 `clonio.json` Structure
+A dump connection is stored in `clonio.json` alongside regular database connections. It is identified by `"type": "dump"`. Unlike database connections, it requires no host, port, database name, or username — it is a virtual output target.
+
+### 3.1 Fields
+
+| Field | Required | Description |
+|-------|:--------:|-------------|
+| `type` | yes | Must be `"dump"` |
+| `dialect` | yes | Target DBMS SQL dialect — one of `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite` |
+| `password` | no | ZIP archive encryption password. Encrypted at rest like all connection passwords (`encrypted:…`). When omitted, the archive is not encrypted. |
+
+### 3.2 Example `clonio.json` entry
 
 ```json
 "staging-dump": {
@@ -35,302 +42,338 @@ Because the output file may contain sensitive (though anonymised) data, it is al
 }
 ```
 
-| Field      | Required | Description                                                                |
-|------------|:--------:|----------------------------------------------------------------------------|
-| `type`     | Yes      | Always `"dump"` for this connection kind                                   |
-| `dialect`  | Yes      | Target DBMS SQL dialect: `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite`  |
-| `password` | No       | ZIP archive password, stored encrypted. If omitted, archive is unencrypted |
+---
 
-All other `ConnectionData` fields (`host`, `port`, `database`, `username`, etc.) are absent and ignored.
+## 4. Output Files
 
-### 3.2 Output File
+| Artefact | Pattern |
+|----------|---------|
+| SQL file (intermediate) | `<source-database>_<YYYYMMDD>_<HHmmss>.sql` |
+| ZIP archive (final) | `<source-database>_<YYYYMMDD>_<HHmmss>.zip` |
+| Location | Current working directory (`getcwd()`) |
 
-- **Location:** Current working directory (`getcwd()`)
-- **Filename:** `<source-database>_<YYYYMMDD>_<HHmmss>.sql`
-- **Archive:** Always `<filename>.zip`
-- **Encoding:** Example → `myapp_20260524_143022.sql` inside `myapp_20260524_143022.zip`
+The intermediate `.sql` file is deleted after it has been compressed into the ZIP archive.
 
-The `.sql` file inside the archive is the only member; no directory nesting.
+The archive is always created. When `password` is set, the ZIP is encrypted with AES-256 (`ZipArchive::EM_AES_256`, requires libzip ≥ 1.2.0, already included in SPC builds).
 
 ---
 
-## 4. Command Interaction Changes
+## 5. Pipeline Changes in `cloning:run`
 
-### 4.1 `connection:add` — New Dump Flow
+When the resolved target connection has `"type": "dump"`, the standard pipeline phases are modified as follows:
 
-When the user selects `dump` as the connection type, the interactive flow changes:
+| Phase | Standard Behaviour | Dump Behaviour |
+|-------|-------------------|----------------|
+| Phase 2 — Connection Checks | PDO ping to target DB | Validate `dialect` value; verify `cwd` is writable; skip target PDO ping |
+| Phase 4 — Schema Replication | DDL via PDO to target | Write DDL statements to `.sql` file (see §6) |
+| Phase 6 — Data Transfer | Bulk INSERT via PDO | Write INSERT batches to `.sql` file (see §7) |
+| Phase 7 — Audit Log | Standard audit + delivery | Same + records dump file path and SHA-256 hash of the archive |
+| Phase 8 — Summary | Print row counts | Also print output ZIP path and compressed size |
 
-| Step | Prompt                                 | Notes                                                      |
-|------|----------------------------------------|------------------------------------------------------------|
-| 1    | **Name** — unique identifier           | Same as other types; `[a-z0-9_-]+`                        |
-| 2    | **Type** — driver list                 | Now includes "Dump (SQL file)" option                      |
-| 3    | **Dialect** — target DBMS              | Choice list: MySQL / MariaDB / PostgreSQL / SQL Server / SQLite |
-| 4    | **ZIP password** — archive password    | Masked input; optional (press Enter to skip)               |
-| 5    | **Is production?** — yes/no            | Same as other types                                        |
+After Phase 6: finalise the `.sql` file → compress to `.zip` (with optional AES-256 password) → delete the intermediate `.sql` file.
 
-Steps for host, port, database, schema, and username are **skipped** for dump connections.
+### 5.1 Dump Source Connection Check
 
-### 4.2 `connection:test`
-
-For dump connections, skip PDO connectivity; instead verify:
-- `dialect` is a valid `DatabaseConnectionType` value.
-- `password` (if present) can be decrypted without error.
-- The current working directory is writable.
-
-### 4.3 `cloning:run` — Target Is a Dump Connection
-
-Phase changes when the resolved target connection has `type === dump`:
-
-| Phase | Normal Behaviour                | Dump Override                                           |
-|-------|---------------------------------|---------------------------------------------------------|
-| 2     | PDO ping target DB              | Validate dialect + check cwd is writable                |
-| 3     | Dry-run row counts only         | Same (no target write needed)                           |
-| 4     | DDL via PDO to target DB        | Write `CREATE TABLE` DDL to open `.sql` file            |
-| 6     | Bulk-insert rows via PDO        | Write `INSERT INTO` statements to `.sql` file           |
-| 7     | Audit log + delivery            | Add dump file path + sha256 to audit record             |
-| 8     | Summary table                   | Print output zip path and size                          |
-
-After Phase 6 the orchestrator finalises the `.sql` file, then compresses it to `.zip` (with password if set), then deletes the intermediate `.sql` file.
+The source connection is still opened normally. The connection name, host, and driver from the **source** connection's configuration are used when determining the SQL Server schema prefix (see §9.3).
 
 ---
 
-## 5. SQL Dialect Specification
+## 6. DDL Generation
 
-### 5.1 File Structure (all dialects)
+### 6.1 DDL Strategy
 
+The DDL strategy is driven by the **`options.drop_unknown_tables`** field in the cloning YAML:
+
+| `options.drop_unknown_tables` | DDL Emitted |
+|:------------------------------:|-------------|
+| `true` | `DROP TABLE IF EXISTS` followed by `CREATE TABLE` |
+| `false` | `CREATE TABLE IF NOT EXISTS` (no `DROP`) |
+
+This matches the semantics of the standard pipeline: `drop_unknown_tables: true` means the target is treated as disposable — tables are replaced; `false` means only missing structures are added.
+
+### 6.2 Per-Dialect DDL Preamble / Postamble
+
+Each dialect wraps the DDL and DML with the appropriate FK-disable preamble and postamble, controlled by `options.disable_foreign_key_checks`.
+
+**MySQL / MariaDB:**
 ```sql
--- Clonio SQL Dump
--- Dialect:  PostgreSQL
--- Source:   myapp@prod-db
--- Date:     2026-05-24 14:30:22 UTC
--- Clonio:   v1.x.x
+-- Dump generated by Clonio for MySQL
+-- Source: <source-db> | Date: <YYYY-MM-DD HH:MM:SS>
 
--- [preamble — disable FK checks, set encoding]
-
--- Table: users
--- [DDL]
--- [DML INSERT statements]
-
--- [postamble — re-enable FK checks]
-```
-
-### 5.2 MySQL / MariaDB
-
-```sql
-SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO `users` (`id`, `name`) VALUES
-  (1, 'John Doe'),
-  (2, 'Jane Smith');
+-- ... more tables ...
 
 SET FOREIGN_KEY_CHECKS = 1;
 ```
 
-Identifiers: backtick-quoted. Batch size: configurable (default 500 rows per `INSERT`).
-
-### 5.3 PostgreSQL
-
+**PostgreSQL:**
 ```sql
-SET client_encoding = 'UTF8';
+-- Dump generated by Clonio for PostgreSQL
+-- Source: <source-db> | Date: <YYYY-MM-DD HH:MM:SS>
+
 SET session_replication_role = 'replica';
 
-DROP TABLE IF EXISTS "users" CASCADE;
+DROP TABLE IF EXISTS "users";
 CREATE TABLE "users" (
   "id" SERIAL NOT NULL,
   "name" VARCHAR(255) NOT NULL,
   PRIMARY KEY ("id")
 );
 
-INSERT INTO "users" ("id", "name") VALUES
-  (1, 'John Doe'),
-  (2, 'Jane Smith');
+-- ... more tables ...
 
-SELECT setval(pg_get_serial_sequence('"users"', 'id'),
-              COALESCE((SELECT MAX("id") FROM "users"), 1));
+SELECT setval(pg_get_serial_sequence('"users"', 'id'), COALESCE(MAX("id"), 1)) FROM "users";
 
 SET session_replication_role = 'origin';
 ```
 
-Identifiers: double-quoted. AUTO_INCREMENT columns become `SERIAL`. Sequence reset statement emitted after each table with a serial column.
-
-### 5.4 SQL Server
-
+**SQL Server:**
 ```sql
-SET QUOTED_IDENTIFIER ON;
-SET ANSI_NULLS ON;
+-- Dump generated by Clonio for SQL Server
+-- Source: <source-db> | Date: <YYYY-MM-DD HH:MM:SS>
 
-IF OBJECT_ID(N'[dbo].[users]', N'U') IS NOT NULL
-  DROP TABLE [dbo].[users];
+IF OBJECT_ID(N'[dbo].[users]', N'U') IS NOT NULL DROP TABLE [dbo].[users];
 CREATE TABLE [dbo].[users] (
   [id] INT IDENTITY(1,1) NOT NULL,
   [name] NVARCHAR(255) NOT NULL,
   PRIMARY KEY ([id])
 );
 
+-- ... more tables ...
+```
+
+When `options.disable_foreign_key_checks` is `false`, the FK preamble/postamble for MySQL/MariaDB and PostgreSQL is omitted.
+
+---
+
+## 7. DML Generation
+
+### 7.1 Batch Size
+
+INSERT batches use **`options.chunk_size`** from the cloning YAML as the number of rows per `INSERT` statement. This is the same value that controls chunked reads in the standard pipeline — the dump pipeline reads the same chunk and writes it as one multi-row INSERT.
+
+### 7.2 Per-Dialect INSERT Syntax
+
+**MySQL / MariaDB:**
+```sql
+INSERT INTO `users` (`id`, `name`, `avatar`) VALUES
+(1, 'Alice', 0x89504e47...),
+(2, 'Bob', NULL);
+```
+
+**PostgreSQL:**
+```sql
+INSERT INTO "users" ("id", "name", "avatar") VALUES
+(1, 'Alice', E'\\x89504e47...'),
+(2, 'Bob', NULL);
+```
+
+**SQL Server:**
+```sql
 SET IDENTITY_INSERT [dbo].[users] ON;
-INSERT INTO [dbo].[users] ([id], [name]) VALUES
-  (1, N'John Doe'),
-  (2, N'Jane Smith');
+INSERT INTO [dbo].[users] ([id], [name], [avatar]) VALUES
+(1, N'Alice', 0x89504e47...),
+(2, N'Bob', NULL);
 SET IDENTITY_INSERT [dbo].[users] OFF;
 ```
 
-Identifiers: bracket-quoted. String literals prefixed with `N` for Unicode. `IDENTITY_INSERT` wraps each table's INSERT block.
-
-### 5.5 SQLite
-
+**SQLite:**
 ```sql
-PRAGMA foreign_keys = OFF;
-
-DROP TABLE IF EXISTS "users";
-CREATE TABLE "users" (
-  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  "name" TEXT NOT NULL
-);
-
-INSERT INTO "users" ("id", "name") VALUES
-  (1, 'John Doe'),
-  (2, 'Jane Smith');
-
-PRAGMA foreign_keys = ON;
+INSERT OR REPLACE INTO "users" ("id", "name", "avatar") VALUES
+(1, 'Alice', X'89504e47...'),
+(2, 'Bob', NULL);
 ```
 
-Identifiers: double-quoted. Types mapped to SQLite affinity groups (`INTEGER`, `REAL`, `TEXT`, `BLOB`, `NUMERIC`).
+### 7.3 BLOB / Binary Column Encoding
+
+Binary columns are always hex-encoded in the dialect-specific notation. The value is never embedded as a string literal.
+
+| Dialect | Hex Encoding |
+|---------|-------------|
+| MySQL / MariaDB | `0x<hex>` |
+| PostgreSQL | `E'\\x<hex>'` |
+| SQL Server | `0x<hex>` |
+| SQLite | `X'<hex>'` |
+
+A `NULL` binary value is always written as `NULL` (no encoding).
 
 ---
 
-## 6. Compression & Encryption
+## 8. Cross-Dialect Type Mapping
 
-### 6.1 Always Zip
+When the source and target use different DBMS (e.g. MySQL source → PostgreSQL dialect dump), column types are mapped conservatively to ensure the dump is valid SQL in the target dialect without data loss.
 
-The `.sql` file is **always** wrapped in a ZIP archive even when no password is set. This is consistent with user expectation ("always zip") and keeps the output format uniform regardless of password configuration.
+### 8.1 Mapping Table
 
-### 6.2 Password-Protected ZIP
+| Source Type (normalised) | MySQL / MariaDB | PostgreSQL | SQL Server | SQLite |
+|--------------------------|-----------------|------------|------------|--------|
+| `tinyint(1)` / `boolean` | `TINYINT(1)` | `BOOLEAN` | `BIT` | `INTEGER` |
+| `tinyint` | `TINYINT` | `SMALLINT` | `TINYINT` | `INTEGER` |
+| `smallint` | `SMALLINT` | `SMALLINT` | `SMALLINT` | `INTEGER` |
+| `int` / `integer` | `INT` | `INTEGER` | `INT` | `INTEGER` |
+| `bigint` | `BIGINT` | `BIGINT` | `BIGINT` | `INTEGER` |
+| `int unsigned` | `INT UNSIGNED` | `BIGINT` | `BIGINT` | `INTEGER` |
+| `bigint unsigned` | `BIGINT UNSIGNED` | `NUMERIC(20,0)` | `DECIMAL(20,0)` | `INTEGER` |
+| `float` | `FLOAT` | `REAL` | `REAL` | `REAL` |
+| `double` | `DOUBLE` | `DOUBLE PRECISION` | `FLOAT` | `REAL` |
+| `decimal(p,s)` | `DECIMAL(p,s)` | `DECIMAL(p,s)` | `DECIMAL(p,s)` | `REAL` |
+| `varchar(n)` | `VARCHAR(n)` | `VARCHAR(n)` | `NVARCHAR(n)` | `TEXT` |
+| `char(n)` | `CHAR(n)` | `CHAR(n)` | `NCHAR(n)` | `TEXT` |
+| `text` / `longtext` | `LONGTEXT` | `TEXT` | `NVARCHAR(MAX)` | `TEXT` |
+| `date` | `DATE` | `DATE` | `DATE` | `TEXT` |
+| `datetime` | `DATETIME` | `TIMESTAMP` | `DATETIME2` | `TEXT` |
+| `timestamp` | `TIMESTAMP` | `TIMESTAMPTZ` | `DATETIMEOFFSET` | `TEXT` |
+| `time` | `TIME` | `TIME` | `TIME` | `TEXT` |
+| `json` | `JSON` | `JSONB` | `NVARCHAR(MAX)` | `TEXT` |
+| `blob` / `binary` | `LONGBLOB` | `BYTEA` | `VARBINARY(MAX)` | `BLOB` |
+| `uuid` | `CHAR(36)` | `UUID` | `UNIQUEIDENTIFIER` | `TEXT` |
+| `enum(...)` | `ENUM(...)` | `VARCHAR(255)` | `NVARCHAR(255)` | `TEXT` |
 
-When a password is configured on the dump connection:
-
-- Encryption: **AES-256** (`ZipArchive::EM_AES_256`) via PHP's `ZipArchive` extension.
-- The encryption password is the decrypted value of `ConnectionData::password`.
-- PHP's `ZipArchive` with AES-256 support requires libzip ≥ 1.2.0, which is included in the SPC-built static binaries.
-
-### 6.3 Fallback
-
-If AES-256 is not available (e.g. an older PHP build), the archive is created without encryption and a warning is printed. The run does **not** fail.
+**Mapping principles:**
+- Prefer the widest compatible type when an exact match is unavailable.
+- Signed integers never silently become unsigned; unsigned integers widen to the next larger signed type if the target does not support unsigned.
+- `tinyint(1)` is always treated as boolean since it is the conventional MySQL boolean representation.
+- SQL Server string types use the `N`-prefixed Unicode variants (`NVARCHAR`, `NCHAR`) to prevent character-set loss.
+- Unknown types not in this table fall back to `TEXT` (MySQL/MariaDB/PostgreSQL/SQLite) or `NVARCHAR(MAX)` (SQL Server).
 
 ---
 
-## 7. Architecture — New & Modified Files
+## 9. SQL Server Schema Prefix
 
-### 7.1 Modified Files
+### 9.1 Derivation
+
+The schema prefix used in SQL Server output (e.g. `[dbo].[users]`) is derived from the **source connection**, not the dump connection:
+
+1. If the source connection is of type `sqlsrv` and has a `schema` field set → use that value.
+2. Otherwise (source is MySQL, PostgreSQL, etc., or `schema` is unset) → use `dbo`.
+
+### 9.2 Rationale
+
+The dump target dialect is SQL Server, but the source may be MySQL or PostgreSQL (which have no direct equivalent to SQL Server schemas). Defaulting to `dbo` is the safe, conventional choice for SQL Server imports. If the target SQL Server instance uses a different schema, the operator is expected to adjust the dump file before importing.
+
+---
+
+## 10. `connection:add` Interactive Flow for Dump Connections
+
+When the user selects `dump` as the connection type during `connection:add`, the interactive flow is shortened:
+
+1. **Name** — unique identifier (e.g. `staging-dump`)
+2. **Type** — choice list now includes `Dump (SQL file)` in addition to the five database drivers
+3. **Dialect** — choice list: MySQL / MariaDB / PostgreSQL / SQL Server / SQLite (the target DBMS)
+4. **ZIP Password** (optional) — masked input; leave blank to skip encryption
+
+Steps for host, port, database, username are skipped.
+
+---
+
+## 11. `connection:test` Behaviour for Dump Connections
+
+`connection:test` on a dump connection skips the PDO ping and instead:
+
+1. Verifies the current working directory is writable.
+2. Prints: `Dump connection "staging-dump" — dialect: pgsql, target: <cwd>, encryption: AES-256`.
+
+---
+
+## 12. Architecture
+
+### 12.1 Modified Files
 
 | File | Change |
 |------|--------|
-| `app/Enums/DatabaseConnectionType.php` | Add `case Dump = 'dump'`; update `label()`, `requiresNetworkConfig()` |
+| `app/Enums/DatabaseConnectionType.php` | Add `case Dump = 'dump'` |
 | `app/Data/ConnectionData.php` | Add `readonly ?DatabaseConnectionType $dialect` field |
-| `app/Commands/Connection/AddCommand.php` | Add dump-specific interactive flow (dialect + zip password) |
-| `app/Commands/Connection/TestCommand.php` | Skip PDO test for dump; verify writable cwd |
-| `app/Services/Database/DatabaseConnectionService.php` | Guard `open()` against dump type |
-| `app/Services/Cloning/CloningRunOrchestrator.php` | Detect dump target; route phases 4 & 6 to `SqlDumpService` |
-| `app/Services/Config/ConfigService.php` | Persist/load `dialect` field for dump connections |
+| `app/Commands/Connection/AddCommand.php` | Dump-specific interactive flow (§10) |
+| `app/Commands/Connection/TestCommand.php` | Skip PDO test for dump; verify writable cwd (§11) |
+| `app/Services/Database/DatabaseConnectionService.php` | Guard `open()` against dump type (dump connections have no PDO) |
+| `app/Services/Cloning/CloningRunOrchestrator.php` | Detect dump target; route phases 4 and 6 to `SqlDumpService` |
+| `app/Services/Config/ConfigService.php` | Persist and load `dialect` field for dump connections |
 
-### 7.2 New Files
+### 12.2 New Files
 
 ```
-app/
-└── Services/
-    └── SqlDump/
-        ├── SqlDumpService.php          # Orchestrates file creation; called from CloningRunOrchestrator
-        ├── SqlDumpDialect.php          # Interface: header(), preamble(), ddl(), dml(), postamble()
-        ├── DumpArchiver.php            # Creates ZIP archive (with optional AES-256 password)
-        └── Dialects/
-            ├── MySqlDumpDialect.php
-            ├── MariaDbDumpDialect.php  # Extends MySqlDumpDialect with minor differences
-            ├── PostgreSqlDumpDialect.php
-            ├── SqlServerDumpDialect.php
-            └── SqliteDumpDialect.php
+app/Services/SqlDump/
+├── SqlDumpService.php              # Orchestrates file creation (open → write DDL → write DML → close → zip)
+├── Contracts/SqlDumpDialect.php    # Interface: header / preamble / ddl / insertBatch / postamble / typeMap
+├── DumpArchiver.php                # Creates ZIP archive with optional AES-256 password
+└── Dialects/
+    ├── MySqlDumpDialect.php
+    ├── MariaDbDumpDialect.php
+    ├── PostgreSqlDumpDialect.php
+    ├── SqlServerDumpDialect.php
+    └── SqliteDumpDialect.php
 ```
 
-### 7.3 `SqlDumpDialect` Interface
+### 12.3 `SqlDumpDialect` Interface
 
 ```php
+// app/Services/SqlDump/Contracts/SqlDumpDialect.php
 interface SqlDumpDialect
 {
-    public function header(string $sourceDatabase, string $sourceConnection, string $version): string;
-    public function preamble(): string;
-    public function ddl(TableSchemaData $table): string;
-    /** @param list<array<string, mixed>> $rows */
-    public function dml(string $tableName, array $columns, array $rows): string;
-    public function postamble(): string;
+    public function fileHeader(string $sourceDb, \DateTimeImmutable $at): string;
+    public function disableFkChecks(): string;
+    public function enableFkChecks(): string;
+    public function dropTable(string $table): string;
+    public function createTable(string $table, array $columns, array $indexes): string;
+    public function createTableIfNotExists(string $table, array $columns, array $indexes): string;
+    public function insertBatch(string $table, array $columnNames, array $rows): string;
+    public function postInsertSequenceReset(string $table, string $primaryKey): string;
     public function quoteIdentifier(string $name): string;
-    public function quoteValue(mixed $value): string;
-}
-```
-
-### 7.4 `SqlDumpService` Responsibilities
-
-1. Open a writable stream to `<cwd>/<name>.sql`.
-2. Write `header()` + `preamble()`.
-3. For each table (called once per table by the orchestrator): write `ddl()` then accumulate rows in batches, flushing `dml()` per batch.
-4. Write `postamble()`.
-5. Close the stream; hand file path to `DumpArchiver`.
-6. `DumpArchiver` creates `<name>.zip` with AES-256 if password set; deletes `.sql`.
-7. Return the archive path + sha256 hash for the audit record.
-
----
-
-## 8. Audit Record Extension
-
-The existing audit record (`AuditRecordData`) is extended with an optional `dump` section when the target is a dump connection:
-
-```json
-"dump": {
-  "file": "myapp_20260524_143022.zip",
-  "path": "/home/user/project/myapp_20260524_143022.zip",
-  "sha256": "abc123...",
-  "size_bytes": 204800,
-  "dialect": "pgsql",
-  "encrypted": true
+    public function quoteValue(mixed $value, string $columnType): string;
+    public function mapColumnType(string $sourceType, string $sourceDialect): string;
 }
 ```
 
 ---
 
-## 9. Type Column Mapping
+## 13. Audit Log Integration
 
-Each DBMS has its own native column type syntax. The `SqlDumpDialect` is responsible for mapping the `ColumnSchemaData::type` string (as returned by `SchemaInspector`, which reflects the source DBMS) to a valid type in the target dialect.
+The standard audit log is extended for dump runs:
 
-A best-effort mapping table should be maintained per dialect pair. Unknown types fall back to `TEXT` / `NVARCHAR(MAX)` / `BLOB` with a comment.
-
----
-
-## 10. Testing
-
-| Test File | Coverage |
-|-----------|---------|
-| `tests/Unit/Services/SqlDump/MySqlDumpDialectTest.php` | DDL & DML generation, quoting, batching |
-| `tests/Unit/Services/SqlDump/PostgreSqlDumpDialectTest.php` | Same; serial sequence reset |
-| `tests/Unit/Services/SqlDump/SqlServerDumpDialectTest.php` | IDENTITY INSERT wrapping, N-prefix |
-| `tests/Unit/Services/SqlDump/SqliteDumpDialectTest.php` | AUTOINCREMENT, PRAGMA wrapping |
-| `tests/Unit/Services/SqlDump/DumpArchiverTest.php` | ZIP creation, AES-256 flag, fallback |
-| `tests/Feature/Commands/Connection/AddCommandDumpTest.php` | Full interactive dump connection creation |
-| `tests/Feature/Commands/Connection/TestCommandDumpTest.php` | Dump connection test flow |
-| `tests/Feature/Commands/Cloning/RunCommandDumpTest.php` | End-to-end cloning:run with dump target |
+- `target_connection_type: dump`
+- `dump_dialect: <dialect>`
+- `dump_file: <absolute-path-to-zip>`
+- `dump_sha256: <sha256-hex-of-zip-file>`
+- `dump_encrypted: true|false`
 
 ---
 
-## 11. Open Questions
+## 14. Error Cases
 
-- [ ] **Batch size for INSERT** — default 500 rows per statement; should this be configurable in the YAML or the dump connection?
-- [ ] **DDL strategy** — always `DROP TABLE IF EXISTS` + `CREATE TABLE`, or make it configurable (`CREATE TABLE IF NOT EXISTS`)?
-- [ ] **Schema prefix for SQL Server** — always `dbo`? Or derive from connection schema field?
-- [ ] **Type mapping fidelity** — for cross-dialect dumps (e.g. MySQL → PostgreSQL), how opinionated should the type mapping be? Use a conservative mapping or expose a mapping config in `clonio.json`?
-- [ ] **Large BLOBs** — binary columns should be hex-encoded (`0x...` for SQL Server, `E'\\x...'` for PostgreSQL, `X'...'` for SQLite, `0x...` for MySQL). Confirm this is handled in `quoteValue()`.
-- [ ] **NULL handling** — `NULL` literal must be unquoted in all dialects. Confirm `quoteValue(null)` returns `'NULL'` (unquoted).
-- [ ] **ZIP password UX** — Should the ZIP password be displayable with `connection:list --show-password` in the same way DB passwords work?
+| Situation | Exit Code | Behaviour |
+|-----------|-----------|-----------|
+| Unknown `dialect` value | ValidationError (4) | List valid dialects |
+| `cwd` not writable | IOError (5) | Show path and permission hint |
+| Disk full during write | IOError (5) | Show space-needed estimate |
+| ZIP library unavailable (libzip) | GeneralError (1) | Suggest checking PHP extension |
+| `ZipArchive::EM_AES_256` unavailable (libzip < 1.2.0) | GeneralError (1) | Show libzip version requirement |
+| Source connection is also type `dump` | ValidationError (4) | Source must be a real database connection |
+
+---
+
+## 15. Out of Scope
+
+- Importing / applying a dump file (i.e. a `cloning:apply` command) — separate feature
+- Incremental / diff dumps (only changed rows) — v1 is always a full dump of the selected rows
+- Multiple files per dump (one file per table) — single-file only in v1
+- Plain-text (uncompressed) output — always ZIP
+
+---
+
+## 16. Decisions
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | **INSERT batch size** | Use `options.chunk_size` from the cloning YAML (same value that governs chunked reads). |
+| 2 | **DDL strategy** | Driven by `options.drop_unknown_tables`: `true` → `DROP TABLE IF EXISTS` + `CREATE TABLE`; `false` → `CREATE TABLE IF NOT EXISTS`. |
+| 3 | **SQL Server schema prefix** | Derived from the source connection's `schema` field if source is `sqlsrv`; otherwise defaults to `dbo`. |
+| 4 | **Cross-dialect type mapping** | Conservative/widest-compatible mixture (see §8). Unknown types fall back to `TEXT` / `NVARCHAR(MAX)`. `tinyint(1)` → boolean in all non-MySQL dialects. SQL Server always uses Unicode string types. |
+| 5 | **BLOB / binary columns** | Always hex-encoded using the target dialect's notation (see §7.3). `NULL` binary values remain `NULL`. |
