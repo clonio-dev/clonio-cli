@@ -643,3 +643,142 @@ it('prompts for transfer options interactively and writes the chosen values', fu
         ->toContain('drop_unknown_tables: false')
         ->toContain('disable_foreign_key_checks: true');
 });
+
+it('interactive: prompts to select a connection from the choice list', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+    $schema = makeSimpleSchema();
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnections')->andReturn([
+        'production-db' => $connection,
+        'staging-db' => makeDumpMysqlConnection('staging-db'),
+    ]);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump')
+        ->expectsChoice('Select a connection to inspect', 'production-db', ['production-db', 'staging-db'])
+        ->expectsConfirmation('    Enforce column types on target?', 'no')
+        ->expectsConfirmation('    Drop unknown tables on target?', 'no')
+        ->expectsConfirmation('    Drop extra columns on target?', 'no')
+        ->expectsConfirmation('    Disable foreign key checks?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->exists('production-db.cloning.yaml'))->toBeTrue();
+});
+
+it('returns Success(0) when an existing file overwrite is declined', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('production-db.cloning.yaml', 'old content');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    // Inspector / PII loader must NOT be called once overwrite is declined.
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldNotReceive('inspect');
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db'])
+        ->expectsConfirmation('File production-db.cloning.yaml already exists. Overwrite? [y/N]', 'no')
+        ->assertExitCode(ExitCode::Success->value);
+
+    // Untouched
+    expect(Storage::disk('local')->get('production-db.cloning.yaml'))->toBe('old content');
+});
+
+it('returns ConnectionError(3) when schema inspection throws', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andThrow(new RuntimeException('connection refused'));
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true])
+        ->expectsOutputToContain('Failed to inspect database: connection refused')
+        ->assertExitCode(ExitCode::ConnectionError->value);
+});
+
+it('skips foreign keys that reference a table without a single integer primary key', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+
+    // `events` has an integer PK (so key remapping is built), but its FK
+    // references `accounts`, whose PK is a varchar (not in intPkByTable).
+    // This exercises the FK skip branch (DumpCommand line 339).
+    $schema = new DatabaseSchemaData(
+        databaseName: 'mydb',
+        tables: [
+            new TableSchemaData(
+                name: 'accounts',
+                columns: [
+                    new ColumnSchemaData(name: 'uuid', type: 'varchar', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'name', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'events',
+                columns: [
+                    new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'account_uuid', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [
+                    new ForeignKeyData(columnName: 'account_uuid', referencedTable: 'accounts', referencedColumn: 'uuid'),
+                ],
+            ),
+        ],
+    );
+
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->toBeString();
+    // events.id is remapped, but the FK to accounts is skipped (no remapping FK entry).
+    expect($yaml)->toContain('strategy: remapping');
+    expect($yaml)->not->toContain('column: account_uuid');
+});
