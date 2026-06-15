@@ -122,7 +122,7 @@ jobs:
         with:
           php-version: "8.5"
           tools: composer:v2
-          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite, pdo_sqlsrv
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite, pdo_sqlsrv, zip
 
       - name: Cache Composer dependencies
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -309,7 +309,90 @@ jobs:
         if: matrix.target == 'sqlsrv'
         run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 ${{ matrix.target_db }} SA 'Clonio123!'
 
+      # ── Dump-target equivalence ───────────────────────────────────────────────
+      # Run the same source + config to a `dump` target of the same dialect as the
+      # live target, import the produced SQL into a fresh database, and run the
+      # identical verify-transfer.php checks. Proves the dump path yields the same
+      # (anonymized, key-remapped, referentially intact) result as the live path.
+
+      - name: Register dump target connection
+        run: |
+          php clonio connection:add dumptarget \
+            --type=dump --dialect=${{ matrix.target }} \
+            --no-interaction
+
+      - name: Test dump target connection
+        run: php clonio connection:test dumptarget --ci
+
+      - name: Run cloning:run (dump target)
+        run: php clonio cloning:run .github/cloning-test/test.cloning.yaml --target=dumptarget --ci
+
+      - name: Unpack the dump archive
+        run: |
+          ZIP="$(ls clonio_source_*.zip | head -1)"
+          echo "Produced archive: $ZIP"
+          unzip -o "$ZIP"
+          SQL="$(ls clonio_source_*.sql | head -1)"
+          echo "DUMP_SQL=$SQL" >> "$GITHUB_ENV"
+          echo "--- Generated SQL (head) ---"
+          head -40 "$SQL"
+
+      - name: Import dump (MySQL)
+        if: matrix.target == 'mysql'
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -psecret -e "DROP DATABASE IF EXISTS clonio_dump_target; CREATE DATABASE clonio_dump_target;"
+          mysql -h 127.0.0.1 -P 3306 -u root -psecret clonio_dump_target < "$DUMP_SQL"
+
+      - name: Import dump (MariaDB)
+        if: matrix.target == 'mariadb'
+        run: |
+          mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "DROP DATABASE IF EXISTS clonio_dump_target; CREATE DATABASE clonio_dump_target;"
+          mysql -h 127.0.0.1 -P 3307 -u root -psecret clonio_dump_target < "$DUMP_SQL"
+
+      - name: Import dump (PostgreSQL)
+        if: matrix.target == 'pgsql'
+        run: |
+          PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "DROP DATABASE IF EXISTS clonio_dump_target;"
+          PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_dump_target;"
+          PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -d clonio_dump_target -v ON_ERROR_STOP=1 -f "$DUMP_SQL"
+
+      - name: Import dump (SQL Server)
+        if: matrix.target == 'sqlsrv'
+        run: |
+          sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "IF DB_ID('clonio_dump_target') IS NOT NULL DROP DATABASE clonio_dump_target; CREATE DATABASE clonio_dump_target" -No
+          sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d clonio_dump_target -i "$DUMP_SQL" -b -No
+
+      - name: Import dump (SQLite)
+        if: matrix.target == 'sqlite'
+        run: |
+          rm -f /tmp/clonio_dump_target.sqlite
+          sqlite3 /tmp/clonio_dump_target.sqlite < "$DUMP_SQL"
+
+      - name: Verify dump import (MySQL)
+        if: matrix.target == 'mysql'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3306 clonio_dump_target root secret
+
+      - name: Verify dump import (MariaDB)
+        if: matrix.target == 'mariadb'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3307 clonio_dump_target root secret
+
+      - name: Verify dump import (PostgreSQL)
+        if: matrix.target == 'pgsql'
+        run: php .github/cloning-test/verify-transfer.php pgsql 127.0.0.1 5432 clonio_dump_target postgres secret
+
+      - name: Verify dump import (SQL Server)
+        if: matrix.target == 'sqlsrv'
+        run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 clonio_dump_target SA 'Clonio123!'
+
+      - name: Verify dump import (SQLite)
+        if: matrix.target == 'sqlite'
+        run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 /tmp/clonio_dump_target.sqlite '' ''
+
       # ── Diagnostics on failure ────────────────────────────────────────────────
+
+      - name: Show generated dump SQL on failure
+        if: failure()
+        run: cat "$DUMP_SQL" 2>/dev/null || echo "dump SQL not found"
 
       - name: Show clonio.json on failure
         if: failure()
