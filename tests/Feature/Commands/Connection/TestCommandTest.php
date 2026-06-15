@@ -195,6 +195,72 @@ it('suppresses table output in --ci mode but still outputs errors to stderr', fu
         ->assertExitCode(ExitCode::ConnectionError->value);
 });
 
+it('fails when a SQLite file exists but is not readable', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'clonio_unreadable_');
+    expect($path)->not->toBeFalse();
+    chmod($path, 0o000);
+
+    $connection = makeSqliteConnection('local', $path);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('local')->andReturn($connection);
+    $this->app->instance(ConfigService::class, $config);
+
+    try {
+        $this->artisan('connection:test', ['name' => 'local'])
+            ->expectsOutputToContain('File not readable')
+            ->assertExitCode(ExitCode::ConnectionError->value);
+    } finally {
+        chmod($path, 0o644);
+        @unlink($path);
+    }
+})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses file permission checks');
+
+it('fails when a SQLite file is readable but not writable', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'clonio_readonly_');
+    expect($path)->not->toBeFalse();
+    chmod($path, 0o444);
+
+    $connection = makeSqliteConnection('local', $path);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('local')->andReturn($connection);
+    $this->app->instance(ConfigService::class, $config);
+
+    try {
+        $this->artisan('connection:test', ['name' => 'local'])
+            ->expectsOutputToContain('File not writable')
+            ->assertExitCode(ExitCode::ConnectionError->value);
+    } finally {
+        chmod($path, 0o644);
+        @unlink($path);
+    }
+})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses file permission checks');
+
+it('fails a dump connection when the working directory is not writable', function (): void {
+    $dir = sys_get_temp_dir().'/clonio_ro_dir_'.uniqid();
+    mkdir($dir, 0o555);
+    $originalCwd = getcwd();
+    chdir($dir);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging-dump')->andReturn(makeDumpConnection('staging-dump'));
+    $this->app->instance(ConfigService::class, $config);
+
+    try {
+        $this->artisan('connection:test', ['name' => 'staging-dump'])
+            ->expectsOutputToContain('Working directory not writable')
+            ->assertExitCode(ExitCode::IoError->value);
+    } finally {
+        if ($originalCwd !== false) {
+            chdir($originalCwd);
+        }
+
+        chmod($dir, 0o755);
+        rmdir($dir);
+    }
+})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses directory permission checks');
+
 it('fails with exit code 2 when APP_KEY is missing and password is encrypted', function (): void {
     // Use a raw 'encrypted:' prefix with garbage — decryption will fail since no APP_KEY
     $connection = makeMysqlConnection('staging', 'encrypted:notvalidciphertext');

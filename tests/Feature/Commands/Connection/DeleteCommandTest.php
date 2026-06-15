@@ -123,3 +123,65 @@ it('errors when no connections exist', function (): void {
         ->expectsOutputToContain('No connections found.')
         ->assertExitCode(2);
 });
+
+it('prompts the user to choose when multiple connections exist and no name is given', function (): void {
+    $staging = makeDeleteConnection('staging');
+    $production = makeDeleteConnection('production');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $staging,
+        'production' => $production,
+    ]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($staging);
+    $config->shouldReceive('deleteConnection')->with('staging')->once();
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:delete')
+        ->expectsChoice('Select a connection to delete', 'staging', ['staging', 'production'])
+        ->expectsConfirmation('Delete this connection?', 'yes')
+        ->expectsOutputToContain('Connection staging deleted.')
+        ->assertExitCode(0);
+});
+
+it('renders the schema row for a connection that has a schema', function (): void {
+    $connection = new ConnectionData(
+        name: 'pg',
+        type: DatabaseConnectionType::PostgreSQL,
+        host: 'localhost',
+        port: 5432,
+        database: 'mydb',
+        schema: 'public',
+        username: 'postgres',
+        password: 'encrypted:abc123',
+        isProduction: false,
+    );
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['pg' => $connection]);
+    $config->shouldReceive('getConnection')->with('pg')->andReturn($connection);
+    $config->shouldReceive('deleteConnection')->with('pg')->once();
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:delete', ['name' => 'pg', '--force' => true])
+        ->expectsOutputToContain('public')
+        ->expectsOutputToContain('Connection pg deleted.')
+        ->assertExitCode(0);
+});
+
+it('returns an IO error when deletion throws', function (): void {
+    $connection = makeDeleteConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $connection]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $config->shouldReceive('deleteConnection')->with('staging')->once()->andThrow(new RuntimeException('disk full'));
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:delete', ['name' => 'staging', '--force' => true])
+        ->expectsOutputToContain('disk full')
+        ->assertExitCode(5);
+});
