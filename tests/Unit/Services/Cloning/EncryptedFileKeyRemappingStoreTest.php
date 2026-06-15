@@ -78,6 +78,37 @@ it('deletes temp files on cleanup', function (): void {
     }
 });
 
+it('returns early when loadTable is called for the already-loaded table', function (): void {
+    $store = new EncryptedFileKeyRemappingStore;
+    $store->storeTable('users', ['1' => 'u-1']);
+
+    $store->loadTable('users');
+    // second call hits the already-loaded early return
+    $store->loadTable('users');
+
+    expect($store->lookup('users', '1'))->toBe('u-1');
+
+    $store->cleanup();
+});
+
+it('returns null when the backing temp file is truncated below the IV length', function (): void {
+    $store = new EncryptedFileKeyRemappingStore;
+
+    $before = glob(sys_get_temp_dir().'/clonio-km-*') ?: [];
+    $store->storeTable('users', ['1' => 'u-1']);
+    $after = glob(sys_get_temp_dir().'/clonio-km-*') ?: [];
+
+    $new = array_values(array_diff($after, $before));
+    expect($new)->toHaveCount(1);
+
+    // Truncate the file to fewer than IV_LENGTH (16) bytes
+    file_put_contents($new[0], 'short');
+
+    expect($store->lookup('users', '1'))->toBeNull();
+
+    $store->cleanup();
+});
+
 it('handles empty mappings gracefully', function (): void {
     $store = new EncryptedFileKeyRemappingStore;
 
