@@ -76,11 +76,6 @@ class SqlServerDumpDialect extends AbstractDumpDialect
         return $this->quoteIdentifier($this->schema).'.'.$this->quoteIdentifier($table);
     }
 
-    protected function booleanLiteral(bool $value): string
-    {
-        return $value ? '1' : '0';
-    }
-
     protected function mapColumnType(ColumnSchemaData $column): string
     {
         $unsigned = $column->unsigned;
