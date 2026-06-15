@@ -128,6 +128,52 @@ it('drop_unknown_tables drives CREATE keyword choice', function (): void {
         ->and($dialect->createTable(dumpTable(), false))->not->toContain('IF NOT EXISTS');
 });
 
+it('honours captured length and precision in DDL', function (): void {
+    $table = new TableSchemaData('t', [
+        new ColumnSchemaData('name', 'varchar', false, null, false, length: 500),
+        new ColumnSchemaData('code', 'char', true, null, false, length: 64),
+        new ColumnSchemaData('amount', 'decimal', true, null, false, precision: 10, scale: 2),
+    ], []);
+
+    $mysql = (new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->createTable($table, false);
+    $pg = (new DumpDialectFactory)->make(DatabaseConnectionType::PostgreSQL)->createTable($table, false);
+    $mssql = (new DumpDialectFactory)->make(DatabaseConnectionType::SqlServer)->createTable($table, false);
+
+    expect($mysql)->toContain('`name` VARCHAR(500)')->toContain('`code` CHAR(64)')->toContain('`amount` DECIMAL(10,2)')
+        ->and($pg)->toContain('"name" VARCHAR(500)')->toContain('"amount" DECIMAL(10,2)')
+        ->and($mssql)->toContain('[name] NVARCHAR(500)')->toContain('[code] NCHAR(64)')->toContain('[amount] DECIMAL(10,2)');
+});
+
+it('falls back to large text types when a string column exceeds dialect limits', function (): void {
+    $table = new TableSchemaData('t', [
+        new ColumnSchemaData('blob_text', 'varchar', true, null, false, length: 50000),
+    ], []);
+
+    expect((new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->createTable($table, false))->toContain('`blob_text` LONGTEXT')
+        ->and((new DumpDialectFactory)->make(DatabaseConnectionType::SqlServer)->createTable($table, false))->toContain('[blob_text] NVARCHAR(MAX)')
+        ->and((new DumpDialectFactory)->make(DatabaseConnectionType::PostgreSQL)->createTable($table, false))->toContain('"blob_text" VARCHAR(50000)');
+});
+
+it('strips length suffixes from declared type strings (SQLite-style)', function (): void {
+    // SQLite stores the full declared type, e.g. "varchar(36)".
+    $table = new TableSchemaData('t', [
+        new ColumnSchemaData('id', 'varchar(36)', false, null, true, length: 36),
+    ], []);
+
+    expect((new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->createTable($table, false))->toContain('`id` VARCHAR(36)')
+        ->and((new DumpDialectFactory)->make(DatabaseConnectionType::Sqlite)->createTable($table, false))->toContain('"id" TEXT');
+});
+
+it('still uses defaults when no length metadata is present', function (): void {
+    $table = new TableSchemaData('t', [
+        new ColumnSchemaData('email', 'varchar', false, null, false),
+        new ColumnSchemaData('amount', 'decimal', true, null, false),
+    ], []);
+
+    expect((new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->createTable($table, false))
+        ->toContain('`email` VARCHAR(255)')->toContain('`amount` DECIMAL(20,6)');
+});
+
 it('rejects the dump pseudo-type as a dialect', function (): void {
     expect(fn () => (new DumpDialectFactory)->make(DatabaseConnectionType::Dump))
         ->toThrow(InvalidArgumentException::class);

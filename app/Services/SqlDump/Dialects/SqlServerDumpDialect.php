@@ -93,9 +93,9 @@ class SqlServerDumpDialect extends AbstractDumpDialect
             'bigint' => $unsigned ? 'DECIMAL(20,0)' : 'BIGINT',
             'float' => 'REAL',
             'double' => 'FLOAT',
-            'decimal' => 'DECIMAL(20,6)',
-            'varchar', 'enum' => 'NVARCHAR('.self::DEFAULT_VARCHAR_LENGTH.')',
-            'char' => 'NCHAR('.self::DEFAULT_VARCHAR_LENGTH.')',
+            'decimal' => 'DECIMAL('.$this->decimalSpec($column).')',
+            'varchar', 'enum' => $this->sqlServerString('NVARCHAR', $this->varcharLength($column)),
+            'char' => $this->sqlServerString('NCHAR', $this->varcharLength($column)),
             'text', 'json' => 'NVARCHAR(MAX)',
             'date' => 'DATE',
             'datetime' => 'DATETIME2',
@@ -105,5 +105,11 @@ class SqlServerDumpDialect extends AbstractDumpDialect
             'uuid' => 'UNIQUEIDENTIFIER',
             default => 'NVARCHAR(MAX)',
         };
+    }
+
+    /** NVARCHAR/NCHAR cap at 4000; wider columns fall back to NVARCHAR(MAX). */
+    private function sqlServerString(string $keyword, int $length): string
+    {
+        return $length > 4000 ? 'NVARCHAR(MAX)' : $keyword.'('.$length.')';
     }
 }

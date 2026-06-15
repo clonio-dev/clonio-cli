@@ -50,9 +50,11 @@ class MySqlDumpDialect extends AbstractDumpDialect
             'bigint' => $unsigned ? 'BIGINT UNSIGNED' : 'BIGINT',
             'float' => 'FLOAT',
             'double' => 'DOUBLE',
-            'decimal' => 'DECIMAL(20,6)',
-            'varchar', 'enum' => 'VARCHAR('.self::DEFAULT_VARCHAR_LENGTH.')',
-            'char' => 'CHAR('.self::DEFAULT_VARCHAR_LENGTH.')',
+            'decimal' => 'DECIMAL('.$this->decimalSpec($column).')',
+            'varchar', 'enum' => $this->mysqlVarchar($this->varcharLength($column)),
+            'char' => $this->varcharLength($column) <= 255
+                ? 'CHAR('.$this->varcharLength($column).')'
+                : $this->mysqlVarchar($this->varcharLength($column)),
             'text' => 'LONGTEXT',
             'date' => 'DATE',
             'datetime' => 'DATETIME',
@@ -63,5 +65,11 @@ class MySqlDumpDialect extends AbstractDumpDialect
             'uuid' => 'CHAR(36)',
             default => 'TEXT',
         };
+    }
+
+    /** MySQL VARCHAR caps at ~16383 utf8mb4 chars; wider columns fall back to LONGTEXT. */
+    private function mysqlVarchar(int $length): string
+    {
+        return $length > 16383 ? 'LONGTEXT' : 'VARCHAR('.$length.')';
     }
 }

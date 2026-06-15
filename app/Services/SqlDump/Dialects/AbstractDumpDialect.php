@@ -184,6 +184,8 @@ abstract class AbstractDumpDialect implements SqlDumpDialect
     protected function normalize(string $type): string
     {
         $t = strtolower(trim($type));
+        // Strip any length/precision suffix, e.g. "varchar(36)" → "varchar".
+        $t = preg_replace('/\s*\(.*$/', '', $t) ?? $t;
 
         return match (true) {
             in_array($t, ['bool', 'boolean', 'bit'], true) => 'boolean',
@@ -207,6 +209,24 @@ abstract class AbstractDumpDialect implements SqlDumpDialect
             $t === 'enum' => 'enum',
             default => $t,
         };
+    }
+
+    /** Character length to emit for a string column, falling back to the dialect default. */
+    protected function varcharLength(ColumnSchemaData $column): int
+    {
+        return $column->length !== null && $column->length > 0
+            ? $column->length
+            : self::DEFAULT_VARCHAR_LENGTH;
+    }
+
+    /** `precision,scale` spec for a DECIMAL column, falling back to a generous default. */
+    protected function decimalSpec(ColumnSchemaData $column): string
+    {
+        if ($column->precision !== null && $column->precision > 0) {
+            return $column->precision.','.($column->scale ?? 0);
+        }
+
+        return '20,6';
     }
 
     protected function isBinaryType(string $type): bool
