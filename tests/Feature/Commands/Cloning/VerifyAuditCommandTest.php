@@ -64,6 +64,80 @@ it('returns Success(0) when audit file and signature are valid', function (): vo
     @unlink($tmpSig);
 });
 
+it('returns GeneralError(1) when the HTML contains no audit data block', function (): void {
+    // No <script id="audit-data"> block at all -> extractAuditJson returns null.
+    $htmlContent = '<!DOCTYPE html><html><body><p>nothing here</p></body></html>';
+
+    $tmpHtml = tempnam(sys_get_temp_dir(), 'audit_test_').'.html';
+    $tmpSig = str_replace('.html', '.sig', $tmpHtml);
+
+    file_put_contents($tmpHtml, $htmlContent);
+    file_put_contents($tmpSig, 'sha256:deadbeef');
+
+    $this->artisan('cloning:verify-audit', ['file' => $tmpHtml])
+        ->expectsOutputToContain('Could not find audit data')
+        ->assertExitCode(ExitCode::GeneralError->value);
+
+    @unlink($tmpHtml);
+    @unlink($tmpSig);
+});
+
+it('verifies audit data when the script attributes are in alternate order (id before type)', function (): void {
+    $canonicalJson = json_encode([
+        'clonio_version' => '1.0.0',
+        'source_connection' => 'production-db',
+        'success' => true,
+    ]) ?: '{}';
+
+    $contentHash = hash('sha256', $canonicalJson);
+    $hmacSignature = hash_hmac('sha256', $contentHash, (string) config('app.key'));
+
+    $escaped = htmlspecialchars($canonicalJson, ENT_NOQUOTES);
+    // Note: id attribute comes BEFORE type -> exercises the alternate regex.
+    $htmlContent = <<<HTML
+    <!DOCTYPE html>
+    <html><body>
+    <script id="audit-data" type="application/json">{$escaped}</script>
+    </body></html>
+    HTML;
+
+    $tmpHtml = tempnam(sys_get_temp_dir(), 'audit_test_').'.html';
+    $tmpSig = str_replace('.html', '.sig', $tmpHtml);
+
+    file_put_contents($tmpHtml, $htmlContent);
+    file_put_contents($tmpSig, 'sha256:'.$hmacSignature);
+
+    $this->artisan('cloning:verify-audit', ['file' => $tmpHtml])
+        ->expectsOutputToContain('verified')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($tmpHtml);
+    @unlink($tmpSig);
+});
+
+it('uses an explicit --sig path when provided', function (): void {
+    $canonicalJson = json_encode(['clonio_version' => '1.0.0', 'success' => true]) ?: '{}';
+
+    $contentHash = hash('sha256', $canonicalJson);
+    $hmacSignature = hash_hmac('sha256', $contentHash, (string) config('app.key'));
+
+    $htmlContent = makeAuditHtml($canonicalJson);
+
+    $tmpHtml = tempnam(sys_get_temp_dir(), 'audit_test_').'.html';
+    $customSig = tempnam(sys_get_temp_dir(), 'audit_sig_').'.signature';
+
+    file_put_contents($tmpHtml, $htmlContent);
+    // Signature stored WITHOUT the sha256: prefix to cover that branch too.
+    file_put_contents($customSig, $hmacSignature);
+
+    $this->artisan('cloning:verify-audit', ['file' => $tmpHtml, '--sig' => $customSig])
+        ->expectsOutputToContain('verified')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($tmpHtml);
+    @unlink($customSig);
+});
+
 it('returns GeneralError(1) when audit file has been tampered with', function (): void {
     $canonicalJson = json_encode([
         'clonio_version' => '1.0.0',
