@@ -1437,3 +1437,643 @@ it('exits 0 with cancellation message when user declines the strategy switch', f
 
     expect(Storage::disk('local')->get('test.cloning.yaml'))->toBe($original);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real SQLite-backed paths (no server needed). These exercise the live inspect /
+// countRows / schema-diff / full-run / dump branches that mocked services skip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a real on-disk SQLite database with a `users` table holding $rows rows.
+ */
+function makeSqliteDb(string $path, int $rows = 3, bool $withOrders = false): void
+{
+    if (is_file($path)) {
+        @unlink($path);
+    }
+
+    $pdo = new PDO('sqlite:'.$path);
+    $pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)');
+
+    for ($i = 1; $i <= $rows; $i++) {
+        $pdo->exec(sprintf("INSERT INTO users (id, email) VALUES (%d, 'user%d@example.com')", $i, $i));
+    }
+
+    if ($withOrders) {
+        $pdo->exec('CREATE TABLE orders (id INTEGER PRIMARY KEY, total INTEGER)');
+        $pdo->exec('INSERT INTO orders (id, total) VALUES (1, 100)');
+    }
+
+    $pdo = null;
+}
+
+/**
+ * Write a clonio.json onto the faked local disk with SQLite source + target.
+ */
+function writeSqliteClonioJson(string $sourcePath, string $targetPath): void
+{
+    Storage::disk('local')->put('clonio.json', (string) json_encode([
+        'connections' => [
+            'production-db' => [
+                'type' => 'sqlite',
+                'database' => $sourcePath,
+                'is_production' => true,
+            ],
+            'staging' => [
+                'type' => 'sqlite',
+                'database' => $targetPath,
+                'is_production' => false,
+            ],
+        ],
+    ]));
+}
+
+function sqliteCloningYaml(bool $withMissing = false, string $strategy = 'full', ?int $limit = null): string
+{
+    $extra = $withMissing ? "  missing_table:\n    rows:\n      strategy: full\n" : '';
+    $rows = $limit !== null ? "      strategy: {$strategy}\n      limit: {$limit}" : "      strategy: {$strategy}";
+
+    return <<<YAML
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+{$rows}
+{$extra}
+YAML;
+}
+
+it('dry-run counts real rows and applies the first/last strategy limit', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 5);
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml(strategy: 'first', limit: 2));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('Dry-run')
+        ->expectsOutputToContain('No data will be transferred')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
+it('dry-run renders NOT FOUND row and not-found total for missing tables', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 2);
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml(withMissing: true));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('NOT FOUND')
+        ->expectsOutputToContain('not found, will be skipped')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
+it('dry-run reports schema diff with extra tables on the source', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    // Source has users + orders; target only users → orders is "missing" on target.
+    makeSqliteDb($source, rows: 2, withOrders: true);
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('Schema diff: source → target')
+        ->expectsOutputToContain('Missing tables')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
+it('completes a real full run over SQLite and prints the summary line', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 3);
+    // Target needs the destination schema (schema replication then data transfer).
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    // Non-CI so the "Tables: x/y Rows: ..." summary line (and dot-newline) renders.
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+    ])
+        ->expectsOutputToContain('Tables:')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
+it('renders the verbose schema-comparison phase on a real run', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 2, withOrders: true);
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    $this->artisan('cloning:run test.cloning.yaml --target=staging -v')
+        ->expectsOutputToContain('Comparing schema')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
+it('produces a SQL dump archive when the target is a dump connection', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 4);
+
+    Storage::disk('local')->put('clonio.json', (string) json_encode([
+        'connections' => [
+            'production-db' => [
+                'type' => 'sqlite',
+                'database' => $source,
+                'is_production' => true,
+            ],
+            'dump-target' => [
+                'type' => 'dump',
+                'dialect' => 'sqlite',
+                'is_production' => false,
+            ],
+        ],
+    ]));
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'dump-target',
+    ])
+        ->expectsOutputToContain('Dump:')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+});
+
+it('returns GeneralError(1) when the dump archive cannot be finalised', function (): void {
+    // Mocked orchestrator never calls begin() on the dump sink, so finish() throws.
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('dump-target')->andReturn(makeRunDumpConnection('dump-target', DatabaseConnectionType::Mysql));
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn(makeRunResult());
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'dump-target',
+        '--ci' => true,
+    ])
+        ->expectsOutputToContain('Failed to finalise dump archive')
+        ->assertExitCode(ExitCode::GeneralError->value);
+});
+
+it('returns ConfigError(7) when there is no other connection to use as target', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $prod = makeRunMysqlConnection('production-db');
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($prod);
+    $config->shouldReceive('getConnections')->andReturn(['production-db' => $prod]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $this->artisan('cloning:run', ['file' => 'test.cloning.yaml'])
+        ->expectsOutputToContain('No other connections available')
+        ->assertExitCode(ExitCode::ConfigError->value);
+});
+
+it('returns ConnectionError(3) when source schema inspection fails', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andThrow(new RuntimeException('schema boom'));
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+    ])
+        ->expectsOutputToContain('Failed to inspect source schema')
+        ->assertExitCode(ExitCode::ConnectionError->value);
+});
+
+it('rethrows a non-memory error raised during key mapping generation', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $remapping = Mockery::mock(KeyRemappingService::class);
+    $remapping->shouldReceive('generateMappings')->andThrow(new RuntimeException('unexpected remap failure'));
+    $remapping->shouldReceive('cleanup')->andReturnNull();
+    $this->app->instance(KeyRemappingService::class, $remapping);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::GeneralError->value);
+})->throws(RuntimeException::class, 'unexpected remap failure');
+
+it('prints a --no-memory-limit hint when key mapping runs out of memory', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $remapping = Mockery::mock(KeyRemappingService::class);
+    $remapping->shouldReceive('generateMappings')->andThrow(new RuntimeException('Allowed memory size of 12345 bytes exhausted'));
+    $remapping->shouldReceive('cleanup')->andReturnNull();
+    $this->app->instance(KeyRemappingService::class, $remapping);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+    ])
+        ->expectsOutputToContain('Memory exhausted during key mapping generation')
+        ->assertExitCode(ExitCode::GeneralError->value);
+});
+
+it('reports schema-replication failures and not-found tables collected during a CI run', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $result = new RunResultData(
+        success: true,
+        tables: [
+            new TableRunResultData('users', TableRunStatus::Transferred, 10, 0, 0.1, null),
+            new TableRunResultData('gone', TableRunStatus::NotFound, 0, 0, 0.0, null),
+            new TableRunResultData('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, null),
+        ],
+        totalRows: 10,
+        skippedRows: 0,
+        durationSeconds: 0.2,
+        failureReason: null,
+    );
+
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturnUsing(function (
+        CloningConfigData $config,
+        ConnectionData $source,
+        ConnectionData $target,
+        DatabaseSchemaData $sourceSchema,
+        bool $skipSchema,
+        array $skipTables,
+        array $onlyTables,
+        callable $onProgress,
+        ?KeyRemappingService $keyRemapping = null,
+        bool $breakOnFailure = false,
+        ?callable $onTableStart = null,
+    ) use ($result): RunResultData {
+        // CI branch of onProgress collects not-found + schema-failure names.
+        $onProgress('gone', TableRunStatus::NotFound, 0, 0, []);
+        $onProgress('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+
+        return $result;
+    });
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+    ])
+        ->expectsOutputToContain('schema replication failure')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('formats minutes-and-seconds durations in the summary line', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $result = new RunResultData(
+        success: true,
+        tables: [new TableRunResultData('users', TableRunStatus::Transferred, 100, 0, 90.0, null)],
+        totalRows: 100,
+        skippedRows: 0,
+        durationSeconds: 90.0,
+        failureReason: null,
+    );
+
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn($result);
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+    ])
+        ->expectsOutputToContain('1m 30s')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('returns GeneralError(1) when cloning:column:edit fails during interactive recovery', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYaml());
+
+    // The offending table is absent from the YAML → the delegated cloning:column:edit
+    // returns ValidationError, which the recovery flow surfaces as GeneralError.
+    bindExhaustionMocks(new KeyRemappingExhaustedException(
+        table: 'absent_table',
+        column: 'id',
+        columnType: 'tinyint',
+        unsigned: true,
+        typeMax: 255,
+        rowCount: 199,
+        upperSlots: 56,
+        gapSlots: 0,
+    ));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+    ])
+        ->expectsConfirmation("Switch absent_table.id strategy to 'keep' in test.cloning.yaml?", 'yes')
+        ->expectsOutputToContain('Failed to update column strategy')
+        ->assertExitCode(ExitCode::GeneralError->value);
+});
+
+it('parses --only-tables and forwards it to the orchestrator', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $capturedOnly = null;
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')
+        ->withArgs(static function ($cfg, $src, $tgt, $schema, $skipSchema, $skipTbls, array $only) use (&$capturedOnly): bool {
+            $capturedOnly = $only;
+
+            return true;
+        })
+        ->andReturn(makeRunResult());
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+        '--only-tables' => 'users, orders',
+    ])->assertExitCode(ExitCode::Success->value);
+
+    expect($capturedOnly)->toBe(['users', 'orders']);
+});
+
+it('dry-run returns ConnectionError(3) when source schema inspection fails', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andThrow(new RuntimeException('dry inspect boom'));
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('Failed to inspect source schema')
+        ->assertExitCode(ExitCode::ConnectionError->value);
+});
+
+it('dry-run proceeds without a diff when only the target inspection fails', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    // First inspect (source) succeeds; second (target) throws → diff is skipped (non-fatal).
+    $callCount = 0;
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturnUsing(static function () use (&$callCount) {
+        $callCount++;
+
+        if ($callCount === 1) {
+            return makeRunSimpleSchema();
+        }
+
+        throw new RuntimeException('target inspect failed');
+    });
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('Dry-run')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('dry-run renders extra-table and modified-column schema diffs', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+
+    // Source: users(id, email). Target: users(id, email TEXT→ but add an extra
+    // column + an extra table) so the diff shows extra tables and modified columns.
+    $pdoSrc = new PDO('sqlite:'.$source);
+    $pdoSrc->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)');
+    $pdoSrc->exec("INSERT INTO users (id, email) VALUES (1, 'a@example.com')");
+    $pdoSrc = null;
+
+    $pdoTgt = new PDO('sqlite:'.$target);
+    // email differs (INTEGER vs TEXT) → modified column; legacy table → extra on target.
+    $pdoTgt->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, email INTEGER)');
+    $pdoTgt->exec('CREATE TABLE legacy (id INTEGER PRIMARY KEY)');
+    $pdoTgt = null;
+
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--dry-run' => true,
+    ])
+        ->expectsOutputToContain('Schema diff: source → target')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
+it('honours --audit-channel override even without an audit config block', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn(makeRunResult());
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    // 'local' channel with no config block: delivery is attempted (label "Delivering audit log").
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+        '--audit-channel' => 'local',
+    ])->assertExitCode(ExitCode::Success->value);
+});
