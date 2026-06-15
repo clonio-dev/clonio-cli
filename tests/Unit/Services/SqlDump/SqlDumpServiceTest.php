@@ -11,6 +11,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Services\SqlDump\DumpArchiver;
 use App\Services\SqlDump\DumpDialectFactory;
 use App\Services\SqlDump\SqlDumpService;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 
 function dumpConn(string $password = '', DatabaseConnectionType $dialect = DatabaseConnectionType::Mysql): ConnectionData
@@ -144,4 +145,54 @@ it('throws when the dialect is missing', function (): void {
 
     expect(fn () => makeService()->begin($bad, dumpSource(), dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable))
         ->toThrow(RuntimeException::class);
+});
+
+it('throws when finish() is called before begin()', function (): void {
+    Storage::fake('local');
+
+    expect(fn () => makeService()->finish())->toThrow(RuntimeException::class, 'before begin');
+});
+
+it('writeRows is a no-op before begin() and for unknown tables', function (): void {
+    Storage::fake('local');
+    $service = makeService();
+
+    // Before begin(): nothing to write, no error.
+    $service->writeRows('users', [['id' => 1]]);
+
+    $service->begin(dumpConn(), dumpSource(), dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable('2026-05-24 12:34:56'));
+    $service->writeRows('does_not_exist', [['id' => 1]]);
+
+    expect(Storage::disk('local')->get($service->sqlFileName()))->not->toContain('does_not_exist');
+});
+
+it('decrypts an encrypted ZIP password and produces an AES archive', function (): void {
+    config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
+    Storage::fake('local');
+    $service = makeService();
+    $conn = dumpConn('encrypted:'.Crypt::encryptString('topsecret'));
+
+    $service->begin($conn, dumpSource(), dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable('2026-05-24 12:34:56'));
+    $service->writeRows('users', [['id' => 1, 'email' => 'a@b.c']]);
+
+    expect($service->finish()->encrypted)->toBeTrue();
+});
+
+it('throws when an encrypted ZIP password cannot be decrypted', function (): void {
+    config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
+    Storage::fake('local');
+    $conn = dumpConn('encrypted:not-a-valid-payload');
+
+    expect(fn () => makeService()->begin($conn, dumpSource(), dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable))
+        ->toThrow(RuntimeException::class, 'decrypt');
+});
+
+it('falls back to "dump" when the source has no database name', function (): void {
+    Storage::fake('local');
+    $service = makeService();
+    $noDb = new ConnectionData('s', DatabaseConnectionType::Mysql, 'localhost', 3306, null, null, 'root', '', false);
+
+    $service->begin(dumpConn(), $noDb, dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable('2026-05-24 12:34:56'));
+
+    expect($service->sqlFileName())->toBe('dump_20260524_123456.sql');
 });

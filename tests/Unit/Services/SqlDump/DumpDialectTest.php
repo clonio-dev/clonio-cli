@@ -174,7 +174,176 @@ it('still uses defaults when no length metadata is present', function (): void {
         ->toContain('`email` VARCHAR(255)')->toContain('`amount` DECIMAL(20,6)');
 });
 
+it('returns an empty string for an insert batch with no rows', function (): void {
+    $dialect = (new DumpDialectFactory)->make(DatabaseConnectionType::Mysql);
+
+    expect($dialect->insertBatch(dumpTable(), ['id', 'email'], []))->toBe('');
+});
+
+it('quotes native PHP booleans per dialect', function (): void {
+    $table = new TableSchemaData('t', [new ColumnSchemaData('flag', 'varchar', true, null, false)], []);
+
+    $mysql = (new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->insertBatch($table, ['flag'], [['flag' => true], ['flag' => false]]);
+    $pg = (new DumpDialectFactory)->make(DatabaseConnectionType::PostgreSQL)->insertBatch($table, ['flag'], [['flag' => true]]);
+
+    expect($mysql)->toContain('(1)')->toContain('(0)')
+        ->and($pg)->toContain('(TRUE)');
+});
+
+it('json-encodes array values that reach a string column', function (): void {
+    $table = new TableSchemaData('t', [new ColumnSchemaData('meta', 'json', true, null, false)], []);
+
+    $sql = (new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->insertBatch($table, ['meta'], [['meta' => ['a' => 1]]]);
+
+    expect($sql)->toContain('\'{"a":1}\'');
+});
+
+it('treats a boolean-typed column value of "1"/"0" as a boolean literal', function (): void {
+    $table = new TableSchemaData('t', [new ColumnSchemaData('ok', 'boolean', true, null, false)], []);
+    $pg = (new DumpDialectFactory)->make(DatabaseConnectionType::PostgreSQL);
+
+    expect($pg->insertBatch($table, ['ok'], [['ok' => '1']]))->toContain('(TRUE)')
+        ->and($pg->insertBatch($table, ['ok'], [['ok' => '0']]))->toContain('(FALSE)');
+});
+
 it('rejects the dump pseudo-type as a dialect', function (): void {
     expect(fn () => (new DumpDialectFactory)->make(DatabaseConnectionType::Dump))
         ->toThrow(InvalidArgumentException::class);
 });
+
+it('emits a plain DROP TABLE IF EXISTS for non-SQL-Server dialects', function (): void {
+    expect((new DumpDialectFactory)->make(DatabaseConnectionType::Mysql)->dropTable('users'))->toBe("DROP TABLE IF EXISTS `users`;\n")
+        ->and((new DumpDialectFactory)->make(DatabaseConnectionType::PostgreSQL)->dropTable('users'))->toBe("DROP TABLE IF EXISTS \"users\";\n")
+        ->and((new DumpDialectFactory)->make(DatabaseConnectionType::Sqlite)->dropTable('users'))->toBe("DROP TABLE IF EXISTS \"users\";\n");
+});
+
+it('SQL Server: hex-encodes binary values as 0x', function (): void {
+    $table = new TableSchemaData('t', [new ColumnSchemaData('blob', 'varbinary', true, null, false)], []);
+    $sql = (new DumpDialectFactory)->make(DatabaseConnectionType::SqlServer)->insertBatch($table, ['blob'], [['blob' => 'AB']]);
+
+    expect($sql)->toContain('(0x4142)');
+});
+
+it('defaults the SQL Server schema prefix to dbo and emits no FK preamble', function (): void {
+    $dialect = (new DumpDialectFactory)->make(DatabaseConnectionType::SqlServer); // no schema argument
+
+    expect($dialect->createTable(dumpTable(), false))->toContain('CREATE TABLE [dbo].[users]')
+        ->and($dialect->preamble(true))->toBe('')
+        ->and($dialect->postamble(true, []))->toBe('');
+});
+
+/** Render a single nullable column and return the emitted DDL type token. */
+function mappedType(DatabaseConnectionType $dialect, string $sourceType, bool $unsigned = false): string
+{
+    $col = new ColumnSchemaData('c', $sourceType, true, null, false, unsigned: $unsigned);
+    $ddl = (new DumpDialectFactory)->make($dialect)->createTable(new TableSchemaData('t', [$col], []), false);
+
+    // Column line looks like: `  <quoted c> <TYPE>,`  (nullable → no NOT NULL suffix)
+    expect(preg_match('/^\s+\S+\s+(.+?),?$/m', $ddl, $m))->toBe(1);
+
+    return trim($m[1]);
+}
+
+it('maps every source type for MySQL per the §8 table', function (string $source, bool $unsigned, string $expected): void {
+    expect(mappedType(DatabaseConnectionType::Mysql, $source, $unsigned))->toBe($expected);
+})->with([
+    ['boolean', false, 'TINYINT(1)'],
+    ['tinyint', false, 'TINYINT'],
+    ['tinyint', true, 'TINYINT UNSIGNED'],
+    ['smallint', false, 'SMALLINT'],
+    ['smallint', true, 'SMALLINT UNSIGNED'],
+    ['int', false, 'INT'],
+    ['int', true, 'INT UNSIGNED'],
+    ['bigint', false, 'BIGINT'],
+    ['bigint', true, 'BIGINT UNSIGNED'],
+    ['float', false, 'FLOAT'],
+    ['double', false, 'DOUBLE'],
+    ['decimal', false, 'DECIMAL(20,6)'],
+    ['varchar', false, 'VARCHAR(255)'],
+    ['char', false, 'CHAR(255)'],
+    ['text', false, 'LONGTEXT'],
+    ['date', false, 'DATE'],
+    ['datetime', false, 'DATETIME'],
+    ['timestamp', false, 'TIMESTAMP'],
+    ['time', false, 'TIME'],
+    ['json', false, 'JSON'],
+    ['blob', false, 'LONGBLOB'],
+    ['uuid', false, 'CHAR(36)'],
+    ['enum', false, 'VARCHAR(255)'],
+    ['geometry', false, 'TEXT'],
+]);
+
+it('maps every source type for PostgreSQL per the §8 table', function (string $source, bool $unsigned, string $expected): void {
+    expect(mappedType(DatabaseConnectionType::PostgreSQL, $source, $unsigned))->toBe($expected);
+})->with([
+    ['boolean', false, 'BOOLEAN'],
+    ['tinyint', false, 'SMALLINT'],
+    ['smallint', false, 'SMALLINT'],
+    ['int', false, 'INTEGER'],
+    ['int', true, 'BIGINT'],
+    ['bigint', false, 'BIGINT'],
+    ['bigint', true, 'NUMERIC(20,0)'],
+    ['float', false, 'REAL'],
+    ['double', false, 'DOUBLE PRECISION'],
+    ['decimal', false, 'DECIMAL(20,6)'],
+    ['varchar', false, 'VARCHAR(255)'],
+    ['char', false, 'CHAR(255)'],
+    ['text', false, 'TEXT'],
+    ['date', false, 'DATE'],
+    ['datetime', false, 'TIMESTAMP'],
+    ['timestamp', false, 'TIMESTAMPTZ'],
+    ['time', false, 'TIME'],
+    ['json', false, 'JSONB'],
+    ['blob', false, 'BYTEA'],
+    ['uuid', false, 'UUID'],
+    ['enum', false, 'VARCHAR(255)'],
+    ['geometry', false, 'TEXT'],
+]);
+
+it('maps every source type for SQL Server per the §8 table', function (string $source, bool $unsigned, string $expected): void {
+    expect(mappedType(DatabaseConnectionType::SqlServer, $source, $unsigned))->toBe($expected);
+})->with([
+    ['boolean', false, 'BIT'],
+    ['tinyint', false, 'TINYINT'],
+    ['smallint', false, 'SMALLINT'],
+    ['int', false, 'INT'],
+    ['int', true, 'BIGINT'],
+    ['bigint', false, 'BIGINT'],
+    ['bigint', true, 'DECIMAL(20,0)'],
+    ['float', false, 'REAL'],
+    ['double', false, 'FLOAT'],
+    ['decimal', false, 'DECIMAL(20,6)'],
+    ['varchar', false, 'NVARCHAR(255)'],
+    ['char', false, 'NCHAR(255)'],
+    ['text', false, 'NVARCHAR(MAX)'],
+    ['date', false, 'DATE'],
+    ['datetime', false, 'DATETIME2'],
+    ['timestamp', false, 'DATETIMEOFFSET'],
+    ['time', false, 'TIME'],
+    ['json', false, 'NVARCHAR(MAX)'],
+    ['blob', false, 'VARBINARY(MAX)'],
+    ['uuid', false, 'UNIQUEIDENTIFIER'],
+    ['enum', false, 'NVARCHAR(255)'],
+    ['geometry', false, 'NVARCHAR(MAX)'],
+]);
+
+it('maps every source type for SQLite by storage affinity', function (string $source, string $expected): void {
+    expect(mappedType(DatabaseConnectionType::Sqlite, $source))->toBe($expected);
+})->with([
+    ['boolean', 'INTEGER'],
+    ['tinyint', 'INTEGER'],
+    ['smallint', 'INTEGER'],
+    ['int', 'INTEGER'],
+    ['bigint', 'INTEGER'],
+    ['float', 'REAL'],
+    ['double', 'REAL'],
+    ['decimal', 'REAL'],
+    ['varchar', 'TEXT'],
+    ['char', 'TEXT'],
+    ['text', 'TEXT'],
+    ['datetime', 'TEXT'],
+    ['json', 'TEXT'],
+    ['uuid', 'TEXT'],
+    ['blob', 'BLOB'],
+    ['geometry', 'TEXT'],
+]);
