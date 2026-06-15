@@ -86,6 +86,16 @@ it('returns empty cascade when no tables depend on excluded', function (): void 
     expect($cascade)->toBe([]);
 });
 
+it('skips cascade tables that are absent from the schema', function (): void {
+    $resolver = new DependencyResolver;
+    $schema = makeSchemaForSort();
+
+    // 'ghost' is in the processed list but not in the schema → skipped without error
+    $cascade = $resolver->computeCascadeExclusions($schema, ['users'], ['orders', 'ghost']);
+
+    expect($cascade)->toBe(['orders']);
+});
+
 it('includes not-found tables at the end of sorted list', function (): void {
     $resolver = new DependencyResolver;
     $schema = new DatabaseSchemaData(databaseName: 'testdb', tables: []);
