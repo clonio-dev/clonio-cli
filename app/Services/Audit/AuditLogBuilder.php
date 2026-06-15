@@ -12,6 +12,7 @@ use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
+use App\Data\SqlDump\DumpResultData;
 use DateTimeImmutable;
 
 class AuditLogBuilder
@@ -27,6 +28,8 @@ class AuditLogBuilder
         string $yamlFileName,
         ?ConnectionData $sourceConnectionData = null,
         ?ConnectionData $targetConnectionData = null,
+        ?string $dumpDialect = null,
+        ?DumpResultData $dumpResult = null,
     ): AuditRecordData {
         $auditTables = [];
 
@@ -74,6 +77,10 @@ class AuditLogBuilder
         $sourceDetails = $this->projectConnectionDetails($config->connectionName, $sourceConnectionData);
         $targetDetails = $this->projectConnectionDetails($targetConnection, $targetConnectionData);
 
+        $dumpFile = $dumpResult instanceof DumpResultData ? $dumpResult->zipPath : null;
+        $dumpSha256 = $dumpResult instanceof DumpResultData ? $dumpResult->sha256 : null;
+        $dumpEncrypted = $dumpResult instanceof DumpResultData ? $dumpResult->encrypted : null;
+
         // Create a placeholder record (without hash/sig) to sign
         $placeholder = new AuditRecordData(
             clonioVersion: $clonioVersion,
@@ -92,6 +99,10 @@ class AuditLogBuilder
             hmacSignature: '',
             sourceConnectionDetails: $sourceDetails,
             targetConnectionDetails: $targetDetails,
+            dumpDialect: $dumpDialect,
+            dumpFile: $dumpFile,
+            dumpSha256: $dumpSha256,
+            dumpEncrypted: $dumpEncrypted,
         );
 
         [, $contentHash, $hmacSignature] = $this->signer->sign($placeholder);
@@ -113,6 +124,10 @@ class AuditLogBuilder
             hmacSignature: $hmacSignature,
             sourceConnectionDetails: $sourceDetails,
             targetConnectionDetails: $targetDetails,
+            dumpDialect: $dumpDialect,
+            dumpFile: $dumpFile,
+            dumpSha256: $dumpSha256,
+            dumpEncrypted: $dumpEncrypted,
         );
     }
 

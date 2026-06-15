@@ -19,6 +19,7 @@ final readonly class ConnectionData
         public string $password,
         public bool $isProduction,
         public bool $trustServerCertificate = false,
+        public ?DatabaseConnectionType $dialect = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -31,6 +32,7 @@ final readonly class ConnectionData
         $schema = $data['schema'] ?? null;
         $username = $data['username'] ?? null;
         $password = $data['password'] ?? null;
+        $dialect = $data['dialect'] ?? null;
 
         return new self(
             name: $name,
@@ -43,6 +45,7 @@ final readonly class ConnectionData
             password: is_string($password) ? $password : '',
             isProduction: (bool) ($data['is_production'] ?? false),
             trustServerCertificate: (bool) ($data['trust_server_certificate'] ?? false),
+            dialect: is_string($dialect) ? DatabaseConnectionType::tryFrom($dialect) : null,
         );
     }
 
@@ -65,6 +68,10 @@ final readonly class ConnectionData
 
         if ($this->schema !== null) {
             $data['schema'] = $this->schema;
+        }
+
+        if ($this->dialect instanceof DatabaseConnectionType) {
+            $data['dialect'] = $this->dialect->value;
         }
 
         if ($this->username !== null) {

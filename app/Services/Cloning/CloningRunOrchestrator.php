@@ -19,6 +19,8 @@ use App\Data\Schema\TableSchemaData;
 use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
+use App\Services\SqlDump\SqlDumpService;
+use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -49,6 +51,7 @@ class CloningRunOrchestrator
         ?KeyRemappingService $keyRemapping = null,
         bool $breakOnFailure = false,
         ?callable $onTableStart = null,
+        ?SqlDumpService $dumpSink = null,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -77,7 +80,19 @@ class CloningRunOrchestrator
         /** @var array<string, string> $schemaFailures */
         $schemaFailures = [];
 
-        if (! $skipSchema) {
+        if ($dumpSink instanceof SqlDumpService) {
+            // Dump target: write header + DDL to the .sql file instead of a live PDO.
+            $dumpSink->begin(
+                $target,
+                $source,
+                $sourceSchema,
+                $sortedTables,
+                $config->options,
+                new DateTimeImmutable('now'),
+                ! $skipSchema,
+            );
+            Log::info('dump_schema_written', ['tables' => $sortedTables]);
+        } elseif (! $skipSchema) {
             $schemaFailures = $this->replicator->replicate(
                 $source,
                 $target,
@@ -167,16 +182,26 @@ class CloningRunOrchestrator
                 ))
                 : [];
 
-            [$rows, $skipped, $failed, $reason, $skippedRows] = $this->transferTable(
-                $config->options,
-                $tableConfig,
-                $source,
-                $target,
-                $pkColumns,
-                $engine,
-                $keyRemapping,
-                $config->keyRemapping,
-            );
+            [$rows, $skipped, $failed, $reason, $skippedRows] = $dumpSink instanceof SqlDumpService
+                ? $this->dumpTable(
+                    $config->options,
+                    $tableConfig,
+                    $source,
+                    $engine,
+                    $dumpSink,
+                    $keyRemapping,
+                    $config->keyRemapping,
+                )
+                : $this->transferTable(
+                    $config->options,
+                    $tableConfig,
+                    $source,
+                    $target,
+                    $pkColumns,
+                    $engine,
+                    $keyRemapping,
+                    $config->keyRemapping,
+                );
 
             $tableDuration = microtime(true) - $tableStart;
 
@@ -198,7 +223,7 @@ class CloningRunOrchestrator
                 break;
             }
 
-            if (! $failed && $sourceTable instanceof TableSchemaData) {
+            if (! $failed && ! $dumpSink instanceof SqlDumpService && $sourceTable instanceof TableSchemaData) {
                 $pkColumn = $this->findIntegerPkColumn($target, $sourceTable);
                 if ($pkColumn !== null) {
                     try {
@@ -294,28 +319,7 @@ class CloningRunOrchestrator
                     break;
                 }
 
-                /** @var list<array<string, mixed>> $transformed */
-                $transformed = [];
-
-                foreach ($chunk as $row) {
-                    $rowArray = (array) $row;
-                    $transformedRow = [];
-
-                    foreach ($rowArray as $col => $val) {
-                        if (! is_string($col)) {
-                            continue;
-                        }
-
-                        $colConfig = $tableConfig->getColumn($col);
-                        $transformedRow[$col] = $colConfig instanceof ColumnCloningConfigData ? $engine->transform($val, $colConfig) : $val;
-                    }
-
-                    if ($keyRemapping instanceof KeyRemappingService && $keyRemappingConfig instanceof KeyRemappingConfigData) {
-                        $transformedRow = $keyRemapping->applyToRow($transformedRow, $tableConfig->tableName, $keyRemappingConfig);
-                    }
-
-                    $transformed[] = $transformedRow;
-                }
+                $transformed = $this->transformChunk($chunk, $tableConfig, $engine, $keyRemapping, $keyRemappingConfig);
 
                 // Bulk insert into target
                 try {
@@ -378,6 +382,92 @@ class CloningRunOrchestrator
             DB::purge($sourceConn);
             DB::purge($targetConn);
         }
+    }
+
+    /**
+     * Read source chunks, transform + key-remap each row, and stream the result as
+     * INSERT batches into the dump file. Mirrors transferTable() minus the live
+     * target connection. Returns [rowsWritten, 0, hasFailed, failureReason, []].
+     *
+     * @return array{int, int, bool, ?string, list<SkippedRow>}
+     */
+    private function dumpTable(
+        CloningOptionsData $options,
+        TableCloningConfigData $tableConfig,
+        ConnectionData $source,
+        AnonymizationEngine $engine,
+        SqlDumpService $dumpSink,
+        ?KeyRemappingService $keyRemapping = null,
+        ?KeyRemappingConfigData $keyRemappingConfig = null,
+    ): array {
+        $sourceConn = $this->connector->open($source);
+
+        $rows = 0;
+        $offset = 0;
+        $chunkSize = $options->chunkSize;
+
+        try {
+            do {
+                /** @var list<object> $chunk */
+                $chunk = DB::connection($sourceConn)->select(
+                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize)
+                );
+
+                if ($chunk === []) {
+                    break;
+                }
+
+                $transformed = $this->transformChunk($chunk, $tableConfig, $engine, $keyRemapping, $keyRemappingConfig);
+                $dumpSink->writeRows($tableConfig->tableName, $transformed);
+                $rows += count($transformed);
+                $offset += count($chunk);
+            } while (count($chunk) === $chunkSize);
+
+            return [$rows, 0, false, null, []];
+        } catch (Throwable $throwable) {
+            return [$rows, 0, true, $throwable->getMessage(), []];
+        } finally {
+            DB::purge($sourceConn);
+        }
+    }
+
+    /**
+     * Apply per-column anonymization and key remapping to a chunk of source rows.
+     *
+     * @param  list<object>  $chunk
+     * @return list<array<string, mixed>>
+     */
+    private function transformChunk(
+        array $chunk,
+        TableCloningConfigData $tableConfig,
+        AnonymizationEngine $engine,
+        ?KeyRemappingService $keyRemapping,
+        ?KeyRemappingConfigData $keyRemappingConfig,
+    ): array {
+        /** @var list<array<string, mixed>> $transformed */
+        $transformed = [];
+
+        foreach ($chunk as $row) {
+            $rowArray = (array) $row;
+            $transformedRow = [];
+
+            foreach ($rowArray as $col => $val) {
+                if (! is_string($col)) {
+                    continue;
+                }
+
+                $colConfig = $tableConfig->getColumn($col);
+                $transformedRow[$col] = $colConfig instanceof ColumnCloningConfigData ? $engine->transform($val, $colConfig) : $val;
+            }
+
+            if ($keyRemapping instanceof KeyRemappingService && $keyRemappingConfig instanceof KeyRemappingConfigData) {
+                $transformedRow = $keyRemapping->applyToRow($transformedRow, $tableConfig->tableName, $keyRemappingConfig);
+            }
+
+            $transformed[] = $transformedRow;
+        }
+
+        return $transformed;
     }
 
     /**

@@ -377,3 +377,18 @@ The standard audit log is extended for dump runs:
 | 3 | **SQL Server schema prefix** | Derived from the source connection's `schema` field if source is `sqlsrv`; otherwise defaults to `dbo`. |
 | 4 | **Cross-dialect type mapping** | Conservative/widest-compatible mixture (see §8). Unknown types fall back to `TEXT` / `NVARCHAR(MAX)`. `tinyint(1)` → boolean in all non-MySQL dialects. SQL Server always uses Unicode string types. |
 | 5 | **BLOB / binary columns** | Always hex-encoded using the target dialect's notation (see §7.3). `NULL` binary values remain `NULL`. |
+
+---
+
+## 17. Implementation Notes (v1)
+
+The shipped v1 deviates from the illustrative DDL/DML examples above in two deliberate, documented ways. They keep the generated dump unconditionally importable across all five dialects:
+
+1. **No `AUTO_INCREMENT` / `SERIAL` / `IDENTITY`.** Primary keys are emitted as plain columns. The pipeline always inserts explicit key values (including remapped keys), so identity columns are unnecessary — and their absence means the SQL Server path needs **no** `SET IDENTITY_INSERT` wrapper (§7.2), avoiding "table has no identity property" import errors.
+2. **No `DEFAULT` clauses.** Every column value is copied explicitly from the source, so DDL omits `DEFAULT` expressions (which would otherwise need per-dialect translation, e.g. `CURRENT_TIMESTAMP` vs `GETDATE()`).
+
+**Length / precision fidelity.** `ColumnSchemaData` carries `length`, `precision`, and `scale`, populated by the schema inspector for every driver (MySQL `COLUMN_TYPE` and SQLite declared types are parsed by `ColumnTypeParser`; PostgreSQL and SQL Server read `character_maximum_length` / `numeric_precision` / `numeric_scale` from `information_schema`). DDL emits the source size — e.g. `VARCHAR(512)`, `DECIMAL(10,2)` — falling back to `VARCHAR(255)` / `DECIMAL(20,6)` only when the source exposes no size. Columns wider than a target dialect's limit downgrade safely (MySQL → `LONGTEXT` above 16383; SQL Server → `NVARCHAR(MAX)` above 4000) to prevent silent truncation.
+
+Foreign-key constraints are not rendered in DDL (data is written in dependency order with FK checks disabled), which also removes a class of cross-dialect import failures.
+
+**Testing.** `.github/workflows/cloning-dump-test.yml` runs the full pipeline per dialect against real databases: seed a MySQL source → `cloning:run --target=<dump>` → unzip → import the generated SQL into a fresh database of that dialect → verify anonymization, key remapping (UUIDs) and referential integrity via `verify-transfer.php`.

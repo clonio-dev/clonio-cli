@@ -54,7 +54,17 @@ class TestCommand extends Command
 
         if ($ok) {
             if (! $ci) {
-                $this->line(sprintf('%s: OK (%dms)', $name, $elapsed));
+                if ($connection->type === DatabaseConnectionType::Dump) {
+                    $this->line(sprintf(
+                        'Dump connection "%s" — dialect: %s, target: %s, encryption: %s',
+                        $name,
+                        $connection->dialect instanceof DatabaseConnectionType ? $connection->dialect->value : 'unknown',
+                        getcwd() ?: '.',
+                        $connection->password !== '' ? 'AES-256' : 'none',
+                    ));
+                } else {
+                    $this->line(sprintf('%s: OK (%dms)', $name, $elapsed));
+                }
             }
 
             return ExitCode::Success->value;
@@ -127,11 +137,31 @@ class TestCommand extends Command
     {
         $start = hrtime(true);
 
+        if ($connection->type === DatabaseConnectionType::Dump) {
+            return $this->testDump($start);
+        }
+
         if ($connection->type === DatabaseConnectionType::Sqlite) {
             return $this->testSqlite($connection, $start);
         }
 
         return $this->testNetwork($connection, $start, $connector);
+    }
+
+    /**
+     * Dump connections have no PDO — verify the working directory is writable instead.
+     *
+     * @return array{bool, string, int, ExitCode}
+     */
+    private function testDump(int $start): array
+    {
+        $cwd = getcwd();
+
+        if ($cwd === false || ! is_writable($cwd)) {
+            return [false, 'Working directory not writable: '.($cwd === false ? '(unknown)' : $cwd), $this->elapsedMs($start), ExitCode::IoError];
+        }
+
+        return [true, '', $this->elapsedMs($start), ExitCode::Success];
     }
 
     /**

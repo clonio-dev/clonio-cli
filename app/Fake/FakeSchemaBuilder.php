@@ -267,6 +267,7 @@ final readonly class FakeSchemaBuilder
             DatabaseConnectionType::PostgreSQL => $this->wrapPgsqlFkOff($callback),
             DatabaseConnectionType::SqlServer => $this->wrapMssqlFkOff($callback),
             DatabaseConnectionType::Sqlite => $this->wrapSqliteFkOff($callback),
+            DatabaseConnectionType::Dump => $callback(),
         };
     }
 

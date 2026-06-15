@@ -16,7 +16,9 @@ use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\SchemaDiffData;
+use App\Data\SqlDump\DumpResultData;
 use App\Enums\AuditChannelType;
+use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
 use App\Exceptions\KeyRemappingExhaustedException;
 use App\Logging\AuditBuffer;
@@ -42,6 +44,9 @@ use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\VerboseStepRenderer;
 use App\Services\Schema\SchemaDiffService;
 use App\Services\Schema\SchemaInspector;
+use App\Services\SqlDump\DumpArchiver;
+use App\Services\SqlDump\DumpDialectFactory;
+use App\Services\SqlDump\SqlDumpService;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Facades\Artisan;
@@ -259,16 +264,49 @@ class RunCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
-        // Test both connections
-        $connectLabel = sprintf('Connecting to %s and %s', $config->connectionName, $targetName);
+        $targetIsDump = $targetConnection->type === DatabaseConnectionType::Dump;
+
+        // A dump target produces a SQL file — validate it instead of opening a PDO.
+        if ($targetIsDump) {
+            if ($sourceConnection->type === DatabaseConnectionType::Dump) {
+                $this->error('Source connection must be a real database, not a dump.');
+
+                return ExitCode::ValidationError->value;
+            }
+
+            $dumpDialect = $targetConnection->dialect;
+
+            if (! $dumpDialect instanceof DatabaseConnectionType || ! $dumpDialect->isDialect()) {
+                $this->error('Dump connection has no valid dialect. Valid dialects: '.implode(', ', DatabaseConnectionType::dialectValues()).'.');
+
+                return ExitCode::ValidationError->value;
+            }
+
+            $cwd = getcwd();
+
+            if ($cwd === false || ! is_writable($cwd)) {
+                $this->error('Working directory is not writable: '.($cwd === false ? '(unknown)' : $cwd));
+
+                return ExitCode::IoError->value;
+            }
+        }
+
+        // Test connections (source always; target only when it is a live database)
+        $connectLabel = $targetIsDump
+            ? sprintf('Connecting to %s', $config->connectionName)
+            : sprintf('Connecting to %s and %s', $config->connectionName, $targetName);
 
         try {
-            $step->run($connectLabel, function () use ($connector, $sourceConnection, $targetConnection, $config, $targetName): void {
+            $step->run($connectLabel, function () use ($connector, $sourceConnection, $targetConnection, $config, $targetName, $targetIsDump): void {
                 try {
                     $sourceConnName = $connector->open($sourceConnection);
                     DB::purge($sourceConnName);
                 } catch (Throwable $throwable) {
                     throw new RuntimeException(sprintf("Cannot connect to source '%s': %s", $config->connectionName, $throwable->getMessage()), $throwable->getCode(), $throwable);
+                }
+
+                if ($targetIsDump) {
+                    return;
                 }
 
                 try {
@@ -350,7 +388,7 @@ class RunCommand extends Command
 
         $skipSchema = (bool) $this->option('skip-schema');
 
-        if ($isVerbose && ! $ci) {
+        if ($isVerbose && ! $ci && ! $targetIsDump) {
             $step->start('Comparing schema');
 
             try {
@@ -389,6 +427,10 @@ class RunCommand extends Command
 
         $dotColumn = 0;
         $maxDotColumns = 70;
+
+        $dumpSink = $targetIsDump
+            ? new SqlDumpService(new DumpDialectFactory, new DumpArchiver)
+            : null;
 
         $result = $orchestrator->run(
             config: $config,
@@ -458,9 +500,25 @@ class RunCommand extends Command
             onTableStart: $isVerbose && ! $ci
                 ? fn (string $tableName) => $step->start('  '.$tableName)
                 : null,
+            dumpSink: $dumpSink,
         );
 
         $finishedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+
+        // Finalise the dump: write postamble, compress to ZIP, delete the .sql.
+        $dumpResult = null;
+
+        if ($dumpSink instanceof SqlDumpService) {
+            try {
+                $dumpResult = $dumpSink->finish();
+                Log::info('dump_archived', ['file' => $dumpResult->zipFileName, 'bytes' => $dumpResult->zipBytes]);
+            } catch (Throwable $throwable) {
+                $this->error('Failed to finalise dump archive: '.$throwable->getMessage());
+
+                return ExitCode::GeneralError->value;
+            }
+        }
+
         Log::info('run_finished', ['success' => $result->success, 'rows' => $result->totalRows]);
 
         // ─── Phase 6b: Key Mapping Cleanup ────────────────────────────────────
@@ -495,7 +553,7 @@ class RunCommand extends Command
             /**
              * @var array{auditArtefacts: array<string, string>, templateVars: array<string, string>, processLogContent: string} $auditPayload
              */
-            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $auditBuffer, $sourceConnection, $targetConnection): array {
+            $auditPayload = $step->run('Generating audit log', function () use ($builder, $renderer, $signer, $config, $result, $targetName, $startedAt, $finishedAt, $yamlFileName, $auditBuffer, $sourceConnection, $targetConnection, $dumpResult): array {
                 $auditRecord = $builder->build(
                     config: $config,
                     result: $result,
@@ -505,6 +563,8 @@ class RunCommand extends Command
                     yamlFileName: $yamlFileName,
                     sourceConnectionData: $sourceConnection,
                     targetConnectionData: $targetConnection,
+                    dumpDialect: $targetConnection->dialect?->value,
+                    dumpResult: $dumpResult,
                 );
 
                 [$canonicalJson, $contentHash, $hmacSignature] = $signer->sign($auditRecord);
@@ -613,6 +673,19 @@ class RunCommand extends Command
             $this->line('');
             $this->line(sprintf('  Tables: %d/%d  Rows: %d  Duration: %s', $transferredCount, $totalCount, $result->totalRows, $duration));
             $this->line('');
+        }
+
+        if ($dumpResult instanceof DumpResultData) {
+            $this->line(sprintf(
+                '  Dump: %s  (%s%s)',
+                $dumpResult->zipFileName,
+                $this->formatBytes($dumpResult->zipBytes),
+                $dumpResult->encrypted ? ', AES-256' : '',
+            ));
+
+            if (! $ci) {
+                $this->line('');
+            }
         }
 
         if (! $result->success && ! (bool) $this->option('allow-failure')) {
@@ -857,6 +930,24 @@ class RunCommand extends Command
         $remaining = $seconds % 60;
 
         return sprintf('%dm %ds', $minutes, $remaining);
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes.' B';
+        }
+
+        $units = ['KB', 'MB', 'GB'];
+        $value = $bytes / 1024;
+        $unit = 0;
+
+        while ($value >= 1024 && $unit < count($units) - 1) {
+            $value /= 1024;
+            $unit++;
+        }
+
+        return sprintf('%.1f %s', $value, $units[$unit]);
     }
 
     /**

@@ -13,6 +13,7 @@ enum DatabaseConnectionType: string
     case PostgreSQL = 'pgsql';
     case SqlServer = 'sqlsrv';
     case Sqlite = 'sqlite';
+    case Dump = 'dump';
 
     public function label(): string
     {
@@ -22,6 +23,7 @@ enum DatabaseConnectionType: string
             self::PostgreSQL => 'PostgreSQL',
             self::SqlServer => 'SQL Server',
             self::Sqlite => 'SQLite',
+            self::Dump => 'Dump (SQL file)',
         };
     }
 
@@ -31,7 +33,7 @@ enum DatabaseConnectionType: string
             self::Mysql, self::MariaDB => 3306,
             self::PostgreSQL => 5432,
             self::SqlServer => 1433,
-            self::Sqlite => null,
+            self::Sqlite, self::Dump => null,
         };
     }
 
@@ -42,13 +44,32 @@ enum DatabaseConnectionType: string
 
     public function requiresNetworkConfig(): bool
     {
-        return $this !== self::Sqlite;
+        return $this !== self::Sqlite && $this !== self::Dump;
+    }
+
+    /** A virtual output target (SQL file) rather than a live PDO database. */
+    public function isDump(): bool
+    {
+        return $this === self::Dump;
+    }
+
+    /** Connection types that can serve as a SQL dump dialect (i.e. real DBMS targets). */
+    public function isDialect(): bool
+    {
+        return $this !== self::Dump;
     }
 
     /** @return list<string> */
     public static function values(): array
     {
         return array_map(static fn (self $case): string => $case->value, self::cases());
+    }
+
+    /** Real DBMS dialect values usable for a dump's `dialect` field (excludes `dump`). */
+    /** @return list<string> */
+    public static function dialectValues(): array
+    {
+        return array_values(array_filter(self::values(), static fn (string $v): bool => $v !== self::Dump->value));
     }
 
     /** @return list<string> */

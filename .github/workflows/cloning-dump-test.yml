@@ -1,0 +1,200 @@
+name: cloning:run dump tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Validates the `dump` target type end-to-end for every SQL dialect:
+# seed a real MySQL source → produce a dialect-correct ZIP dump → import the
+# generated SQL into a fresh database of that dialect → verify the transferred
+# (anonymized, key-remapped) data with the shared verify-transfer.php script.
+jobs:
+  cloning-dump-test:
+    name: dump → ${{ matrix.dialect }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dialect: [mysql, mariadb, pgsql, sqlsrv, sqlite]
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: clonio_source
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: secret
+          MARIADB_DATABASE: clonio_source
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: clonio_source
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: Clonio123!
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'Clonio123!' -Q 'SELECT 1' -No"
+          --health-interval=10s
+          --health-timeout=10s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:v2
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite, pdo_sqlsrv, zip
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Generate APP_KEY
+        run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
+
+      - name: Install sqlcmd (SQL Server dialect only)
+        if: matrix.dialect == 'sqlsrv'
+        run: |
+          sudo ACCEPT_EULA=Y apt-get install -y -qq mssql-tools18
+          echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
+
+      # ── Seed the MySQL source ──────────────────────────────────────────────────
+
+      - name: Seed source database (MySQL)
+        run: mysql -h 127.0.0.1 -P 3306 -u root -psecret clonio_source < .github/cloning-test/schema-mysql.sql
+
+      # ── Register connections ───────────────────────────────────────────────────
+
+      - name: Register source connection (MySQL)
+        run: |
+          php clonio connection:add source \
+            --type=mysql --host=127.0.0.1 --port=3306 \
+            --database=clonio_source --username=root --password=secret \
+            --no-interaction
+
+      - name: Register dump target connection
+        run: |
+          php clonio connection:add dumptarget \
+            --type=dump --dialect=${{ matrix.dialect }} \
+            --no-interaction
+
+      - name: Test dump connection
+        run: php clonio connection:test dumptarget --ci
+
+      # ── Produce the dump ───────────────────────────────────────────────────────
+
+      - name: Run cloning:run with a dump target
+        run: php clonio cloning:run .github/cloning-test/test.cloning.yaml --target=dumptarget --ci
+
+      - name: Unpack the dump archive
+        run: |
+          ZIP="$(ls clonio_source_*.zip | head -1)"
+          echo "Produced archive: $ZIP"
+          unzip -o "$ZIP"
+          SQL="$(ls clonio_source_*.sql | head -1)"
+          echo "DUMP_SQL=$SQL" >> "$GITHUB_ENV"
+          echo "--- Generated SQL (head) ---"
+          head -40 "$SQL"
+
+      # ── Create a fresh target DB of the dialect and import the dump ─────────────
+
+      - name: Import dump (MySQL)
+        if: matrix.dialect == 'mysql'
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_dump_target;"
+          mysql -h 127.0.0.1 -P 3306 -u root -psecret clonio_dump_target < "$DUMP_SQL"
+
+      - name: Import dump (MariaDB)
+        if: matrix.dialect == 'mariadb'
+        run: |
+          mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_dump_target;"
+          mysql -h 127.0.0.1 -P 3307 -u root -psecret clonio_dump_target < "$DUMP_SQL"
+
+      - name: Import dump (PostgreSQL)
+        if: matrix.dialect == 'pgsql'
+        run: |
+          PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_dump_target;" || true
+          PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -d clonio_dump_target -v ON_ERROR_STOP=1 -f "$DUMP_SQL"
+
+      - name: Import dump (SQL Server)
+        if: matrix.dialect == 'sqlsrv'
+        run: |
+          sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "CREATE DATABASE clonio_dump_target" -No
+          sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d clonio_dump_target -i "$DUMP_SQL" -b -No
+
+      - name: Import dump (SQLite)
+        if: matrix.dialect == 'sqlite'
+        run: sqlite3 /tmp/clonio_dump_target.sqlite < "$DUMP_SQL"
+
+      # ── Verify the imported data ───────────────────────────────────────────────
+
+      - name: Verify import (MySQL)
+        if: matrix.dialect == 'mysql'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3306 clonio_dump_target root secret
+
+      - name: Verify import (MariaDB)
+        if: matrix.dialect == 'mariadb'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3307 clonio_dump_target root secret
+
+      - name: Verify import (PostgreSQL)
+        if: matrix.dialect == 'pgsql'
+        run: php .github/cloning-test/verify-transfer.php pgsql 127.0.0.1 5432 clonio_dump_target postgres secret
+
+      - name: Verify import (SQL Server)
+        if: matrix.dialect == 'sqlsrv'
+        run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 clonio_dump_target SA 'Clonio123!'
+
+      - name: Verify import (SQLite)
+        if: matrix.dialect == 'sqlite'
+        run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 /tmp/clonio_dump_target.sqlite '' ''
+
+      # ── Diagnostics on failure ─────────────────────────────────────────────────
+
+      - name: Show generated SQL on failure
+        if: failure()
+        run: cat "$DUMP_SQL" 2>/dev/null || echo "dump SQL not found"
+
+      - name: Show clonio.json on failure
+        if: failure()
+        run: cat clonio.json 2>/dev/null || echo "clonio.json not found"

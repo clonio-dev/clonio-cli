@@ -205,6 +205,60 @@ YAML;
         ->assertExitCode(ExitCode::ValidationError->value);
 });
 
+function makeRunDumpConnection(string $name = 'dump-target', ?DatabaseConnectionType $dialect = DatabaseConnectionType::PostgreSQL): ConnectionData
+{
+    return new ConnectionData(
+        name: $name, type: DatabaseConnectionType::Dump, host: null, port: null,
+        database: null, schema: null, username: null, password: '', isProduction: false, dialect: $dialect,
+    );
+}
+
+function dumpRunYaml(): string
+{
+    return <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+}
+
+it('returns ValidationError(4) when a dump target has no dialect', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('dump-target')->andReturn(makeRunDumpConnection('dump-target', null));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('cloning:run', ['file' => 'test.cloning.yaml', '--target' => 'dump-target', '--ci' => true])
+        ->expectsOutputToContain('has no valid dialect')
+        ->assertExitCode(ExitCode::ValidationError->value);
+});
+
+it('returns ValidationError(4) when the source connection is itself a dump', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', dumpRunYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunDumpConnection('production-db'));
+    $config->shouldReceive('getConnection')->with('dump-target')->andReturn(makeRunDumpConnection('dump-target'));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('cloning:run', ['file' => 'test.cloning.yaml', '--target' => 'dump-target', '--ci' => true])
+        ->expectsOutputToContain('Source connection must be a real database')
+        ->assertExitCode(ExitCode::ValidationError->value);
+});
+
 it('returns ConnectionError(3) when source connection is unknown', function (): void {
     Storage::fake('local');
     $yaml = <<<'YAML'

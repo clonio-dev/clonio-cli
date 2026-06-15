@@ -38,6 +38,52 @@ function makeSqliteConnection(string $name = 'local', string $path = ''): Connec
     );
 }
 
+function makeDumpConnection(string $name = 'staging-dump', string $password = ''): ConnectionData
+{
+    return new ConnectionData(
+        name: $name,
+        type: DatabaseConnectionType::Dump,
+        host: null,
+        port: null,
+        database: null,
+        schema: null,
+        username: null,
+        password: $password,
+        isProduction: false,
+        dialect: DatabaseConnectionType::PostgreSQL,
+    );
+}
+
+it('tests a dump connection without a PDO ping and reports the dialect', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging-dump')->andReturn(makeDumpConnection('staging-dump', 'secret'));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test', ['name' => 'staging-dump'])
+        ->expectsOutputToContain('Dump connection "staging-dump" — dialect: pgsql')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('reports AES-256 encryption for a password-protected dump connection', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging-dump')->andReturn(makeDumpConnection('staging-dump', 'secret'));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test', ['name' => 'staging-dump'])
+        ->expectsOutputToContain('encryption: AES-256')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('reports no encryption for a passwordless dump connection', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('plain-dump')->andReturn(makeDumpConnection('plain-dump'));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test', ['name' => 'plain-dump'])
+        ->expectsOutputToContain('encryption: none')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
 it('tests a specific SQLite connection successfully', function (): void {
     // __FILE__ is a real, readable, writable file — no network needed
     $connection = makeSqliteConnection('local', __FILE__);

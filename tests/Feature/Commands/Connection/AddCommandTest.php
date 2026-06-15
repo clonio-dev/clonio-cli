@@ -106,6 +106,46 @@ it('fails with an invalid port number', function (): void {
         ->assertExitCode(4);
 });
 
+it('adds a dump connection with dialect and ZIP password via flags', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfig());
+
+    $this->artisan('connection:add', [
+        'name' => 'staging-dump',
+        '--type' => 'dump',
+        '--dialect' => 'pgsql',
+        '--password' => 'zippw',
+    ])
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('adds an unencrypted dump connection when the ZIP password is left blank', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfig());
+
+    $this->artisan('connection:add', [
+        'name' => 'plain-dump',
+        '--type' => 'dump',
+        '--dialect' => 'sqlite',
+    ])
+        ->expectsQuestion('ZIP archive password (leave blank for no encryption)', '')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('fails with an invalid dump dialect', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', [
+        'name' => 'bad-dump',
+        '--type' => 'dump',
+        '--dialect' => 'oracle',
+    ])
+        ->expectsOutputToContain('Unknown dialect')
+        ->assertExitCode(4);
+});
+
 it('cancels when the user declines the save confirmation', function (): void {
     $mock = Mockery::mock(ConfigService::class);
     $mock->shouldReceive('hasConnection')->andReturn(false);

@@ -11,7 +11,7 @@ class StdoutDeliveryAdapter implements DeliveryAdapterInterface
     public function deliver(array $artefacts, array $channelConfig, array $templateVars): void
     {
         foreach ($artefacts as $content) {
-            fwrite(STDOUT, $content);
+            echo $content;
         }
     }
 }

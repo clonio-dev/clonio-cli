@@ -38,6 +38,7 @@ class SchemaInspector
             DatabaseConnectionType::PostgreSQL => $this->inspectPgsql($connName, $connection),
             DatabaseConnectionType::Sqlite => $this->inspectSqlite($connName, $connection),
             DatabaseConnectionType::SqlServer => $this->inspectSqlServer($connName, $connection),
+            DatabaseConnectionType::Dump => throw new RuntimeException('Dump connections have no schema to inspect.'),
         };
     }
 
@@ -78,6 +79,8 @@ class SchemaInspector
                 /** @var string $colKey */
                 $colKey = $col->COLUMN_KEY;
 
+                $mods = ColumnTypeParser::parse($columnType);
+
                 $columns[] = new ColumnSchemaData(
                     name: $colName,
                     type: $dataType,
@@ -85,6 +88,9 @@ class SchemaInspector
                     default: $colDefault,
                     isPrimary: $colKey === 'PRI',
                     unsigned: str_contains(strtolower($columnType), 'unsigned'),
+                    length: $mods['length'],
+                    precision: $mods['precision'],
+                    scale: $mods['scale'],
                 );
             }
 
@@ -139,6 +145,7 @@ class SchemaInspector
             /** @var list<stdClass> $columnRows */
             $columnRows = DB::connection($connName)->select(
                 "SELECT column_name, data_type, is_nullable, column_default,
+                    character_maximum_length, numeric_precision, numeric_scale,
                     (SELECT COUNT(*) FROM information_schema.table_constraints tc
                      JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
                      WHERE tc.table_name = c.table_name AND kcu.column_name = c.column_name
@@ -168,6 +175,9 @@ class SchemaInspector
                     nullable: $isNullable === 'YES',
                     default: $colDefault,
                     isPrimary: $isPrimary,
+                    length: $this->intOrNull($col->character_maximum_length ?? null),
+                    precision: $this->intOrNull($col->numeric_precision ?? null),
+                    scale: $this->intOrNull($col->numeric_scale ?? null),
                 );
             }
 
@@ -247,12 +257,17 @@ class SchemaInspector
                 $dfltValue = is_scalar($rawDfltValue) ? (string) $rawDfltValue : null;
                 $pk = (bool) $col->pk;
 
+                $mods = ColumnTypeParser::parse($colType);
+
                 $columns[] = new ColumnSchemaData(
                     name: $colName,
                     type: strtolower($colType),
                     nullable: ! $notNull,
                     default: $dfltValue,
                     isPrimary: $pk,
+                    length: $mods['length'],
+                    precision: $mods['precision'],
+                    scale: $mods['scale'],
                 );
             }
 
@@ -292,6 +307,11 @@ class SchemaInspector
         return new DatabaseSchemaData(databaseName: $dbName, tables: $tables);
     }
 
+    private function intOrNull(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
+    }
+
     private function inspectSqlServer(string $connName, ConnectionData $connection): DatabaseSchemaData
     {
         $dbName = $connection->database ?? '';
@@ -310,6 +330,7 @@ class SchemaInspector
             /** @var list<stdClass> $columnRows */
             $columnRows = DB::connection($connName)->select(
                 "SELECT c.COLUMN_NAME, c.DATA_TYPE, c.IS_NULLABLE, c.COLUMN_DEFAULT,
+                    c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE,
                     CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END as is_primary
                 FROM INFORMATION_SCHEMA.COLUMNS c
                 LEFT JOIN (
@@ -335,12 +356,18 @@ class SchemaInspector
                 $colDefault = is_scalar($rawColDefault) ? (string) $rawColDefault : null;
                 $isPrimary = (bool) $col->is_primary;
 
+                // SQL Server reports CHARACTER_MAXIMUM_LENGTH = -1 for MAX types; treat as unbounded.
+                $charLen = $this->intOrNull($col->CHARACTER_MAXIMUM_LENGTH ?? null);
+
                 $columns[] = new ColumnSchemaData(
                     name: $colName,
                     type: $dataType,
                     nullable: $isNullable === 'YES',
                     default: $colDefault,
                     isPrimary: $isPrimary,
+                    length: $charLen !== null && $charLen < 0 ? null : $charLen,
+                    precision: $this->intOrNull($col->NUMERIC_PRECISION ?? null),
+                    scale: $this->intOrNull($col->NUMERIC_SCALE ?? null),
                 );
             }
 
