@@ -38,6 +38,7 @@ class SchemaInspector
             DatabaseConnectionType::PostgreSQL => $this->inspectPgsql($connName, $connection),
             DatabaseConnectionType::Sqlite => $this->inspectSqlite($connName, $connection),
             DatabaseConnectionType::SqlServer => $this->inspectSqlServer($connName, $connection),
+            DatabaseConnectionType::Dump => throw new RuntimeException('Dump connections have no schema to inspect.'),
         };
     }
 

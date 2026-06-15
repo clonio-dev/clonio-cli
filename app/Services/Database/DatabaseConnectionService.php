@@ -54,6 +54,8 @@ class DatabaseConnectionService
      */
     public function buildConfig(ConnectionData $connection, string $password): array
     {
+        throw_if($connection->type === DatabaseConnectionType::Dump, RuntimeException::class, 'Dump connections are virtual output targets and have no live database to open.');
+
         if ($connection->type === DatabaseConnectionType::Sqlite) {
             return [
                 'driver' => 'sqlite',
