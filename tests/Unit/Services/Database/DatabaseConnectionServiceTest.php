@@ -88,7 +88,47 @@ it('sets utf8 charset for SQL Server', function (): void {
     $config = $service->buildConfig(makeConnection(DatabaseConnectionType::SqlServer), 'secret');
 
     expect($config['charset'])->toBe('utf8')
-        ->and($config['driver'])->toBe('sqlsrv');
+        ->and($config['driver'])->toBe('sqlsrv')
+        ->and($config)->not->toHaveKey('trust_server_certificate');
+});
+
+it('sets trust_server_certificate for SQL Server when enabled', function (): void {
+    $service = new DatabaseConnectionService;
+    $connection = new ConnectionData(
+        name: 'test',
+        type: DatabaseConnectionType::SqlServer,
+        host: '127.0.0.1',
+        port: 1433,
+        database: 'mydb',
+        schema: null,
+        username: 'sa',
+        password: 'secret',
+        isProduction: false,
+        trustServerCertificate: true,
+    );
+
+    $config = $service->buildConfig($connection, 'secret');
+
+    expect($config['trust_server_certificate'])->toBeTrue();
+});
+
+it('throws when building config for a dump connection', function (): void {
+    $service = new DatabaseConnectionService;
+    $connection = new ConnectionData(
+        name: 'd',
+        type: DatabaseConnectionType::Dump,
+        host: null,
+        port: null,
+        database: null,
+        schema: null,
+        username: null,
+        password: '',
+        isProduction: false,
+        dialect: DatabaseConnectionType::Mysql,
+    );
+
+    expect(fn () => $service->buildConfig($connection, ''))
+        ->toThrow(RuntimeException::class, 'virtual output targets');
 });
 
 it('sets no charset or collation for SQLite', function (): void {
