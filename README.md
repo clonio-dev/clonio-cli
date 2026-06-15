@@ -3,6 +3,7 @@
 [![Tests](https://github.com/clonio-dev/clonio-cli/actions/workflows/tests.yml/badge.svg)](https://github.com/clonio-dev/clonio-cli/actions/workflows/tests.yml)
 [![Connection Tests](https://github.com/clonio-dev/clonio-cli/actions/workflows/connection-test.yml/badge.svg)](https://github.com/clonio-dev/clonio-cli/actions/workflows/connection-test.yml)
 [![Cloning Run Tests](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-run-test.yml/badge.svg)](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-run-test.yml)
+[![Cloning Dump Tests](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-dump-test.yml/badge.svg)](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-dump-test.yml)
 [![Latest Release](https://img.shields.io/github/v/release/clonio-dev/clonio-cli)](https://github.com/clonio-dev/clonio-cli/releases/latest)
 [![Packagist Version](https://img.shields.io/packagist/v/clonio-dev/clonio-cli)](https://packagist.org/packages/clonio-dev/clonio-cli)
 
