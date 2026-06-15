@@ -39,3 +39,14 @@ it('throws when the source .sql file does not exist', function (): void {
     expect(fn () => (new DumpArchiver)->archive('missing.sql', null))
         ->toThrow(RuntimeException::class, 'Dump file not found');
 });
+
+it('throws when the ZIP archive cannot be created', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('x.sql', "SELECT 1;\n");
+
+    // Occupy the target ZIP path with a directory so ZipArchive::open fails.
+    mkdir(Storage::disk('local')->path('x.zip'));
+
+    expect(fn () => (new DumpArchiver)->archive('x.sql', null))
+        ->toThrow(RuntimeException::class, 'Cannot create ZIP archive');
+});
