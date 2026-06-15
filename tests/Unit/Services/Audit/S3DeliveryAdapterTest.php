@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Audit\S3DeliveryAdapter;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 
 it('builds correct S3 object keys from path prefix and template vars', function (): void {
@@ -75,6 +76,30 @@ it('omits endpoint and disables path-style addressing when targeting AWS S3 dire
     $adapter->deliver(
         ['audit.html' => 'content'],
         ['bucket' => 'audits', 'access_key' => 'AKIA', 'secret_key' => 'shhh'],
+        [],
+    );
+});
+
+it('decrypts an encrypted secret_key before building the S3 disk', function (): void {
+    config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
+
+    $encrypted = 'encrypted:'.Crypt::encryptString('real-secret');
+
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('put')->once()->with('audit.html', 'content');
+
+    Storage::shouldReceive('build')->once()->with(Mockery::on(function (array $cfg): bool {
+        return $cfg['secret'] === 'real-secret';
+    }))->andReturn($disk);
+
+    (new S3DeliveryAdapter)->deliver(
+        ['audit.html' => 'content'],
+        [
+            'bucket' => 'audits',
+            'region' => 'eu-central-1',
+            'access_key' => 'AKIA',
+            'secret_key' => $encrypted,
+        ],
         [],
     );
 });

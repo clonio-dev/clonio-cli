@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Audit\AuditRecordData;
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
@@ -151,4 +152,41 @@ it('builds a record without ConnectionData (legacy callers) producing stub detai
     expect($record->sourceConnectionDetails['name'])->toBe('production-db');
     expect($record->sourceConnectionDetails['host'])->toBeNull();
     expect($record->targetConnectionDetails['name'])->toBe('staging');
+});
+
+it('records transformed (non-keep) columns and counts kept columns', function (): void {
+    $signer = new AuditLogSigner;
+    $builder = new AuditLogBuilder($signer);
+
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'production-db',
+        options: new CloningOptionsData(1000, false, false, false, true, 'en_US'),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null),
+                columns: [
+                    new ColumnCloningConfigData('email', 'fake', 'safeEmail', [], null, null, null, null, null, null),
+                    new ColumnCloningConfigData('id', 'keep', null, [], null, null, null, null, null, null),
+                ],
+            ),
+        ],
+    );
+
+    $record = $builder->build(
+        config: $config,
+        result: makeBuilderRunResult(),
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+        sourceConnectionData: makeBuilderSourceConnection(),
+        targetConnectionData: makeBuilderTargetConnection(),
+    );
+
+    expect($record->tables[0]->transformedColumns)->toHaveCount(1)
+        ->and($record->tables[0]->transformedColumns[0]->columnName)->toBe('email')
+        ->and($record->tables[0]->transformedColumns[0]->strategy)->toBe('fake')
+        ->and($record->tables[0]->keptColumnCount)->toBe(1);
 });

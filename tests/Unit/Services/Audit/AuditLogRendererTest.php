@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Audit\AuditColumnRecordData;
 use App\Data\Audit\AuditRecordData;
 use App\Data\Audit\AuditTableRecordData;
 use App\Data\Cloning\CloningOptionsData;
@@ -147,4 +148,69 @@ it('forces a page break before the PII transformations heading', function (): vo
     $html = $renderer->render($record, $canonicalJson);
 
     expect($html)->toContain('<h2 class="page-break">PII transformations');
+});
+
+it('renders a failed run with transformed columns, a skipped table and sparse connection details', function (): void {
+    $options = new CloningOptionsData(1000, false, false, false, true, 'en_US');
+
+    $tables = [
+        new AuditTableRecordData(
+            tableName: 'users',
+            existed: true,
+            skippedByFlag: false,
+            rowStrategy: 'full',
+            rowLimit: null,
+            rowsTransferred: 10,
+            rowsSkipped: 2,
+            durationSeconds: 0.4,
+            transformedColumns: [
+                new AuditColumnRecordData(columnName: 'email', strategy: 'fake'),
+            ],
+            keptColumnCount: 1,
+        ),
+        new AuditTableRecordData(
+            tableName: 'sessions',
+            existed: true,
+            skippedByFlag: true,
+            rowStrategy: 'skip',
+            rowLimit: null,
+            rowsTransferred: 0,
+            rowsSkipped: 0,
+            durationSeconds: 0.0,
+            transformedColumns: [],
+            keptColumnCount: 0,
+        ),
+    ];
+
+    $record = new AuditRecordData(
+        clonioVersion: '1.0.0',
+        sourceConnection: 'src',
+        targetConnection: 'tgt',
+        yamlFileName: 'x.cloning.yaml',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        success: false,
+        options: $options,
+        tables: $tables,
+        totalRowsTransferred: 10,
+        totalRowsSkipped: 2,
+        channels: [],
+        contentHash: 'h',
+        hmacSignature: 's',
+        // Sparse source (— fallbacks) + target with a schema row
+        sourceConnectionDetails: ['name' => 'src', 'type' => '', 'host' => null, 'port' => null, 'database' => null, 'schema' => null, 'username' => null],
+        targetConnectionDetails: ['name' => 'tgt', 'type' => 'pgsql', 'host' => 'h', 'port' => 5432, 'database' => 'd', 'schema' => 'reporting', 'username' => 'u'],
+    );
+
+    $signer = new AuditLogSigner;
+    [$canonicalJson] = $signer->sign($record);
+    $html = (new AuditLogRenderer)->render($record, $canonicalJson);
+
+    expect($html)
+        ->toContain('Run failed')
+        ->toContain('Failed')
+        ->toContain('email')
+        ->toContain('Skipped')
+        ->toContain('Schema')
+        ->toContain('reporting');
 });
