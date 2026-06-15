@@ -33,22 +33,22 @@
     "require": {
         "php": "^8.5",
         "fakerphp/faker": "^1.24.1",
-        "illuminate/database": "^12.60.2",
-        "illuminate/encryption": "^12.60.2",
-        "illuminate/http": "^12.60.2",
-        "illuminate/log": "^12.60.2",
+        "illuminate/database": "^12.62.0",
+        "illuminate/encryption": "^12.62.0",
+        "illuminate/http": "^12.62.0",
+        "illuminate/log": "^12.62.0",
         "laravel-zero/framework": "^12.1.0",
-        "league/flysystem-aws-s3-v3": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.34",
         "mpdf/mpdf": "^8.3.1",
-        "symfony/yaml": "^8.0.12"
+        "symfony/yaml": "^8.1.0"
     },
     "require-dev": {
-        "driftingly/rector-laravel": "^2.3",
-        "larastan/larastan": "^3.9.6",
-        "laravel/pao": "^1.0.6",
+        "driftingly/rector-laravel": "^2.5",
+        "larastan/larastan": "^3.10.0",
+        "laravel/pao": "^1.1.1",
         "laravel/pint": "^1.29.1",
         "mockery/mockery": "^1.6.12",
-        "pestphp/pest": "^4.7.0",
+        "pestphp/pest": "^4.7.3",
         "pestphp/pest-plugin-type-coverage": "^4.0.4"
     },
     "autoload": {
