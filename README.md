@@ -5,8 +5,8 @@
 [![Cloning Run Tests](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-run-test.yml/badge.svg)](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-run-test.yml)
 [![Cloning Dump Tests](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-dump-test.yml/badge.svg)](https://github.com/clonio-dev/clonio-cli/actions/workflows/cloning-dump-test.yml)
 
-[![Latest Release](https://img.shields.io/github/v/release/clonio-dev/clonio-cli?style=for-the-badge)](https://github.com/clonio-dev/clonio-cli/releases/latest)
-[![Packagist Version](https://img.shields.io/packagist/v/clonio-dev/clonio-cli?style=for-the-badge)](https://packagist.org/packages/clonio-dev/clonio-cli)
+[![Latest Release](https://img.shields.io/github/v/release/clonio-dev/clonio-cli?style=flat-square)](https://github.com/clonio-dev/clonio-cli/releases/latest)
+[![Packagist Version](https://img.shields.io/packagist/v/clonio-dev/clonio-cli?style=flat-square)](https://packagist.org/packages/clonio-dev/clonio-cli)
 
 Clonio transfers your production database to your test and dev environments with automatic anonymization, fake data generation, and full audit trails.
 
