@@ -219,3 +219,76 @@ it('shows hint to pass a value when yaml matcher has no example', function (): v
         ->expectsOutputToContain('pass a value as the 2nd argument')
         ->assertExitCode(ExitCode::Success->value);
 });
+
+function writeCheckMatchers(): void
+{
+    $yaml = <<<'YAML'
+version: "1"
+groups:
+  custom:
+    name: "Custom"
+    matchers:
+      ssn:
+        name: "Social Security Number"
+        enabled: true
+        patterns:
+          - "ssn_*"
+        transformation:
+          strategy: fake
+          faker_method: numerify
+          faker_arguments: []
+      handle:
+        name: "Handle"
+        enabled: true
+        patterns:
+          - "/^handle$/i"
+        transformation:
+          strategy: template
+          template: "{userName}"
+      secret:
+        name: "Secret"
+        enabled: true
+        patterns:
+          - "/^secret$/i"
+        transformation:
+          strategy: "null"
+YAML;
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', $yaml);
+}
+
+it('detects a glob pattern match and shows a fake example', function (): void {
+    Storage::fake('local');
+    writeCheckMatchers();
+
+    $this->artisan('matchers:check', ['column' => 'ssn_number', 'value' => '123-45-6789'])
+        ->expectsOutputToContain('glob')
+        ->expectsOutputToContain('matched')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows template transformation details for a matched column', function (): void {
+    Storage::fake('local');
+    writeCheckMatchers();
+
+    $this->artisan('matchers:check', ['column' => 'handle', 'value' => 'abc'])
+        ->expectsOutputToContain('template:')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('renders a null transformation output as (null)', function (): void {
+    Storage::fake('local');
+    writeCheckMatchers();
+
+    $this->artisan('matchers:check', ['column' => 'secret', 'value' => 'topsecret'])
+        ->expectsOutputToContain('(null)')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('reports a load error for an invalid matchers file', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', "groups: not-a-mapping\n");
+
+    $this->artisan('matchers:check', ['column' => 'email'])
+        ->expectsOutputToContain('Error loading matchers')
+        ->assertExitCode(ExitCode::Success->value);
+});

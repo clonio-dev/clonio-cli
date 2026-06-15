@@ -52,3 +52,54 @@ it('shows total count', function (): void {
         ->expectsOutputToContain('Total:')
         ->assertExitCode(ExitCode::Success->value);
 });
+
+it('exits early under no-interaction without rendering the table', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('matchers:list', ['--no-interaction' => true])
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('exits with ValidationError for an invalid matchers file', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', "groups: not-a-mapping\n");
+
+    $this->artisan('matchers:list')
+        ->expectsOutputToContain('Error loading matchers')
+        ->assertExitCode(ExitCode::ValidationError->value);
+});
+
+it('renders mask and template transformation labels', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+version: "1"
+groups:
+  custom:
+    name: "Custom Group"
+    matchers:
+      phone:
+        name: "Phone"
+        enabled: true
+        patterns:
+          - "/^phone$/i"
+        transformation:
+          strategy: mask
+          visible_chars: 4
+          mask_char: "*"
+          preserve_format: true
+      handle:
+        name: "Handle"
+        enabled: true
+        patterns:
+          - "/^handle$/i"
+        transformation:
+          strategy: template
+          template: "{userName}@x.test"
+YAML;
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', $yaml);
+
+    $this->artisan('matchers:list')
+        ->expectsOutputToContain('mask')
+        ->expectsOutputToContain('template')
+        ->assertExitCode(ExitCode::Success->value);
+});
