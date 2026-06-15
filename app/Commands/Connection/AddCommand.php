@@ -20,7 +20,8 @@ class AddCommand extends Command
      */
     protected $signature = 'connection:add
         {name? : The connection name (lowercase alphanumeric, dashes, underscores)}
-        {--type= : Database driver type (mysql, mariadb, pgsql, sqlsrv, sqlite)}
+        {--type= : Database driver type (mysql, mariadb, pgsql, sqlsrv, sqlite, dump)}
+        {--dialect= : Target SQL dialect for dump connections (mysql, mariadb, pgsql, sqlsrv, sqlite)}
         {--host= : Database host}
         {--port= : Database port}
         {--database= : Database name or file path}
@@ -75,6 +76,27 @@ class AddCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
+        // --- Step 2b: Dialect (dump connections only) ---
+        $dialect = null;
+
+        if ($type === DatabaseConnectionType::Dump) {
+            $dialectOption = $this->option('dialect');
+            $dialectValue = is_string($dialectOption) && $dialectOption !== '' ? $dialectOption : null;
+
+            if ($dialectValue === null) {
+                $choice = $this->choice('Target SQL dialect', DatabaseConnectionType::dialectValues());
+                $dialectValue = is_string($choice) ? $choice : '';
+            }
+
+            $dialect = DatabaseConnectionType::tryFrom($dialectValue);
+
+            if ($dialect === null || ! $dialect->isDialect()) {
+                $this->error(sprintf("Unknown dialect: '%s'. Valid dialects: ", $dialectValue).implode(', ', DatabaseConnectionType::dialectValues()).'.');
+
+                return ExitCode::ValidationError->value;
+            }
+        }
+
         // --- Step 3: Host (skip for SQLite) ---
         $host = null;
 
@@ -112,14 +134,18 @@ class AddCommand extends Command
             $port = $portInt;
         }
 
-        // --- Step 5: Database name / file path ---
-        $databaseOption = $this->option('database');
-        $database = is_string($databaseOption) && $databaseOption !== '' ? $databaseOption : null;
+        // --- Step 5: Database name / file path (skip for dump — virtual output target) ---
+        $database = null;
 
-        if ($database === null) {
-            $label = $type === DatabaseConnectionType::Sqlite ? 'Database file path' : 'Database name';
-            $asked = $this->ask($label);
-            $database = is_string($asked) ? $asked : '';
+        if ($type !== DatabaseConnectionType::Dump) {
+            $databaseOption = $this->option('database');
+            $database = is_string($databaseOption) && $databaseOption !== '' ? $databaseOption : null;
+
+            if ($database === null) {
+                $label = $type === DatabaseConnectionType::Sqlite ? 'Database file path' : 'Database name';
+                $asked = $this->ask($label);
+                $database = is_string($asked) ? $asked : '';
+            }
         }
 
         // --- Step 6: Schema (PostgreSQL only) ---
@@ -169,6 +195,27 @@ class AddCommand extends Command
             }
         }
 
+        // --- Step 8b: ZIP password (dump only, optional) ---
+        if ($type === DatabaseConnectionType::Dump) {
+            $passwordOption = $this->option('password');
+            $rawPassword = is_string($passwordOption) && $passwordOption !== '' ? $passwordOption : null;
+
+            if ($rawPassword === null && $this->input->isInteractive()) {
+                $asked = $this->secret('ZIP archive password (leave blank for no encryption)');
+                $rawPassword = is_string($asked) && $asked !== '' ? $asked : null;
+            }
+
+            if ($rawPassword !== null) {
+                try {
+                    $encryptedPassword = 'encrypted:'.Crypt::encryptString($rawPassword);
+                } catch (Throwable) {
+                    $this->error('Failed to encrypt password. Ensure APP_KEY is set in your environment.');
+
+                    return ExitCode::ConfigError->value;
+                }
+            }
+        }
+
         // --- Step 9: Trust server certificate (SQL Server only) ---
         $trustServerCertificate = false;
 
@@ -206,7 +253,13 @@ class AddCommand extends Command
             $summaryRows[] = ['Port', (string) $port];
         }
 
-        $summaryRows[] = ['Database', $database];
+        if ($dialect instanceof DatabaseConnectionType) {
+            $summaryRows[] = ['Dialect', $dialect->value];
+        }
+
+        if ($database !== null) {
+            $summaryRows[] = ['Database', $database];
+        }
 
         if ($schema !== null) {
             $summaryRows[] = ['Schema', $schema];
@@ -222,6 +275,10 @@ class AddCommand extends Command
 
         if ($type === DatabaseConnectionType::SqlServer) {
             $summaryRows[] = ['Trust certificate', $trustServerCertificate ? 'Yes' : 'No'];
+        }
+
+        if ($type === DatabaseConnectionType::Dump) {
+            $summaryRows[] = ['Encryption', $encryptedPassword !== '' ? 'AES-256' : 'None'];
         }
 
         $summaryRows[] = ['Production', $isProduction ? 'Yes' : 'No'];
@@ -247,6 +304,7 @@ class AddCommand extends Command
             password: $encryptedPassword,
             isProduction: $isProduction,
             trustServerCertificate: $trustServerCertificate,
+            dialect: $dialect,
         );
 
         try {
