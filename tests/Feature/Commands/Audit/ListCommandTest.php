@@ -96,3 +96,50 @@ it('lists ntfy channel and exits successfully', function (): void {
         ->expectsOutputToContain('my-ntfy')
         ->assertExitCode(0);
 });
+
+it('lists an s3 channel with only a bucket (no path prefix)', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn([
+        'bucket-only' => [
+            'type' => 's3',
+            'bucket' => 'my-bucket',
+        ],
+    ]);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:list')
+        ->expectsOutputToContain('bucket-only')
+        ->assertExitCode(0);
+});
+
+it('lists a stack channel showing its child channels', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn([
+        'my-stack' => [
+            'type' => 'stack',
+            'channels' => ['a', 'b'],
+        ],
+    ]);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:list')
+        ->expectsOutputToContain('my-stack')
+        ->assertExitCode(0);
+});
+
+it('lists a channel with no detail rendering (stdout)', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn([
+        'my-stdout' => [
+            'type' => 'stdout',
+        ],
+    ]);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:list')
+        ->expectsOutputToContain('my-stdout')
+        ->assertExitCode(0);
+});

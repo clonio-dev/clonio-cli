@@ -194,3 +194,178 @@ it('successfully adds an s3 channel with all options via flags', function (): vo
         ->expectsOutputToContain("Channel 'my-s3' added successfully.")
         ->assertExitCode(0);
 });
+
+it('prompts interactively for name and type when not given', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('interactive')->andReturn(false);
+    $config->shouldReceive('setAuditChannel')->with('interactive', Mockery::type('array'))->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add')
+        ->expectsQuestion('Channel name', 'interactive')
+        ->expectsChoice('Channel type', 'Local filesystem', [
+            'Local filesystem',
+            'S3-compatible storage',
+            'Email (SMTP)',
+            'Microsoft Teams',
+            'Slack',
+            'ntfy.sh / self-hosted ntfy',
+            'Standard output',
+            'Standard error',
+            'Stack (fan-out to multiple channels)',
+        ])
+        ->expectsQuestion('Log path (Supports: {year} {month} {day} {source} {target} {timestamp})', './clonio-logs')
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain("Channel 'interactive' added successfully.")
+        ->assertExitCode(0);
+});
+
+it('fails to add a stack channel when no channels exist yet', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-stack')->andReturn(false);
+    $config->shouldReceive('getAuditChannels')->andReturn([]);
+    $config->shouldNotReceive('setAuditChannel');
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', ['name' => 'my-stack', '--type' => 'stack'])
+        ->expectsOutputToContain('No channels exist yet')
+        ->assertExitCode(2);
+});
+
+it('successfully adds a stack channel referencing existing channels', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-stack')->andReturn(false);
+    $config->shouldReceive('getAuditChannels')->andReturn([
+        'a' => ['type' => 'local'],
+        'b' => ['type' => 's3'],
+    ]);
+    $config->shouldReceive('setAuditChannel')->with('my-stack', Mockery::type('array'))->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', ['name' => 'my-stack', '--type' => 'stack'])
+        ->expectsQuestion('Channels to include (comma-separated)', 'a, b')
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain("Channel 'my-stack' added successfully.")
+        ->assertExitCode(0);
+});
+
+it('reports an IO error when saving the channel fails', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-local')->andReturn(false);
+    $config->shouldReceive('setAuditChannel')->andThrow(new RuntimeException('disk full'));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', [
+        'name' => 'my-local',
+        '--type' => 'local',
+        '--local-path' => './clonio-logs/{year}',
+    ])
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain('Failed to save channel: disk full')
+        ->assertExitCode(5);
+});
+
+it('prompts interactively for s3 secret and retry settings', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-s3')->andReturn(false);
+    $config->shouldReceive('setAuditChannel')->with('my-s3', Mockery::type('array'))->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', [
+        'name' => 'my-s3',
+        '--type' => 's3',
+        '--s3-endpoint' => 'https://s3.example.com',
+        '--s3-bucket' => 'my-bucket',
+        '--s3-region' => 'us-east-1',
+        '--s3-access-key' => 'AKIA123',
+        '--s3-path-prefix' => 'clonio/logs/',
+    ])
+        ->expectsQuestion('Secret key', 'my-secret')
+        ->expectsConfirmation('Override retry settings?', 'yes')
+        ->expectsQuestion('Max attempts', '5')
+        ->expectsQuestion('Initial delay (ms)', '1000')
+        ->expectsQuestion('Backoff multiplier', '2')
+        ->expectsQuestion('Max delay (ms)', '30000')
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain("Channel 'my-s3' added successfully.")
+        ->assertExitCode(0);
+});
+
+it('prompts interactively for email encryption and password', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-email')->andReturn(false);
+    $config->shouldReceive('setAuditChannel')->with('my-email', Mockery::type('array'))->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', [
+        'name' => 'my-email',
+        '--type' => 'email',
+        '--mail-host' => 'smtp.example.com',
+        '--mail-port' => '587',
+        '--mail-username' => 'user@example.com',
+        '--mail-from-address' => 'noreply@example.com',
+        '--mail-from-name' => 'Clonio',
+        '--mail-to' => 'admin@example.com',
+    ])
+        ->expectsChoice('Encryption', 'tls', ['tls', 'ssl', 'none'])
+        ->expectsQuestion('SMTP password', 'my-smtp-password')
+        ->expectsConfirmation('Override retry settings?', 'yes')
+        ->expectsQuestion('Max attempts', '3')
+        ->expectsQuestion('Initial delay (ms)', '500')
+        ->expectsQuestion('Backoff multiplier', '2')
+        ->expectsQuestion('Max delay (ms)', '10000')
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain("Channel 'my-email' added successfully.")
+        ->assertExitCode(0);
+});
+
+it('prompts interactively for webhook url when not given via flag', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-teams')->andReturn(false);
+    $config->shouldReceive('setAuditChannel')->with('my-teams', Mockery::type('array'))->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', ['name' => 'my-teams', '--type' => 'ms_teams'])
+        ->expectsQuestion('Teams webhook URL', 'https://outlook.office.com/webhook/test')
+        ->expectsConfirmation('Override retry settings?', 'yes')
+        ->expectsQuestion('Max attempts', '3')
+        ->expectsQuestion('Initial delay (ms)', '500')
+        ->expectsQuestion('Backoff multiplier', '2')
+        ->expectsQuestion('Max delay (ms)', '10000')
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain("Channel 'my-teams' added successfully.")
+        ->assertExitCode(0);
+});
+
+it('prompts interactively for ntfy priority, tags and token', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('hasAuditChannel')->with('my-ntfy')->andReturn(false);
+    $config->shouldReceive('setAuditChannel')->with('my-ntfy', Mockery::type('array'))->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:add', [
+        'name' => 'my-ntfy',
+        '--type' => 'ntfy',
+        '--ntfy-url' => 'https://ntfy.sh',
+        '--ntfy-topic' => 'my-alerts',
+    ])
+        ->expectsChoice('Priority', 'default', ['min', 'low', 'default', 'high', 'max'])
+        ->expectsQuestion('Tags (comma-separated, optional — press Enter to skip)', '')
+        ->expectsQuestion('Bearer token (optional — press Enter to skip)', '')
+        ->expectsConfirmation('Override retry settings?', 'yes')
+        ->expectsQuestion('Max attempts', '3')
+        ->expectsQuestion('Initial delay (ms)', '500')
+        ->expectsQuestion('Backoff multiplier', '2')
+        ->expectsQuestion('Max delay (ms)', '10000')
+        ->expectsConfirmation('Save this channel?', 'yes')
+        ->expectsOutputToContain("Channel 'my-ntfy' added successfully.")
+        ->assertExitCode(0);
+});

@@ -101,3 +101,38 @@ it('auto-selects the only channel when no name is given', function (): void {
         ->expectsOutputToContain("Channel 'only-channel' deleted.")
         ->assertExitCode(0);
 });
+
+it('prompts which channel to delete when several exist', function (): void {
+    $local = ['type' => 'local'];
+    $s3 = ['type' => 's3'];
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn([
+        'my-local' => $local,
+        'my-s3' => $s3,
+    ]);
+    $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($local);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
+    $config->shouldReceive('deleteAuditChannel')->with('my-local')->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:delete', ['--force' => true])
+        ->expectsChoice('Select a channel to delete', 'my-local', ['my-local', 'my-s3'])
+        ->expectsOutputToContain("Channel 'my-local' deleted.")
+        ->assertExitCode(0);
+});
+
+it('reports an IO error when deletion fails', function (): void {
+    $channel = ['type' => 'local'];
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
+    $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
+    $config->shouldReceive('getAuditUse')->andReturn([]);
+    $config->shouldReceive('deleteAuditChannel')->andThrow(new RuntimeException('delete failed'));
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:delete', ['name' => 'my-local', '--force' => true])
+        ->expectsOutputToContain('delete failed')
+        ->assertExitCode(5);
+});
