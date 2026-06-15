@@ -382,11 +382,12 @@ The standard audit log is extended for dump runs:
 
 ## 17. Implementation Notes (v1)
 
-The shipped v1 deviates from the illustrative DDL/DML examples above in three deliberate, documented ways. They keep the generated dump unconditionally importable across all five dialects:
+The shipped v1 deviates from the illustrative DDL/DML examples above in two deliberate, documented ways. They keep the generated dump unconditionally importable across all five dialects:
 
-1. **No length/precision fidelity.** The schema layer (`ColumnSchemaData`) exposes only the base type (`varchar`, `decimal`, …) without length or precision, so DDL uses conservative defaults: `VARCHAR(255)`, `CHAR(255)`, `DECIMAL(20,6)`. Values never overflow these for typical data; exact column sizing is a future enhancement requiring schema-inspector changes.
-2. **No `AUTO_INCREMENT` / `SERIAL` / `IDENTITY`.** Primary keys are emitted as plain columns. The pipeline always inserts explicit key values (including remapped keys), so identity columns are unnecessary — and their absence means the SQL Server path needs **no** `SET IDENTITY_INSERT` wrapper (§7.2), avoiding "table has no identity property" import errors.
-3. **No `DEFAULT` clauses.** Every column value is copied explicitly from the source, so DDL omits `DEFAULT` expressions (which would otherwise need per-dialect translation, e.g. `CURRENT_TIMESTAMP` vs `GETDATE()`).
+1. **No `AUTO_INCREMENT` / `SERIAL` / `IDENTITY`.** Primary keys are emitted as plain columns. The pipeline always inserts explicit key values (including remapped keys), so identity columns are unnecessary — and their absence means the SQL Server path needs **no** `SET IDENTITY_INSERT` wrapper (§7.2), avoiding "table has no identity property" import errors.
+2. **No `DEFAULT` clauses.** Every column value is copied explicitly from the source, so DDL omits `DEFAULT` expressions (which would otherwise need per-dialect translation, e.g. `CURRENT_TIMESTAMP` vs `GETDATE()`).
+
+**Length / precision fidelity.** `ColumnSchemaData` carries `length`, `precision`, and `scale`, populated by the schema inspector for every driver (MySQL `COLUMN_TYPE` and SQLite declared types are parsed by `ColumnTypeParser`; PostgreSQL and SQL Server read `character_maximum_length` / `numeric_precision` / `numeric_scale` from `information_schema`). DDL emits the source size — e.g. `VARCHAR(512)`, `DECIMAL(10,2)` — falling back to `VARCHAR(255)` / `DECIMAL(20,6)` only when the source exposes no size. Columns wider than a target dialect's limit downgrade safely (MySQL → `LONGTEXT` above 16383; SQL Server → `NVARCHAR(MAX)` above 4000) to prevent silent truncation.
 
 Foreign-key constraints are not rendered in DDL (data is written in dependency order with FK checks disabled), which also removes a class of cross-dialect import failures.
 
