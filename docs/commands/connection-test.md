@@ -62,6 +62,7 @@ A summary line is always printed regardless of `--ci` mode.
 |--------|--------|
 | SQLite | Checks that the database file exists, is readable, and is writable. No network connection is attempted. |
 | MySQL, MariaDB, PostgreSQL, SQL Server | Opens a real TCP connection using `PDO` and calls `getPdo()`. The connection is purged immediately after the test. |
+| Dump | No PDO. Verifies the current working directory is writable and prints `Dump connection "<name>" — dialect: <dialect>, target: <cwd>, encryption: AES-256\|none`. Exits with code `5` (`IoError`) if the directory is not writable. |
 
 ### Password decryption
 

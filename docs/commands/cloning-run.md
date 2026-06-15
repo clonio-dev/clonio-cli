@@ -18,7 +18,7 @@ clonio cloning:run <file> [options]
 
 | Option | Description |
 |--------|-------------|
-| `--target=<name>` | Name of the target database connection (from `clonio.json`) |
+| `--target=<name>` | Name of the target connection (from `clonio.json`). May be a live database or a [`dump`](connection-dump.md) connection that writes a SQL-file archive instead. |
 | `--allow-failure` | Exit with code `0` even if the run fails (for optional CI steps) |
 | `--dry-run` | Validate, test connections, and count rows — no data is transferred |
 | `--ci` | CI mode — suppress all non-error output; `--target` is required |
@@ -128,6 +128,22 @@ clonio cloning:run production-db.cloning.yaml --target staging --ci
 - name: Sync staging (optional)
   run: clonio cloning:run prod.cloning.yaml --target staging --ci --allow-failure
 ```
+
+### Dump to a SQL-file archive
+
+When `--target` names a [`dump`](connection-dump.md) connection, no live target database is touched. The source is read and anonymized as usual, but schema and data are written to a dialect-correct `.sql` file and compressed into a ZIP archive in the current directory:
+
+```bash
+clonio cloning:run production-db.cloning.yaml --target staging-dump
+```
+
+```
+  Tables: 24/24  Rows: 18432  Duration: 4.1s
+
+  Dump: app_20260615_143022.zip  (2.3 MB, AES-256)
+```
+
+The DDL/DML respect `options.drop_unknown_tables`, `options.chunk_size`, and `options.disable_foreign_key_checks` from the YAML, the same way a live target does. The source connection must be a real database. See [`dump` Connection Type](connection-dump.md) for archive format, cross-dialect type mapping, and encryption details.
 
 ## Schema Synchronization
 

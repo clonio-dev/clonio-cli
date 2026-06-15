@@ -15,8 +15,8 @@ All arguments and options are optional. Any value not supplied via a flag will b
 When run without flags the command walks through each field in order:
 
 1. **Name** — A unique identifier for the connection. Must match `[a-z0-9_-]+`.
-2. **Driver** — Selected from a list: `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite`.
-3. **Host** — Hostname or IP address of the database server (default: `localhost`). Skipped for SQLite.
+2. **Driver** — Selected from a list: `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite`, `dump`.
+3. **Host** — Hostname or IP address of the database server (default: `localhost`). Skipped for SQLite and dump.
 4. **Port** — TCP port (default taken from the driver). Skipped for SQLite.
 5. **Database** — Database name, or file path for SQLite.
 6. **Schema** — Schema name (default: `public`). PostgreSQL only.
@@ -31,7 +31,8 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | Option | Description |
 |---|---|
 | `name` | Connection name (argument, optional) |
-| `--type=` | Driver type: `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite` |
+| `--type=` | Driver type: `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite`, `dump` |
+| `--dialect=` | Target SQL dialect for `dump` connections: `mysql`, `mariadb`, `pgsql`, `sqlsrv`, `sqlite` |
 | `--host=` | Database host (default: `localhost`) |
 | `--port=` | Database port (1–65535) |
 | `--database=` | Database name or file path |
@@ -68,6 +69,10 @@ The file is read from and written to the **current working directory**. Run the 
 ### SQLite differences
 
 For SQLite connections, host, port, username, and password fields are skipped entirely — only the database file path is required. The password is stored as an empty string and no encryption is attempted.
+
+### Dump connections
+
+A `dump` connection is a virtual SQL-file output target, not a live database. The host, port, database, and username steps are skipped; instead you choose a target SQL `dialect` and an optional ZIP archive password (encrypted at rest like any other secret; blank means no encryption). See [`dump` Connection Type](connection-dump.md) for the full reference.
 
 ### Production warning
 
