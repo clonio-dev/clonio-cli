@@ -383,3 +383,66 @@ it('does not duplicate primary key column when key remapping is active', functio
     expect(substr_count($yaml, 'id:'))->toBe(1)
         ->and($yaml)->toContain('strategy: remapping');
 });
+
+it('writes sort_by when set on the table rows config', function (): void {
+    $writer = new CloningYamlWriter;
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [makeFakeColumn('email')],
+        rowStrategy: 'last',
+        rowLimit: 50,
+        sortBy: 'created_at',
+    );
+
+    $yaml = $writer->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain('sort_by: created_at')
+        ->and($yaml)->toContain('limit: 50');
+});
+
+it('writes a template strategy column', function (): void {
+    $writer = new CloningYamlWriter;
+    $templateCol = new ColumnDumpData(
+        name: 'handle', strategy: 'template', fakerMethod: null, fakerArguments: [],
+        maskChar: null, visibleChars: null, preserveFormat: null, hashAlgorithm: null,
+        hashSalt: null, staticValue: null, piiDetected: false, piiCategory: null,
+        template: '{userName}@acme.test',
+    );
+    $table = new TableDumpData(name: 'users', columns: [$templateCol], rowStrategy: 'full', rowLimit: null, sortBy: null);
+
+    $yaml = $writer->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain('strategy: template')
+        ->and($yaml)->toContain('template:');
+});
+
+it('encodes a mixed scalar faker_arguments list with quoting rules', function (): void {
+    $writer = new CloningYamlWriter;
+    $col = new ColumnDumpData(
+        name: 'mixed', strategy: 'fake', fakerMethod: 'regexify',
+        fakerArguments: [true, 42, 3.5, 'plain', '', 'a:b', 'yes', '  x  ', "li\nne"],
+        maskChar: null, visibleChars: null, preserveFormat: null, hashAlgorithm: null,
+        hashSalt: null, staticValue: null, piiDetected: false, piiCategory: null,
+    );
+    $table = new TableDumpData(name: 'users', columns: [$col], rowStrategy: 'full', rowLimit: null, sortBy: null);
+
+    $yaml = $writer->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)
+        ->toContain('faker_arguments: [true, 42, 3.5, plain, "", "a:b", "yes", "  x  "')
+        ->toContain('faker_method: regexify');
+});
+
+it('writes value: null for a static column with a null value', function (): void {
+    $writer = new CloningYamlWriter;
+    $col = new ColumnDumpData(
+        name: 'note', strategy: 'static', fakerMethod: null, fakerArguments: [],
+        maskChar: null, visibleChars: null, preserveFormat: null, hashAlgorithm: null,
+        hashSalt: null, staticValue: null, piiDetected: false, piiCategory: null,
+    );
+    $table = new TableDumpData(name: 'users', columns: [$col], rowStrategy: 'full', rowLimit: null, sortBy: null);
+
+    $yaml = $writer->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain('value: null');
+});
