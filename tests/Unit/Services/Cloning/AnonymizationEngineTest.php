@@ -196,3 +196,28 @@ it('expands multiple placeholders in one template', function (): void {
     expect($result)->toEndWith('@firma.de');
     expect($result)->toContain('.');
 });
+
+it('joins array faker output into a space-delimited string', function (): void {
+    $engine = new AnonymizationEngine;
+    // words() returns an array of words → engine implodes them
+    $col = makeColumn('fake', fakerMethod: 'words');
+
+    $result = $engine->transform(null, $col);
+
+    expect($result)->toBeString()
+        ->and(trim($result))->not->toBe('')
+        ->and($result)->toContain(' ');
+});
+
+it('expands a template using a real generator method returning an array', function (): void {
+    $engine = new AnonymizationEngine;
+    // getProviders() is a real Generator method (method_exists true) returning an
+    // array → exercises the resolve-and-join branch of the template callback.
+    $col = makeColumn('template', template: 'p:{getProviders}:end');
+
+    $result = $engine->transform(null, $col);
+
+    expect($result)->toBeString()
+        ->and($result)->toStartWith('p:')
+        ->and($result)->toEndWith(':end');
+});
