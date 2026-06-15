@@ -44,6 +44,293 @@ function makeSimpleSourceSchema(): DatabaseSchemaData
     );
 }
 
+function makeReplicatorConn(string $name, DatabaseConnectionType $type): ConnectionData
+{
+    return new ConnectionData(
+        name: $name,
+        type: $type,
+        host: 'localhost',
+        port: 1234,
+        database: 'db',
+        schema: null,
+        username: 'u',
+        password: 'p',
+        isProduction: false,
+    );
+}
+
+function allTypesSchema(): DatabaseSchemaData
+{
+    $types = [
+        'char', 'varchar', 'tinyint(1)', 'tinyint', 'smallint', 'mediumint', 'int', 'bigint',
+        'serial', 'bigserial', 'float', 'double', 'decimal', 'text', 'tinytext', 'mediumtext',
+        'longtext', 'blob', 'tinyblob', 'mediumblob', 'longblob', 'varbinary', 'enum', 'set',
+        'date', 'time', 'datetime', 'year', 'json', 'uuid', 'totally_unknown_type',
+    ];
+
+    $columns = [new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true)];
+    foreach ($types as $i => $t) {
+        $columns[] = new ColumnSchemaData(name: 'c'.$i, type: $t, nullable: true, default: null, isPrimary: false);
+    }
+
+    return new DatabaseSchemaData(
+        databaseName: 'src',
+        tables: [new TableSchemaData(name: 'wide', columns: $columns, foreignKeys: [])],
+    );
+}
+
+/** Capture the CREATE TABLE SQL produced for a cross-DB target (forces buildCreateTableSql). */
+function captureCreateSqlForTarget(DatabaseConnectionType $sourceType, DatabaseConnectionType $targetType): string
+{
+    $source = makeReplicatorConn('source', $sourceType);
+    $target = makeReplicatorConn('target', $targetType);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: []));
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $captured = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$captured): bool {
+        $captured = (string) $sql;
+
+        return true;
+    }))->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($source, $target, allTypesSchema(), ['wide'], false, false);
+
+    return $captured;
+}
+
+it('skips a table that is absent from the source schema', function (): void {
+    $source = makeReplicatorMysqlConnection('source');
+    $target = makeReplicatorMysqlConnection('target');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: []));
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->never();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failures = $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['nonexistent'], false, false);
+
+    expect($failures)->toBe([]);
+});
+
+it('drops unknown target tables when drop_unknown_tables is true (MySQL)', function (): void {
+    $source = makeReplicatorMysqlConnection('source');
+    $target = makeReplicatorMysqlConnection('target');
+
+    // Target already has 'users' (in source) plus a 'legacy' table that the source lacks
+    $targetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: [
+        new TableSchemaData(name: 'users', columns: [
+            new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+            new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+        ], foreignKeys: []),
+        new TableSchemaData(name: 'legacy', columns: [], foreignKeys: []),
+    ]);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($targetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $dropped = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$dropped): bool {
+        $dropped = (string) $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['users'], false, true);
+
+    expect($dropped)->toBe('DROP TABLE IF EXISTS `legacy`');
+});
+
+it('drops unknown target tables with SQL Server syntax', function (): void {
+    $source = makeReplicatorConn('source', DatabaseConnectionType::SqlServer);
+    $target = makeReplicatorConn('target', DatabaseConnectionType::SqlServer);
+
+    $targetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: [
+        new TableSchemaData(name: 'legacy', columns: [], foreignKeys: []),
+    ]);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($targetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $dropped = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$dropped): bool {
+        $dropped = (string) $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    // source schema has only 'users' → 'legacy' is unknown
+    $replicator->replicate($source, $target, makeSimpleSourceSchema(), [], false, true);
+
+    expect($dropped)->toContain("IF OBJECT_ID('legacy', 'U') IS NOT NULL DROP TABLE [legacy]");
+});
+
+it('creates a missing table with SQL Server OBJECT_ID guard', function (): void {
+    $source = makeReplicatorConn('source', DatabaseConnectionType::Mysql);
+    $target = makeReplicatorConn('target', DatabaseConnectionType::SqlServer);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: []));
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $captured = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$captured): bool {
+        $captured = (string) $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['users'], false, false);
+
+    expect($captured)
+        ->toContain("IF OBJECT_ID('users', 'U') IS NULL CREATE TABLE [users]")
+        ->toContain('[id]')
+        ->toContain('PRIMARY KEY ([id])');
+});
+
+it('maps all source column types for a MySQL target', function (): void {
+    $sql = captureCreateSqlForTarget(DatabaseConnectionType::PostgreSQL, DatabaseConnectionType::Mysql);
+
+    expect($sql)
+        ->toContain('CREATE TABLE IF NOT EXISTS `wide`')
+        ->toContain('TINYINT(1)')
+        ->toContain('MEDIUMINT')
+        ->toContain('TINYTEXT')
+        ->toContain('MEDIUMTEXT')
+        ->toContain('LONGTEXT')
+        ->toContain('TINYBLOB')
+        ->toContain('MEDIUMBLOB')
+        ->toContain('LONGBLOB')
+        ->toContain('YEAR')
+        ->toContain('CHAR(36)')
+        ->toContain('DATETIME')
+        ->toContain('JSON');
+});
+
+it('maps all source column types for a PostgreSQL target', function (): void {
+    $sql = captureCreateSqlForTarget(DatabaseConnectionType::Mysql, DatabaseConnectionType::PostgreSQL);
+
+    expect($sql)
+        ->toContain('CREATE TABLE IF NOT EXISTS "wide"')
+        ->toContain('SERIAL')
+        ->toContain('BIGSERIAL')
+        ->toContain('BOOLEAN')
+        ->toContain('SMALLINT')
+        ->toContain('TIMESTAMP')
+        ->toContain('DOUBLE')
+        ->toContain('UUID')
+        ->toContain('JSON');
+});
+
+it('maps all source column types for a SQL Server target', function (): void {
+    $sql = captureCreateSqlForTarget(DatabaseConnectionType::Mysql, DatabaseConnectionType::SqlServer);
+
+    expect($sql)
+        ->toContain('NVARCHAR(255)')
+        ->toContain('NCHAR(1)')
+        ->toContain('BIT')
+        ->toContain('NVARCHAR(MAX)')
+        ->toContain('VARBINARY(MAX)')
+        ->toContain('VARBINARY(255)')
+        ->toContain('UNIQUEIDENTIFIER')
+        ->toContain('DATETIME2');
+});
+
+it('maps json to TEXT for a SQLite target and falls back unknown types to TEXT', function (): void {
+    $sql = captureCreateSqlForTarget(DatabaseConnectionType::Mysql, DatabaseConnectionType::Sqlite);
+
+    expect($sql)
+        ->toContain('CREATE TABLE IF NOT EXISTS "wide"')
+        ->toContain('TEXT')
+        ->not->toContain('JSON');
+});
+
+it('skips native DDL fetch for a non-MySQL source and uses the fallback builder', function (): void {
+    $source = makeReplicatorConn('source', DatabaseConnectionType::PostgreSQL);
+    $target = makeReplicatorConn('target', DatabaseConnectionType::PostgreSQL);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: []));
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    // open only for the target — native DDL fetch returns early for non-MySQL source
+    $connector->shouldReceive('open')->once()->andReturn('target_conn');
+
+    $captured = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$captured): bool {
+        $captured = (string) $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['users'], false, false);
+
+    expect($captured)->toContain('CREATE TABLE IF NOT EXISTS "users"');
+});
+
+it('falls back when SHOW CREATE TABLE returns no usable DDL string', function (): void {
+    $source = makeReplicatorMysqlConnection('source');
+    $target = makeReplicatorMysqlConnection('target');
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: []));
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('source_conn', 'target_conn');
+
+    // SHOW CREATE TABLE returns a row without a 'Create Table' string → ddl is null
+    DB::shouldReceive('connection')->with('source_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([new stdClass]);
+    DB::shouldReceive('purge')->with('source_conn')->andReturnNull();
+
+    $captured = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$captured): bool {
+        $captured = (string) $sql;
+
+        return true;
+    }))->once()->andReturnTrue();
+    DB::shouldReceive('purge')->with('target_conn')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['users'], false, false);
+
+    expect($captured)->toContain('CREATE TABLE IF NOT EXISTS `users`');
+});
+
 it('creates missing tables in target via CREATE TABLE statement', function (): void {
     $sourceConn = makeReplicatorMysqlConnection('source');
     $targetConn = makeReplicatorMysqlConnection('target');

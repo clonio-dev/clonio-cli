@@ -5,12 +5,17 @@ declare(strict_types=1);
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\Cloning\KeyRemappingTableData;
+use App\Data\ConnectionData;
 use App\Data\Schema\ColumnSchemaData;
+use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\TableSchemaData;
+use App\Enums\DatabaseConnectionType;
 use App\Enums\KeyRemappingStrategy;
 use App\Exceptions\KeyRemappingExhaustedException;
 use App\Services\Cloning\InMemoryKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Database\DatabaseConnectionService;
+use Illuminate\Support\Facades\DB;
 
 function makeKeyRemappingService(?InMemoryKeyRemappingStore $store = null): KeyRemappingService
 {
@@ -127,6 +132,23 @@ it('applyToRow skips FK column that does not exist on the row', function (): voi
     expect($result)->toBe(['id' => 5, 'name' => 'test']);
 });
 
+it('applyToRow skips foreign keys that belong to a different table', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['10' => 'uuid-10']);
+
+    $service = makeKeyRemappingService($store);
+
+    $fk = new KeyRemappingForeignKeyData(table: 'orders', column: 'user_id', selfReferential: false);
+    $usersTable = makeKeyRemappingTable('users', 'id', [$fk]);
+    $config = new KeyRemappingConfigData([$usersTable]);
+
+    // Applying for 'invoices' → the FK (owned by 'orders') is skipped
+    $row = ['id' => 1, 'user_id' => 10];
+    $result = $service->applyToRow($row, 'invoices', $config);
+
+    expect($result)->toBe(['id' => 1, 'user_id' => 10]);
+});
+
 it('applyToRow does not modify row for unconfigured table', function (): void {
     $service = makeKeyRemappingService();
 
@@ -136,6 +158,150 @@ it('applyToRow does not modify row for unconfigured table', function (): void {
     $result = $service->applyToRow($row, 'unconfigured_table', $config);
 
     expect($result)->toBe($row);
+});
+
+function makeKrsSource(DatabaseConnectionType $type = DatabaseConnectionType::Mysql): ConnectionData
+{
+    return new ConnectionData(
+        name: 'source',
+        type: $type,
+        host: 'localhost',
+        port: 3306,
+        database: 'src',
+        schema: null,
+        username: 'root',
+        password: 'secret',
+        isProduction: false,
+    );
+}
+
+function makeKrsSchema(string $table = 'users', string $pk = 'id', string $pkType = 'int'): DatabaseSchemaData
+{
+    return new DatabaseSchemaData(
+        databaseName: 'src',
+        tables: [
+            new TableSchemaData(
+                name: $table,
+                columns: [
+                    new ColumnSchemaData(name: $pk, type: $pkType, nullable: false, default: null, isPrimary: true),
+                    new ColumnSchemaData(name: 'name', type: 'varchar', nullable: true, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+        ],
+    );
+}
+
+/** @param list<int|string> $ids */
+function krsRows(array $ids, string $col = 'id'): array
+{
+    return array_map(static function ($id) use ($col): stdClass {
+        $row = new stdClass;
+        $row->{$col} = $id;
+
+        return $row;
+    }, $ids);
+}
+
+it('generateMappings allocates UUIDs and skips unconfigured tables', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, $store);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows([1, 2, 3]));
+    DB::shouldReceive('purge')->with('krs_conn')->andReturnNull();
+
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
+
+    // 'orders' has no remapping config → skipped without error
+    $counts = $service->generateMappings($config, makeKrsSource(), makeKrsSchema(), ['users', 'orders']);
+
+    expect($counts)->toBe(['users' => 3]);
+    expect($store->lookup('users', '1'))->toMatch('/^[0-9a-f-]{36}$/');
+});
+
+it('generateMappings allocates random integers using the source schema column', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, $store);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows([1, 2, 3]));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $table = new KeyRemappingTableData(
+        table: 'users',
+        primaryKey: 'id',
+        strategy: KeyRemappingStrategy::RandomInteger,
+        foreignKeys: [],
+    );
+    $config = new KeyRemappingConfigData([$table]);
+
+    $counts = $service->generateMappings($config, makeKrsSource(), makeKrsSchema('users', 'id', 'int'), ['users']);
+
+    expect($counts)->toBe(['users' => 3]);
+    // existingMax = 3 → new ids start at 4
+    expect($store->lookup('users', '1'))->toBe('4');
+    expect($store->lookup('users', '3'))->toBe('6');
+});
+
+it('generateTableMapping quotes identifiers per driver', function (): void {
+    $captured = [];
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, new InMemoryKeyRemappingStore);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->withArgs(function (string $sql) use (&$captured): bool {
+        $captured[] = $sql;
+
+        return true;
+    })->andReturn(krsRows([1]));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
+
+    $service->generateMappings($config, makeKrsSource(DatabaseConnectionType::PostgreSQL), makeKrsSchema(), ['users']);
+    $service->generateMappings($config, makeKrsSource(DatabaseConnectionType::SqlServer), makeKrsSchema(), ['users']);
+
+    expect($captured[0])->toContain('"id"')->toContain('"users"');
+    expect($captured[1])->toContain('[id]')->toContain('[users]');
+});
+
+it('generateMappings throws when the primary key table is missing from the schema', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, new InMemoryKeyRemappingStore);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows([1]));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $table = new KeyRemappingTableData('users', 'id', KeyRemappingStrategy::RandomInteger, []);
+    $config = new KeyRemappingConfigData([$table]);
+    $schemaWithoutTable = new DatabaseSchemaData(databaseName: 'src', tables: []);
+
+    expect(fn () => $service->generateMappings($config, makeKrsSource(), $schemaWithoutTable, ['users']))
+        ->toThrow(RuntimeException::class, 'not found in source schema');
+});
+
+it('generateMappings throws when the primary key column is missing from the schema', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, new InMemoryKeyRemappingStore);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows([1]));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $table = new KeyRemappingTableData('users', 'missing_pk', KeyRemappingStrategy::RandomInteger, []);
+    $config = new KeyRemappingConfigData([$table]);
+
+    expect(fn () => $service->generateMappings($config, makeKrsSource(), makeKrsSchema('users', 'id'), ['users']))
+        ->toThrow(RuntimeException::class, 'not found on table');
 });
 
 it('allocateIntegerIds returns ascending ids starting at MAX(id)+1', function (): void {
