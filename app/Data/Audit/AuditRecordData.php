@@ -32,5 +32,9 @@ final readonly class AuditRecordData
         public string $hmacSignature,
         public array $sourceConnectionDetails,
         public array $targetConnectionDetails,
+        public ?string $dumpDialect = null,
+        public ?string $dumpFile = null,
+        public ?string $dumpSha256 = null,
+        public ?bool $dumpEncrypted = null,
     ) {}
 }
