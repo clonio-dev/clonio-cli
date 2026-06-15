@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\ClearMode;
 use App\Services\Cloning\CloningYamlLoader;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 
 it('loads a valid cloning yaml file', function (): void {
@@ -744,4 +745,159 @@ YAML;
     $config = (new CloningYamlLoader)->load('test.cloning.yaml');
 
     expect($config->skipTables)->toBe(['users']);
+});
+
+it('throws when the config file exists but cannot be read', function (): void {
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('exists')->andReturnTrue();
+    $disk->shouldReceive('get')->andReturnNull();
+    Storage::shouldReceive('disk')->with('local')->andReturn($disk);
+
+    expect(fn () => (new CloningYamlLoader)->load('x.yaml'))
+        ->toThrow(RuntimeException::class, 'Could not read');
+});
+
+it('throws when the YAML root is not a mapping', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('scalar.yaml', 'just a scalar string');
+
+    expect(fn () => (new CloningYamlLoader)->load('scalar.yaml'))
+        ->toThrow(RuntimeException::class, 'root must be a mapping');
+});
+
+it('skips non-array table and column entries', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+connection: c
+tables:
+  broken_table: "not-a-mapping"
+  users:
+    rows:
+      strategy: full
+    columns:
+      good:
+        strategy: fake
+        faker_method: safeEmail
+      bad_column: "not-a-mapping"
+YAML;
+    Storage::disk('local')->put('c.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('c.yaml');
+
+    expect($config->tables)->toHaveCount(1)
+        ->and($config->tables[0]->tableName)->toBe('users')
+        ->and($config->tables[0]->columns)->toHaveCount(1)
+        ->and($config->tables[0]->columns[0]->columnName)->toBe('good');
+});
+
+it('loads a template strategy column', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+connection: c
+tables:
+  users:
+    rows:
+      strategy: full
+    columns:
+      handle:
+        strategy: template
+        template: "{userName}@acme.test"
+YAML;
+    Storage::disk('local')->put('c.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('c.yaml');
+
+    expect($config->tables[0]->columns[0]->strategy)->toBe('template')
+        ->and($config->tables[0]->columns[0]->template)->toBe('{userName}@acme.test');
+});
+
+it('parses inline remapping foreign keys and skips non-map entries', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+connection: c
+tables:
+  orders:
+    rows:
+      strategy: full
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - "not-a-map"
+          - use: new_uuid
+          - foreign_keys:
+              - {table: users, column: user_id, self_referential: false}
+              - "skip-me"
+YAML;
+    Storage::disk('local')->put('c.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('c.yaml');
+
+    expect($config->keyRemapping)->not->toBeNull();
+    $krTable = $config->keyRemapping->getTable('orders');
+    expect($krTable)->not->toBeNull()
+        ->and($krTable->strategy->value)->toBe('new_uuid')
+        ->and($krTable->foreignKeys)->toHaveCount(1)
+        ->and($krTable->foreignKeys[0]->table)->toBe('users');
+});
+
+it('returns null key remapping for a legacy section with only invalid entries', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+connection: c
+tables:
+  users:
+    rows:
+      strategy: full
+key_remapping:
+  tables:
+    - "not-a-map"
+    - {primary_key: id, strategy: new_uuid}
+    - {table: missing_pk, strategy: new_uuid}
+    - {table: ok, primary_key: id, foreign_keys: ["bad-fk", {table: t, column: c}]}
+YAML;
+    Storage::disk('local')->put('c.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('c.yaml');
+
+    // The only valid legacy entry is 'ok' → keyRemapping present with one table + one FK
+    expect($config->keyRemapping)->not->toBeNull();
+    $ok = $config->keyRemapping->getTable('ok');
+    expect($ok)->not->toBeNull()
+        ->and($ok->foreignKeys)->toHaveCount(1);
+});
+
+it('returns null key remapping when the legacy tables list is empty', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+connection: c
+tables:
+  users:
+    rows:
+      strategy: full
+key_remapping:
+  tables: []
+YAML;
+    Storage::disk('local')->put('c.yaml', $yaml);
+
+    expect((new CloningYamlLoader)->load('c.yaml')->keyRemapping)->toBeNull();
+});
+
+it('returns null key remapping when every legacy table entry is invalid', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+connection: c
+tables:
+  users:
+    rows:
+      strategy: full
+key_remapping:
+  tables:
+    - "not-a-map"
+    - {strategy: new_uuid}
+    - {table: only_table_no_pk}
+YAML;
+    Storage::disk('local')->put('c.yaml', $yaml);
+
+    expect((new CloningYamlLoader)->load('c.yaml')->keyRemapping)->toBeNull();
 });
