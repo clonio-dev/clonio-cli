@@ -127,3 +127,57 @@ it('fails gracefully when download fails', function (): void {
         ->expectsOutputToContain('Download failed')
         ->assertExitCode(1);
 });
+
+it('skips ssl verification for both tag lookup and download with a specific version', function (): void {
+    // Exercises the --no-verify-ssl branches in resolveTargetTag (tag lookup)
+    // and in the download request, while still completing the update.
+    $tmpBinary = (string) tempnam(sys_get_temp_dir(), 'clonio_test_');
+
+    Http::fake([
+        'api.github.com/*' => Http::response(['tag_name' => 'v3.2.1']),
+        'github.com/*' => Http::response('fake-binary-content'),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver($tmpBinary));
+
+    $this->artisan('update', ['version' => '3.2.1', '--no-verify-ssl' => true])
+        ->expectsOutputToContain('SSL verification disabled')
+        ->expectsOutputToContain('Target version: 3.2.1')
+        ->expectsOutputToContain('Updated successfully to 3.2.1')
+        ->assertExitCode(0);
+
+    @unlink($tmpBinary);
+});
+
+it('fails when the downloaded file is empty', function (): void {
+    // Download returns 200 but with an empty body — the binary write produces
+    // a zero-byte file, which must be rejected.
+    $tmpBinary = sys_get_temp_dir().'/clonio_empty_'.uniqid();
+
+    Http::fake([
+        'api.github.com/*' => Http::response(['tag_name' => 'v99.0.0']),
+        'github.com/*' => Http::response('', 200),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver($tmpBinary));
+
+    $this->artisan('update')
+        ->expectsOutputToContain('Download failed')
+        ->assertExitCode(1);
+
+    @unlink($tmpBinary.'.update');
+    @unlink($tmpBinary);
+});
+
+it('fails when the latest release response has no tag_name', function (): void {
+    // GitHub responds successfully but without a usable tag_name string.
+    Http::fake([
+        'api.github.com/*' => Http::response(['tag_name' => null]),
+    ]);
+
+    $this->app->instance(BinaryResolver::class, fakeBinaryResolver('/tmp/clonio_fake'));
+
+    $this->artisan('update')
+        ->expectsOutputToContain('Unexpected response from GitHub API')
+        ->assertExitCode(1);
+});
