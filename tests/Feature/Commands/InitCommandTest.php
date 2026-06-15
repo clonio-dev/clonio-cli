@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\ExitCode;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function (): void {
@@ -227,4 +228,91 @@ it('does not overwrite existing audit channels on re-init', function (): void {
     expect($config['audit']['channels']['local']['path'])->toBe('./custom-path');
     // stdout and stderr should be added since they didn't exist
     expect($config['audit']['channels'])->toHaveKeys(['stdout', 'stderr']);
+});
+
+it('returns an IO error when a new .env cannot be written', function (): void {
+    // No APP_KEY anywhere -> the command tries to create a fresh .env.
+    // Making the disk root read-only forces Storage::put() to fail, which
+    // bubbles up as a RuntimeException and is reported as an IO error.
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    $root = Storage::path('');
+    chmod($root, 0500);
+
+    try {
+        $this->artisan('init')
+            ->expectsOutputToContain('permission denied')
+            ->assertExitCode(ExitCode::IoError->value);
+    } finally {
+        chmod($root, 0755);
+    }
+});
+
+it('returns an IO error when an existing .env cannot be overwritten', function (): void {
+    // An existing .env without an APP_KEY would normally be appended to, but
+    // making the file itself read-only forces the write to fail.
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    Storage::put('.env', "DB_HOST=localhost\n");
+    $path = Storage::path('.env');
+    chmod($path, 0400);
+
+    try {
+        $this->artisan('init')
+            ->expectsOutputToContain('permission denied')
+            ->assertExitCode(ExitCode::IoError->value);
+    } finally {
+        chmod($path, 0644);
+    }
+});
+
+it('returns an IO error when an existing .env cannot be read', function (): void {
+    // Simulate a permission-denied read: the .env exists but Storage::get()
+    // returns null. This exercises both the keyInDotenvFile() guard and the
+    // read guard inside writeDotenv().
+    putenv('APP_KEY');
+    unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+
+    Storage::shouldReceive('exists')->with('.env')->andReturn(true);
+    Storage::shouldReceive('get')->with('.env')->andReturn(null);
+    Storage::shouldReceive('path')->with('.env')->andReturn('/tmp/clonio-unreadable.env');
+
+    $this->artisan('init')
+        ->expectsOutputToContain('permission denied')
+        ->assertExitCode(ExitCode::IoError->value);
+});
+
+it('skips .gitignore handling when the file cannot be read', function (): void {
+    // APP_KEY is present (system env) so the command proceeds to the
+    // .gitignore/audit-channel housekeeping. A .gitignore that exists but
+    // reads back as null must be skipped silently.
+    $real = sys_get_temp_dir().'/clonio_init_'.uniqid();
+    mkdir($real);
+
+    Storage::shouldReceive('exists')->with('.env')->andReturn(false);
+    Storage::shouldReceive('exists')->with('.gitignore')->andReturn(true);
+    Storage::shouldReceive('get')->with('.gitignore')->andReturn(null);
+    Storage::shouldReceive('exists')->with('clonio.json')->andReturn(false);
+    Storage::shouldReceive('path')->andReturnUsing(function (string $file = '') use ($real): string {
+        $p = $real.'/'.$file;
+
+        if (! file_exists($p)) {
+            touch($p);
+        }
+
+        return $p;
+    });
+    Storage::shouldReceive('put')->andReturnUsing(
+        fn (string $file, string $contents): bool => (bool) file_put_contents($real.'/'.$file, $contents),
+    );
+
+    try {
+        $this->artisan('init')
+            ->doesntExpectOutputToContain('Added to .gitignore')
+            ->assertExitCode(ExitCode::Success->value);
+    } finally {
+        exec('rm -rf '.escapeshellarg($real));
+    }
 });
