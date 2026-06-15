@@ -248,3 +248,209 @@ it('exits with ValidationError for invalid YAML missing tables section', functio
         ->expectsOutputToContain('Invalid cloning YAML: missing tables section.')
         ->assertExitCode(ExitCode::ValidationError->value);
 });
+
+it('errors when no .cloning.yaml files exist and no file argument given', function (): void {
+    Storage::fake('local');
+
+    $this->artisan('cloning:table:edit', [
+        '--table' => 'users',
+        '--rows-strategy' => 'full',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsOutputToContain('No .cloning.yaml files found')
+        ->assertExitCode(ExitCode::IoError->value);
+});
+
+it('auto-selects the single .cloning.yaml file when no file argument given', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('only.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        '--table' => 'users',
+        '--rows-strategy' => 'full',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->expectsOutputToContain('only.cloning.yaml')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('prompts to select among multiple .cloning.yaml files', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('a.cloning.yaml', makeTableEditYaml());
+    Storage::disk('local')->put('b.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        '--table' => 'users',
+        '--rows-strategy' => 'full',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsChoice('Select a cloning YAML file', 'b.cloning.yaml', ['a.cloning.yaml', 'b.cloning.yaml'])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->expectsOutputToContain('b.cloning.yaml')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('asks for the table name when no tables are listed yet', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', "version: \"1\"\ntables: {}\n");
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--rows-strategy' => 'skip',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsQuestion('Table name (no tables listed yet — enter the name to add)', 'new_table')
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('new_table');
+});
+
+it('selects an existing table from the interactive list', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--rows-strategy' => 'skip',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsChoice('Select a table', 'orders', ['users', 'orders', '+ Add new table'])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('strategy: skip');
+});
+
+it('adds a new table via the interactive "+ Add new table" choice', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--rows-strategy' => 'skip',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsChoice('Select a table', '+ Add new table', ['users', 'orders', '+ Add new table'])
+        ->expectsQuestion('Table name', 'invoices')
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('invoices');
+});
+
+it('errors when the entered table name is empty', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', "version: \"1\"\ntables: {}\n");
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--rows-strategy' => 'skip',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsQuestion('Table name (no tables listed yet — enter the name to add)', '')
+        ->expectsOutputToContain('Table name cannot be empty.')
+        ->assertExitCode(ExitCode::ValidationError->value);
+});
+
+it('selects the row strategy interactively', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsChoice('Select a row strategy', 'Skip — don\'t transfer this table', [
+            'Full — copy every row',
+            'First N — copy the first N rows after sorting',
+            'Last N — copy the last N rows after sorting',
+            "Skip — don't transfer this table",
+        ])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('strategy: skip');
+});
+
+it('asks for the row limit and sort-by interactively for the first strategy', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--rows-strategy' => 'first',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsQuestion('Row limit', '42')
+        ->expectsQuestion('Sort by column (optional, leave blank to skip)', 'id')
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    $content = Storage::disk('local')->get('test.cloning.yaml');
+    expect($content)->toContain('limit: 42');
+    expect($content)->toContain('sort_by: id');
+});
+
+it('rejects an interactively entered non-positive row limit', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--rows-strategy' => 'first',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsQuestion('Row limit', '0')
+        ->expectsOutputToContain('Row limit must be a positive integer.')
+        ->assertExitCode(ExitCode::ValidationError->value);
+});
+
+it('selects the clear mode interactively', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--rows-strategy' => 'full',
+    ])
+        ->expectsChoice('Select a clear mode', 'Truncate — fast wipe before insert (no FKs)', [
+            'None — leave existing target rows',
+            'Truncate — fast wipe before insert (no FKs)',
+            'Delete — DELETE FROM before insert (FK-safe)',
+        ])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('clear: truncate');
+});
+
+it('preserves unmanaged rows.* keys when rewriting a table', function (): void {
+    Storage::fake('local');
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+tables:
+  orders:
+    rows:
+      strategy: full
+      where: "status = 'paid'"
+YAML;
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'orders',
+        '--rows-strategy' => 'full',
+        '--rows-clear' => 'none',
+    ])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain("where: \"status = 'paid'\"");
+});
