@@ -702,3 +702,133 @@ it('returns error when skip is not a list', function (): void {
 
     expect($errors)->toContain("Field 'skip' must be a list of table name strings");
 });
+
+// ─── Type / structure error branches ──────────────────────────────────────────
+
+it('flags options that are not an object', function (): void {
+    $config = makeValidConfig();
+    $config['options'] = 'not-an-object';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'options' must be an object");
+});
+
+it('flags an invalid chunk_size', function (): void {
+    $config = makeValidConfig();
+    $config['options']['chunk_size'] = 0;
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'options.chunk_size' must be an integer >= 1");
+});
+
+it('flags a non-boolean option flag', function (): void {
+    $config = makeValidConfig();
+    $config['options']['enforce_column_types'] = 'nope';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'options.enforce_column_types' must be a boolean");
+});
+
+it('flags a non-string faker_locale', function (): void {
+    $config = makeValidConfig();
+    $config['options']['faker_locale'] = 123;
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'options.faker_locale' must be a string");
+});
+
+it('flags a table that is not an object', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['broken'] = 'not-an-object';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Table 'broken': must be an object");
+});
+
+it('flags a table missing its rows configuration', function (): void {
+    $config = makeValidConfig();
+    unset($config['tables']['users']['rows']);
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Table 'users': missing 'rows' configuration");
+});
+
+it('flags columns that are not an object', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns'] = 'not-an-object';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Table 'users': 'columns' must be an object");
+});
+
+it('flags a column config that is not an object', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['email'] = 'not-an-object';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Table 'users', column 'email': must be an object");
+});
+
+it('flags an unknown faker_method', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['email']['faker_method'] = 'notARealFakerMethod';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Table 'users', column 'email': unknown faker_method 'notARealFakerMethod'");
+});
+
+// ─── key_remapping error branches ──────────────────────────────────────────────
+
+it('flags key_remapping that is not an object', function (): void {
+    $config = makeValidConfig();
+    $config['key_remapping'] = 'not-an-object';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'key_remapping' must be an object");
+});
+
+it('flags a key_remapping table entry that is not an object', function (): void {
+    $config = makeValidConfig();
+    $config['key_remapping'] = ['tables' => ['not-an-object']];
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain('key_remapping.tables[0]: must be an object');
+});
+
+it('flags a key_remapping table entry missing its primary_key', function (): void {
+    $config = makeValidConfig();
+    $config['key_remapping'] = ['tables' => [
+        ['table' => 'users', 'strategy' => 'new_uuid'],
+    ]];
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("key_remapping.tables[0]: 'primary_key' is required");
+});
+
+it('flags foreign_keys that are not a list', function (): void {
+    $config = makeValidConfig();
+    $config['key_remapping'] = ['tables' => [
+        ['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid', 'foreign_keys' => 'nope'],
+    ]];
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("key_remapping.tables[0]: 'foreign_keys' must be a list");
+});
+
+it('flags a foreign key entry that is not an object and one missing its column', function (): void {
+    $config = makeValidConfig();
+    $config['key_remapping'] = ['tables' => [
+        [
+            'table' => 'users',
+            'primary_key' => 'id',
+            'strategy' => 'new_uuid',
+            'foreign_keys' => ['not-an-object', ['table' => 'orders']],
+        ],
+    ]];
+
+    $errors = (new CloningYamlValidator)->validate($config);
+
+    expect($errors)
+        ->toContain('key_remapping.tables[0].foreign_keys[0]: must be an object')
+        ->toContain("key_remapping.tables[0].foreign_keys[1]: 'column' is required");
+});
