@@ -11,6 +11,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Services\SqlDump\DumpArchiver;
 use App\Services\SqlDump\DumpDialectFactory;
 use App\Services\SqlDump\SqlDumpService;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 
@@ -137,6 +138,49 @@ it('derives the source name from a SQLite path without extension', function (): 
     $service->begin(dumpConn(), $sqliteSource, dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable('2026-05-24 12:34:56'));
 
     expect($service->sqlFileName())->toBe('prod_20260524_123456.sql');
+});
+
+it('emits DROP TABLE before CREATE when drop_unknown_tables is true', function (): void {
+    Storage::fake('local');
+    $service = makeService();
+    $options = new CloningOptionsData(100, false, true, false, true, 'en_US');
+
+    $service->begin(dumpConn(), dumpSource(), dumpSchema(), ['users'], $options, new DateTimeImmutable('2026-05-24 12:34:56'));
+
+    $sql = Storage::disk('local')->get($service->sqlFileName());
+    expect($sql)->toContain('DROP TABLE')
+        ->and($sql)->toContain('`users`')
+        ->and($sql)->toContain('CREATE TABLE `users`')
+        ->and($sql)->not->toContain('CREATE TABLE IF NOT EXISTS');
+});
+
+it('uses the SQL Server source schema as the table prefix', function (): void {
+    Storage::fake('local');
+    $service = makeService();
+    $sqlsrvSource = new ConnectionData(
+        name: 'source', type: DatabaseConnectionType::SqlServer, host: 'localhost', port: 1433,
+        database: 'shop', schema: 'audit', username: 'sa', password: '', isProduction: false,
+    );
+
+    $service->begin(
+        dumpConn(dialect: DatabaseConnectionType::SqlServer),
+        $sqlsrvSource,
+        dumpSchema(),
+        ['users'],
+        dumpOptions(),
+        new DateTimeImmutable('2026-05-24 12:34:56'),
+    );
+
+    expect(Storage::disk('local')->get($service->sqlFileName()))->toContain('[audit].[users]');
+});
+
+it('throws when the intermediate .sql file cannot be written', function (): void {
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('put')->once()->andReturnFalse();
+    Storage::shouldReceive('disk')->with('local')->andReturn($disk);
+
+    expect(fn () => makeService()->begin(dumpConn(), dumpSource(), dumpSchema(), ['users'], dumpOptions(), new DateTimeImmutable('2026-05-24 12:34:56')))
+        ->toThrow(RuntimeException::class, 'Cannot write dump file');
 });
 
 it('throws when the dialect is missing', function (): void {
