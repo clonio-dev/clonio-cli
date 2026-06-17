@@ -423,9 +423,7 @@ jobs:
 
           cat >> release-notes.md <<'EOF'
 
-          ## Changelog
-
-          ${{ steps.changelog.outputs.changelog }}
+          See the full [CHANGELOG.md](https://github.com/clonio-dev/clonio-cli/blob/main/CHANGELOG.md).
 
           ---
 
