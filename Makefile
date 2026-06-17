@@ -41,7 +41,8 @@ current:
 # ──────────────────────────────────────────────────────────────────────────────
 
 patch:
-	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
+	@set -e; \
+	CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
@@ -50,11 +51,12 @@ patch:
 	NEW="v$$MAJOR.$$MINOR.$$((PATCH+1))"; \
 	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin "$$NEW"; \
+	git push origin "$$NEW" || { git tag -d "$$NEW" >/dev/null; exit 1; }; \
 	echo "Done — $$NEW pushed. CI will build the release automatically."
 
 minor:
-	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
+	@set -e; \
+	CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
@@ -62,18 +64,19 @@ minor:
 	NEW="v$$MAJOR.$$((MINOR+1)).0"; \
 	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin "$$NEW"; \
+	git push origin "$$NEW" || { git tag -d "$$NEW" >/dev/null; exit 1; }; \
 	echo "Done — $$NEW pushed. CI will build the release automatically."
 
 major:
-	@CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
+	@set -e; \
+	CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \
 	VERSION=$$(echo "$$CURRENT" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
 	NEW="v$$((MAJOR+1)).0.0"; \
 	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin "$$NEW"; \
+	git push origin "$$NEW" || { git tag -d "$$NEW" >/dev/null; exit 1; }; \
 	echo "Done — $$NEW pushed. CI will build the release automatically."
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -83,7 +86,8 @@ major:
 # ──────────────────────────────────────────────────────────────────────────────
 
 alpha:
-	@STABLE=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
+	@set -e; \
+	STABLE=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	STABLE=$${STABLE:-v0.0.0}; \
 	VERSION=$$(echo "$$STABLE" | sed 's/^v//'); \
 	MAJOR=$$(echo "$$VERSION" | cut -d. -f1); \
@@ -94,7 +98,7 @@ alpha:
 	NEW="$$TARGET-alpha.$$((COUNT+1))"; \
 	echo "Tagging $$NEW..."; \
 	git tag "$$NEW"; \
-	git push origin "$$NEW"; \
+	git push origin "$$NEW" || { git tag -d "$$NEW" >/dev/null; exit 1; }; \
 	echo "Done — $$NEW pushed. CI will build a pre-release automatically."
 
 # ──────────────────────────────────────────────────────────────────────────────
