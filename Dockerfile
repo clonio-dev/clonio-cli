@@ -27,7 +27,7 @@ WORKDIR /app
 # --no-autoloader: defer optimized autoload until after COPY . so app/ is mapped.
 COPY composer.json composer.lock ./
 # --ignore-platform-reqs: composer install only unpacks files; the runtime
-# stage installs gd / pcntl / pdo_mysql / pdo_pgsql. Skipping the platform
+# stage installs gd / pcntl / pdo_mysql / pdo_pgsql / sqlsrv. Skipping the platform
 # check here keeps the build stage free of PHP extension libraries.
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction --no-cache --ignore-platform-reqs
 
@@ -66,11 +66,12 @@ RUN apk add --no-cache ca-certificates tzdata
 
 # Bundled in php:8.5-cli-alpine: ctype, curl, fileinfo, filter, iconv, mbstring,
 # openssl, pdo, pdo_sqlite, phar, readline, session, sqlite3, tokenizer, zlib.
-# install-php-extensions pulls in the matching system libs (libpng, libpq, etc.)
-# and is removed after use to keep the runtime layer lean.
+# install-php-extensions pulls in the matching runtime libs (libpng, libpq,
+# Microsoft ODBC, etc.) and removes no-longer-needed build dependencies.
 COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions gd pcntl pdo_mysql pdo_pgsql \
-    && rm /usr/local/bin/install-php-extensions
+RUN ACCEPT_EULA=Y install-php-extensions gd pcntl pdo_mysql pdo_pgsql sqlsrv pdo_sqlsrv \
+    && rm /usr/local/bin/install-php-extensions \
+    && rm -rf /tmp/* /var/cache/apk/* /root/.pearrc
 
 COPY --from=build /app /app
 
