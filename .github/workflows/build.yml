@@ -298,6 +298,18 @@ jobs:
           tags: clonio:smoke-test
           cache-from: type=gha
 
+      - name: Smoke test — PHP database extensions (Docker)
+        run: |
+          docker run --rm --entrypoint php clonio:smoke-test -r '
+          $required = ["pdo_sqlite", "sqlite3", "sqlsrv", "pdo_sqlsrv"];
+          $missing = array_values(array_filter($required, static fn ($extension) => ! extension_loaded($extension)));
+          if ($missing !== []) {
+              fwrite(STDERR, "Missing PHP extensions: ".implode(", ", $missing).PHP_EOL);
+              exit(1);
+          }
+          echo "Required PHP database extensions are loaded.".PHP_EOL;
+          '
+
       - name: Smoke test — functional (Docker)
         run: ./tests/smoke/run-smoke.sh docker clonio:smoke-test
 
