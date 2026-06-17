@@ -46,7 +46,7 @@
         "driftingly/rector-laravel": "^2.5",
         "larastan/larastan": "^3.10.0",
         "laravel/pao": "^1.1.1",
-        "laravel/pint": "^1.29.1",
+        "laravel/pint": "^1.29.3",
         "mockery/mockery": "^1.6.12",
         "pestphp/pest": "^4.7.3",
         "pestphp/pest-plugin-type-coverage": "^4.0.4"

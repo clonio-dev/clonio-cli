@@ -100,6 +100,10 @@ jobs:
       # Pin libcares to a known-good tag. SPC 2.8.4 release-metadata lookup has been
       # flaky for c-ares/c-ares; pinning + direct URL bypasses the GH releases API path.
       LIBCARES_VERSION: '1.34.6'
+      # GitHub-hosted macOS runners currently include untrusted third-party
+      # Homebrew taps unrelated to this build. Keep the transition behavior
+      # explicit until Homebrew trust checks become the default.
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: '1'
 
     steps:
       - name: Checkout
@@ -273,7 +277,7 @@ jobs:
 
   docker:
     name: Docker image
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -282,20 +286,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Download linux binaries from build job
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          path: ./artifacts
-          pattern: clonio-linux-*
-          merge-multiple: true
-
-      - name: Stage binaries for Docker context
-        run: |
-          mkdir -p bin
-          cp artifacts/clonio-linux-x86_64  bin/clonio-linux-amd64
-          cp artifacts/clonio-linux-aarch64 bin/clonio-linux-arm64
-          chmod +x bin/clonio-linux-*
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4
@@ -311,6 +301,18 @@ jobs:
           load: true
           tags: clonio:smoke-test
           cache-from: type=gha
+
+      - name: Smoke test — PHP database extensions (Docker)
+        run: |
+          docker run --rm --entrypoint php clonio:smoke-test -r '
+          $required = ["pdo_sqlite", "sqlite3", "sqlsrv", "pdo_sqlsrv"];
+          $missing = array_values(array_filter($required, static fn ($extension) => ! extension_loaded($extension)));
+          if ($missing !== []) {
+              fwrite(STDERR, "Missing PHP extensions: ".implode(", ", $missing).PHP_EOL);
+              exit(1);
+          }
+          echo "Required PHP database extensions are loaded.".PHP_EOL;
+          '
 
       - name: Smoke test — functional (Docker)
         run: ./tests/smoke/run-smoke.sh docker clonio:smoke-test
@@ -425,9 +427,7 @@ jobs:
 
           cat >> release-notes.md <<'EOF'
 
-          ## Changelog
-
-          ${{ steps.changelog.outputs.changelog }}
+          See the full [CHANGELOG.md](https://github.com/clonio-dev/clonio-cli/blob/main/CHANGELOG.md).
 
           ---
 

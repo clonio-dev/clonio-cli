@@ -1,0 +1,45 @@
+name: "Update Changelog"
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+
+      - name: Prepare release notes for changelog
+        id: notes
+        env:
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          NOTES=$(printf '%s' "$RELEASE_BODY" \
+            | awk '/^## Changelog$/ { exit } /^---$/ { exit } /^## Installation$/ { exit } { print }')
+          {
+            echo "body<<CHANGELOG_NOTES_EOF"
+            printf '%s\n' "$NOTES"
+            echo "CHANGELOG_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update Changelog
+        uses: stefanzweifel/changelog-updater-action@a938690fad7edf25368f37e43a1ed1b34303eb36 # v1
+        with:
+          latest-version: ${{ github.event.release.name }}
+          release-notes: ${{ steps.notes.outputs.body }}
+
+      - name: Commit updated CHANGELOG
+        uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v7
+        with:
+          branch: main
+          commit_message: Update CHANGELOG
+          file_pattern: CHANGELOG.md
