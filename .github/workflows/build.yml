@@ -273,7 +273,7 @@ jobs:
 
   docker:
     name: Docker image
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -282,20 +282,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Download linux binaries from build job
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          path: ./artifacts
-          pattern: clonio-linux-*
-          merge-multiple: true
-
-      - name: Stage binaries for Docker context
-        run: |
-          mkdir -p bin
-          cp artifacts/clonio-linux-x86_64  bin/clonio-linux-amd64
-          cp artifacts/clonio-linux-aarch64 bin/clonio-linux-arm64
-          chmod +x bin/clonio-linux-*
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4
