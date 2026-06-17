@@ -385,83 +385,108 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download all binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: ./artifacts
           # Explicit allowlist — excludes Docker Buildx summary artifacts and spc-logs-* from failed attempts.
           pattern: '{clonio-linux-*,clonio-macos-*,clonio.phar}'
           merge-multiple: true
 
-      # Two-step publish: create as draft so assets can be uploaded, then flip to
-      # published. Repo has immutable releases enabled — once a non-draft release
-      # exists, GitHub rejects further asset uploads. A draft is mutable.
-      - name: Create draft GitHub Release with assets
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
-        with:
-          files: ./artifacts/*
-          draft: true
-          # Tags like v0.6.8-alpha.1 / -beta.1 / -rc.1 are marked as pre-release.
-          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
-          body: |
-            ## What's changed
+      # Immutable releases become locked only after publishing. Create the
+      # draft after all verification/build jobs pass, then upload assets and
+      # publish as the final step.
+      - name: Create draft GitHub Release with generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "$TAG_NAME" == *-alpha* || "$TAG_NAME" == *-beta* || "$TAG_NAME" == *-rc* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
 
-            ${{ steps.changelog.outputs.changelog }}
+          gh release create "$TAG_NAME" \
+            --draft \
+            --generate-notes \
+            --verify-tag \
+            --title "Release $TAG_NAME" \
+            $PRERELEASE_FLAG
 
-            ---
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" ./artifacts/* --clobber
 
-            ## Installation
+      - name: Append installation notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ github.ref_name }}" --json body --jq .body > release-notes.md
 
-            | File | Platform | Requires |
-            |------|----------|----------|
-            | `clonio-linux-x86_64` | Linux — x86_64 (Intel/AMD) | nothing |
-            | `clonio-linux-aarch64` | Linux — aarch64 (ARM64) | nothing |
-            | `clonio-macos-aarch64` | macOS — Apple Silicon (M1/M2/M3/M4) | nothing |
-            | `clonio.phar` | Any platform | PHP 8.5 |
-            | `ghcr.io/clonio-dev/clonio:${{ github.ref_name }}` | linux/amd64 + linux/arm64 | Docker |
+          cat >> release-notes.md <<'EOF'
 
-            ### Linux
+          ## Changelog
 
-            ```bash
-            mv clonio-linux-x86_64 clonio   # or clonio-linux-aarch64 for ARM
-            chmod +x clonio
-            sudo mv clonio /usr/local/bin/clonio
-            clonio --version
-            ```
+          ${{ steps.changelog.outputs.changelog }}
 
-            ### macOS
+          ---
 
-            > ⚠️ The binary is currently unsigned. macOS Gatekeeper will block it on first run.
+          ## Installation
 
-            ```bash
-            mv clonio-macos-aarch64 clonio
-            chmod +x clonio
-            xattr -d com.apple.quarantine clonio
-            sudo mv clonio /usr/local/bin/clonio
-            clonio --version
-            ```
+          | File | Platform | Requires |
+          |------|----------|----------|
+          | `clonio-linux-x86_64` | Linux — x86_64 (Intel/AMD) | nothing |
+          | `clonio-linux-aarch64` | Linux — aarch64 (ARM64) | nothing |
+          | `clonio-macos-aarch64` | macOS — Apple Silicon (M1/M2/M3/M4) | nothing |
+          | `clonio.phar` | Any platform | PHP 8.5 |
+          | `ghcr.io/clonio-dev/clonio:${{ github.ref_name }}` | linux/amd64 + linux/arm64 | Docker |
 
-            ### PHAR (any platform with PHP 8.5)
+          ### Linux
 
-            ```bash
-            php clonio.phar --version
-            ```
+          ```bash
+          mv clonio-linux-x86_64 clonio   # or clonio-linux-aarch64 for ARM
+          chmod +x clonio
+          sudo mv clonio /usr/local/bin/clonio
+          clonio --version
+          ```
 
-            ### Docker
+          ### macOS
 
-            ```bash
-            docker pull ghcr.io/clonio-dev/clonio:${{ github.ref_name }}
-            docker run --rm -v "$(pwd)":/workspace \
-              ghcr.io/clonio-dev/clonio:${{ github.ref_name }} --version
-            ```
+          > ⚠️ The binary is currently unsigned. macOS Gatekeeper will block it on first run.
 
-            See [docs/docker-distribution.md](https://github.com/clonio-dev/clonio-cli/blob/main/docs/docker-distribution.md) for pinning, tag scheme, and common recipes.
+          ```bash
+          mv clonio-macos-aarch64 clonio
+          chmod +x clonio
+          xattr -d com.apple.quarantine clonio
+          sudo mv clonio /usr/local/bin/clonio
+          clonio --version
+          ```
 
-            ### Composer (dev dependency)
+          ### PHAR (any platform with PHP 8.5)
 
-            ```bash
-            composer require --dev clonio-dev/clonio-cli
-            vendor/bin/clonio --version
-            ```
+          ```bash
+          php clonio.phar --version
+          ```
+
+          ### Docker
+
+          ```bash
+          docker pull ghcr.io/clonio-dev/clonio:${{ github.ref_name }}
+          docker run --rm -v "$(pwd)":/workspace \
+            ghcr.io/clonio-dev/clonio:${{ github.ref_name }} --version
+          ```
+
+          See [docs/docker-distribution.md](https://github.com/clonio-dev/clonio-cli/blob/main/docs/docker-distribution.md) for pinning, tag scheme, and common recipes.
+
+          ### Composer (dev dependency)
+
+          ```bash
+          composer require --dev clonio-dev/clonio-cli
+          vendor/bin/clonio --version
+          ```
+          EOF
+
+          gh release edit "${{ github.ref_name }}" --notes-file release-notes.md
 
       - name: Publish the draft
         env:
