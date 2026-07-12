@@ -87,7 +87,7 @@ jobs:
       # mbregex is a separate SPC extension (not part of mbstring) that provides mb_ereg*
       # and mb_regex_encoding. mPDF checks for it at runtime and fails without it.
       # Adding it here makes SPC auto-pull the onig library via its lib-depends.
-      EXTENSIONS: ctype,curl,fileinfo,filter,gd,iconv,mbstring,mbregex,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,session,sqlite3,tokenizer,zlib
+      EXTENSIONS: ctype,curl,fileinfo,filter,gd,iconv,mbstring,mbregex,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,readline,session,sqlite3,tokenizer,zlib,zip
       # Optional gd image libs. libpng + zlib are hard-deps and always built;
       # these add JPEG, WebP, and TrueType font support for mpdf-generated PDFs.
       # libavif intentionally omitted (heavy aom/dav1d toolchain, rarely used in PDFs).
