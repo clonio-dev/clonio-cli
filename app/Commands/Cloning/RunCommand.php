@@ -10,7 +10,9 @@ use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
 use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\StatsTableTransferData;
 use App\Data\Cloning\TableCloningConfigData;
+use App\Data\Cloning\TableRunPhase;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
@@ -55,6 +57,11 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
+use Symfony\Component\Console\Helper\ProgressBar;
+use Symfony\Component\Console\Helper\Table;
+use Symfony\Component\Console\Helper\TableSeparator;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -103,10 +110,29 @@ class RunCommand extends Command
         $verbosity = $this->getOutput()->getVerbosity();
         $isVerbose = $verbosity >= OutputInterface::VERBOSITY_VERBOSE;
         $isVeryVerbose = $verbosity >= OutputInterface::VERBOSITY_VERY_VERBOSE;
+        $isDebug = $verbosity >= OutputInterface::VERBOSITY_DEBUG;
+
+        // Live nested progress bars are driven by verbosity on an interactive TTY:
+        // `-v` shows the bars (compact), `-vv` adds full per-phase throughput to the
+        // per-table bar, `-vvv` additionally prints the per-table timing summary.
+        $out = $this->output->getOutput();
+        $showProgress = $isVerbose
+            && ! $ci
+            && $this->output->isDecorated()
+            && $out instanceof ConsoleOutput;
 
         // Map Symfony verbosity to stderr log threshold so `-v` / `-vv` surface
-        // info / debug events on stderr without needing a separate live-output path.
-        $stderrLevel = $isVeryVerbose ? 'debug' : ($isVerbose ? 'info' : ($ci ? 'error' : 'warning'));
+        // info / debug events on stderr when piped. When the bars are live they own
+        // the terminal, so the stderr stream is silenced to avoid corrupting them —
+        // skips/failures still surface as result lines and in the final summary.
+        // (Set before the channel is first resolved, so it actually takes effect.)
+        $stderrLevel = match (true) {
+            $showProgress => 'emergency',
+            $isVeryVerbose => 'debug',
+            $isVerbose => 'info',
+            $ci => 'error',
+            default => 'warning',
+        };
         config(['logging.channels.stderr.level' => $stderrLevel]);
 
         $step = new VerboseStepRenderer($this->output, $ci);
@@ -428,6 +454,23 @@ class RunCommand extends Command
         $dotColumn = 0;
         $maxDotColumns = 70;
 
+        $overallBar = null;
+        $tableBar = null;
+        $logSection = null;
+
+        if ($showProgress) {
+            // Live bars own the terminal: every write must go through a section, or
+            // Symfony's cursor math desyncs and re-prints the bars. Sections created
+            // first render higher up — the results log on top, the per-table bar in
+            // the middle, the overall bar pinned at the bottom. All reused for the run.
+            $logSection = $out->section();
+            $tableBar = new ProgressBar($out->section());
+            $overallBar = new ProgressBar($out->section());
+            // Leading newline keeps a blank line between the per-table bar and the
+            // overall bar (the section owns both lines, so it stays stable on redraw).
+            $overallBar->setFormat("\n  <info>tables</info>  [%bar%] %current%/%max%");
+        }
+
         $dumpSink = $targetIsDump
             ? new SqlDumpService(new DumpDialectFactory, new DumpArchiver)
             : null;
@@ -440,68 +483,105 @@ class RunCommand extends Command
             skipSchema: $skipSchema,
             skipTables: $skipTables,
             onlyTables: $onlyTables,
-            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use ($step, $isVerbose, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns): void {
-                if ($ci) {
-                    if ($status === TableRunStatus::NotFound) {
-                        $notFoundTables[] = $tableName;
-                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                        $schemaFailureTables[] = $tableName;
-                    }
-
-                    return;
-                }
-
-                if ($isVerbose) {
-                    if ($status === TableRunStatus::Transferred) {
-                        $suffix = sprintf('(%s rows%s)', number_format($rows), $skipped > 0 ? ', '.$skipped.' skipped' : '');
-                        $step->success($suffix);
-                        $this->renderSkipGroups($step, $skippedRows);
-                    } elseif ($status === TableRunStatus::Failed) {
-                        $step->fail();
-                        $this->renderSkipGroups($step, $skippedRows);
-                    } elseif ($status === TableRunStatus::NotFound) {
-                        $this->line(sprintf('  <comment>?</comment>  %s  — not found in source, skipped', $tableName));
-                        $notFoundTables[] = $tableName;
-                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                        $this->line(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
-                        $schemaFailureTables[] = $tableName;
-                    }
-
-                    return;
-                }
-
-                // Normal mode: dot indicators wrapped at 70 chars
+            onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped, array $skippedRows, ?StatsTableTransferData $timings = null) use ($isVerbose, $isVeryVerbose, $isDebug, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns, $showProgress, $overallBar, $tableBar, $logSection): void {
+                // Record pre-skip outcomes for the final summary (every mode).
                 if ($status === TableRunStatus::NotFound) {
                     $notFoundTables[] = $tableName;
                 } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
                     $schemaFailureTables[] = $tableName;
                 }
 
-                $indicator = match ($status) {
-                    TableRunStatus::Transferred => $skipped > 0 ? 'F' : '.',
-                    TableRunStatus::Failed => 'E',
-                    TableRunStatus::NotFound => '?',
-                    TableRunStatus::SkippedBySchemaFailure => 'S',
-                    default => null,
-                };
+                if ($ci) {
+                    return;
+                }
 
-                if ($indicator !== null) {
-                    $this->output->write($indicator);
-                    $dotColumn++;
-
-                    if ($dotColumn >= $maxDotColumns) {
-                        $this->output->writeln('');
-                        $dotColumn = 0;
+                if ($status === TableRunStatus::InProgress) {
+                    if ($showProgress && $timings instanceof StatsTableTransferData) {
+                        $this->advanceTableBar($tableBar, $timings, $isVeryVerbose);
                     }
+
+                    return;
+                }
+
+                // ── Terminal status ──
+                // Quiet mode (not verbose): compact one-char dot indicators.
+                if (! $isVerbose) {
+                    $indicator = match ($status) {
+                        TableRunStatus::Transferred => $skipped > 0 ? 'F' : '.',
+                        TableRunStatus::Failed => 'E',
+                        TableRunStatus::NotFound => '?',
+                        TableRunStatus::SkippedBySchemaFailure => 'S',
+                        default => null,
+                    };
+
+                    if ($indicator !== null) {
+                        $this->output->write($indicator);
+                        $dotColumn++;
+
+                        if ($dotColumn >= $maxDotColumns) {
+                            $this->output->writeln('');
+                            $dotColumn = 0;
+                        }
+                    }
+
+                    return;
+                }
+
+                // Verbose. Scrolling detail goes to the log section when bars are live
+                // (so it never corrupts them), otherwise straight to the console.
+                $sink = $showProgress ? $logSection : $this->output;
+
+                // Only Transferred/Failed tables ever started a per-table bar
+                // (via onTableStart); NotFound/SchemaFailure never did.
+                if ($showProgress && ($status === TableRunStatus::Transferred || $status === TableRunStatus::Failed)) {
+                    $tableBar->finish();
+                }
+
+                $suffix = $skipped > 0 ? ', '.number_format($skipped).' skipped' : '';
+
+                if ($status === TableRunStatus::Transferred) {
+                    $sink->writeln(sprintf('  <info>✓</info>  %s  (%s rows%s)', $tableName, number_format($rows), $suffix));
+                } elseif ($status === TableRunStatus::Failed) {
+                    $sink->writeln(sprintf('  <error>✗</error>  %s  — transfer failed', $tableName));
+                } elseif ($status === TableRunStatus::NotFound) {
+                    $sink->writeln(sprintf('  <comment>?</comment>  %s  — not found in source, skipped', $tableName));
+                } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
+                    $sink->writeln(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
+                }
+
+                if ($status === TableRunStatus::Transferred || $status === TableRunStatus::Failed) {
+                    $this->renderSkipGroups($sink, $skippedRows);
+
+                    // `-vvv`: per-table timing summary table.
+                    if ($isDebug && $timings instanceof StatsTableTransferData) {
+                        $this->renderTimingSummary($sink, $timings);
+                    }
+                }
+
+                if ($showProgress) {
+                    $overallBar->advance();
                 }
             },
             keyRemapping: $keyRemappingService,
             breakOnFailure: (bool) $this->option('break-on-failure'),
-            onTableStart: $isVerbose && ! $ci
-                ? fn (string $tableName) => $step->start('  '.$tableName)
-                : null,
+            onTableStart: $showProgress
+                ? function (string $tableName) use ($tableBar): void {
+                    $this->startTableBar($tableBar, $tableName);
+                }
+            : null,
             dumpSink: $dumpSink,
+            onStart: $showProgress
+                ? function (int $totalTables) use ($overallBar): void {
+                    $overallBar->setMaxSteps($totalTables);
+                    $overallBar->start();
+                }
+            : null,
+            trackRowTotals: $showProgress,
         );
+
+        if ($overallBar instanceof ProgressBar) {
+            $overallBar->finish();
+        }
 
         $finishedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 
@@ -663,6 +743,21 @@ class RunCommand extends Command
                 count($schemaFailureTables) === 1 ? '' : 's',
                 implode(', ', $schemaFailureTables),
             ));
+        }
+
+        // Data-transfer failures with their reason. In live-bar mode the ✗ line is
+        // terse and the stderr log is silenced, so surface the reason here.
+        $failedTables = array_values(array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::Failed));
+
+        if ($failedTables !== []) {
+            $this->line('');
+            foreach ($failedTables as $failedTable) {
+                $this->line(sprintf(
+                    '  <error>Error: table %s failed%s</error>',
+                    $failedTable->tableName,
+                    $failedTable->failureReason !== null ? ' — '.$failedTable->failureReason : '',
+                ));
+            }
         }
 
         $transferredCount = count(array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::Transferred));
@@ -974,9 +1069,153 @@ class RunCommand extends Command
     }
 
     /**
+     * (Re)initialise the nested per-table progress bar for a new table. The row
+     * total is not known yet (it arrives with the first activity or loop event),
+     * so the bar starts in the indeterminate format. The `%message%` slot carries
+     * the one-shot activity first, then per-chunk throughput.
+     */
+    private function startTableBar(ProgressBar $bar, string $tableName): void
+    {
+        $bar->setFormat('  %table%  [%bar%]  %message%');
+        $bar->setMessage($tableName, 'table');
+        $bar->setMessage('', 'message');
+        $bar->start(0);
+    }
+
+    /**
+     * Advance the per-table bar from a chunk's cumulative timings. On the first
+     * event with a known row total it switches to the determinate bar format.
+     */
+    private function advanceTableBar(ProgressBar $bar, StatsTableTransferData $stats, bool $verbose): void
+    {
+        $isOneShot = $stats->status?->isOneShot();
+
+        $message = match ($isOneShot) {
+            true => $this->formatStatus($stats),
+            false => $this->formatProgress($stats, $verbose),
+            null => ''
+        };
+
+        $bar->setMessage($message, 'message');
+
+        if ($isOneShot) {
+            $bar->display();
+
+            return;
+        }
+
+        if ($stats->totalRows > 0) {
+            if ($bar->getMaxSteps() !== $stats->totalRows) {
+                $bar->setMaxSteps($stats->totalRows);
+                $bar->setFormat('  %table%  [%bar%] %current%/%max% (%percent:3s%%)  %message%');
+            }
+
+            $bar->setProgress(min($stats->rowsProcessed, $stats->totalRows));
+
+            return;
+        }
+
+        $bar->setProgress($stats->rowsProcessed);
+    }
+
+    private function formatStatus(StatsTableTransferData $stats): string
+    {
+        return $stats->status instanceof TableRunPhase ? $stats->status->label().'…' : '';
+    }
+
+    /**
+     * Throughput text shown on the per-table bar: overall only in default mode,
+     * full per-phase breakdown in verbose mode.
+     */
+    private function formatProgress(StatsTableTransferData $stats, bool $verbose): string
+    {
+        $overall = trim($this->formatThroughput($stats->loopAggregate->latestSecondsPerMillionRows));
+
+        if (! $verbose) {
+            return $overall === '—' ? '' : $overall;
+        }
+
+        return sprintf(
+            'all %s · sel %s · tr %s · ins %s',
+            $overall,
+            trim($this->formatThroughput($stats->selectAggregate->latestSecondsPerMillionRows)),
+            trim($this->formatThroughput($stats->transformAggregate->latestSecondsPerMillionRows)),
+            trim($this->formatThroughput($stats->insertAggregate->latestSecondsPerMillionRows)),
+        );
+    }
+
+    private function renderTimingSummary(OutputInterface $sink, StatsTableTransferData $timings): void
+    {
+        if ($timings->loops->isEmpty()) {
+            return;
+        }
+
+        $rows = [];
+
+        foreach (TableRunPhase::cases() as $phase) {
+            $agg = $timings->aggregate($phase);
+            if ($agg->count === 0) {
+                continue;
+            }
+
+            if ($phase === TableRunPhase::Loop || $phase === TableRunPhase::Select) {
+                $rows[] = new TableSeparator;
+            }
+
+            $rows[] = [
+                $phase->value,
+                (string) $agg->count,
+                $this->formatSeconds($agg->min ?? 0.0),
+                $this->formatSeconds($agg->max ?? 0.0),
+                $this->formatSeconds($agg->averageSeconds ?? 0.0),
+                $this->formatSeconds($agg->sum),
+                $this->formatThroughput($agg->secondsPerMillionRows),
+            ];
+        }
+
+        $indent = str_repeat(' ', 6);
+        $sink->writeln(sprintf('%s── timing summary ──', $indent));
+        $buffer = new BufferedOutput(
+            $this->output->getVerbosity(),
+            $this->output->isDecorated(),
+            $this->output->getFormatter(),
+        );
+        $table = new Table($buffer);
+        $table->setHeaders(['phase', 'chunks', 'min', 'max', 'avg', 'total', 's/1M rows']);
+        $table->setRows($rows);
+        $table->render();
+
+        foreach (explode("\n", rtrim($buffer->fetch(), "\n")) as $line) {
+            $sink->writeln($indent.$line);
+        }
+    }
+
+    private function formatSeconds(float $seconds): string
+    {
+        if ($seconds < 1.0) {
+            return sprintf('%6.1f ms', $seconds * 1000.0);
+        }
+
+        return sprintf('%5.1f s', $seconds);
+    }
+
+    private function formatThroughput(?float $secondsPerMillion): string
+    {
+        if ($secondsPerMillion === null) {
+            return '—';
+        }
+
+        if ($secondsPerMillion >= 1.0) {
+            return sprintf('%5.1f s/M', $secondsPerMillion);
+        }
+
+        return sprintf('%5.1f ms/M', $secondsPerMillion * 1000.0);
+    }
+
+    /**
      * @param  list<SkippedRow>  $skippedRows
      */
-    private function renderSkipGroups(VerboseStepRenderer $step, array $skippedRows): void
+    private function renderSkipGroups(OutputInterface $sink, array $skippedRows): void
     {
         if ($skippedRows === []) {
             return;
@@ -985,12 +1224,12 @@ class RunCommand extends Command
         $groups = $this->aggregateSkipReasons($skippedRows);
         $shown = array_slice($groups, 0, 10);
         foreach ($shown as $group) {
-            $step->note(sprintf('     └ %d× %s', $group['count'], $group['message']));
+            $sink->writeln(sprintf('     └ %d× %s', $group['count'], $group['message']));
         }
 
         $rest = count($groups) - count($shown);
         if ($rest > 0) {
-            $step->note(sprintf('     └ … and %d more error types', $rest));
+            $sink->writeln(sprintf('     └ … and %d more error types', $rest));
         }
     }
 
