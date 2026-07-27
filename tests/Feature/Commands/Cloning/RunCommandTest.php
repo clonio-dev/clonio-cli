@@ -1599,6 +1599,26 @@ it('completes a real full run over SQLite and prints the summary line', function
     @unlink($target);
 });
 
+it('prints the per-table timing summary at -vvv on a real run', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 3);
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    // Live bars need a real TTY; test output is a non-decorated BufferedOutput, so
+    // -vvv takes the fallback path but still emits the per-table timing summary.
+    $this->artisan('cloning:run test.cloning.yaml --target=staging -vvv')
+        ->expectsOutputToContain('timing summary')
+        ->expectsOutputToContain('Tables:')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
 it('renders the verbose schema-comparison phase on a real run', function (): void {
     Storage::fake('local');
     $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
