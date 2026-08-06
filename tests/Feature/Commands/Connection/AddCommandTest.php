@@ -40,7 +40,9 @@ it('successfully adds a MySQL connection with all options provided via flags', f
         '--database' => 'mydb',
         '--username' => 'root',
         '--password' => 'secret',
+        '--attr_ssl_ca' => '',
     ])
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -162,6 +164,7 @@ it('cancels when the user declines the save confirmation', function (): void {
         '--username' => 'root',
         '--password' => 'secret',
     ])
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'no')
         ->expectsOutputToContain('Cancelled.')
@@ -179,6 +182,7 @@ it('prompts interactively for every MySQL field when no flags are given', functi
         ->expectsQuestion('Database name', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password', 'secret')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -273,6 +277,7 @@ it('shows a production warning when the connection is marked production', functi
         '--password' => 'secret',
         '--production' => true,
     ])
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsOutputToContain('This connection is marked as production.')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -326,6 +331,7 @@ it('returns an IO error when persisting the connection throws', function (): voi
         '--username' => 'root',
         '--password' => 'secret',
     ])
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->expectsOutputToContain('Failed to save connection: disk full')

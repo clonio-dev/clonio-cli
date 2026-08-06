@@ -20,7 +20,7 @@ final readonly class ConnectionData
         public bool $isProduction,
         public bool $trustServerCertificate = false,
         public ?DatabaseConnectionType $dialect = null,
-        public ?string $attrSslCa,
+        public ?string $attrSslCa = null,
     ) {}
 
     /** @param array<string, mixed> $data */

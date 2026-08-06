@@ -228,7 +228,20 @@ class AddCommand extends Command
             }
         }
 
-        // --- Step 10: Production flag ---
+        // --- Step 10: SSL certificate ---
+        $attrSslCa = null;
+
+        if ($type->requiresNetworkConfig() && ($type === DatabaseConnectionType::Mysql || $type === DatabaseConnectionType::MariaDB)) {
+            $attrSslCaOption = $this->option('attr_ssl_ca');
+            $attrSslCa = is_string($attrSslCaOption) && $attrSslCaOption !== '' ? $attrSslCaOption : null;
+
+            if ($attrSslCa === null) {
+                $asked = $this->ask('SSL Certificate Authority');
+                $attrSslCa = is_string($asked) ? $asked : null;
+            }
+        }
+
+        // --- Step 11: Production flag ---
         $isProduction = (bool) $this->option('production');
 
         if (! $isProduction) {
@@ -240,18 +253,7 @@ class AddCommand extends Command
             $this->warn('This connection is marked as production. Destructive operations will require confirmation.');
         }
 
-        // --- Step 11: SSL certificate ---
-        $attrSslCa = null;
 
-        if ($type->requiresNetworkConfig()) {
-            $attrSslCaOption = $this->option('attr_ssl_ca');
-            $attrSslCa = is_string($attrSslCaOption) && $attrSslCaOption !== '' ? $attrSslCaOption : null;
-
-            if ($attrSslCa === null) {
-                $asked = $this->ask('SSL Certificate Authority');
-                $attrSslCa = is_string($asked) ? $asked : null;
-            }
-        }
 
 
 

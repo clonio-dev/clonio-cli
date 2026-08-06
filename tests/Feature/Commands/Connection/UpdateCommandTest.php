@@ -49,6 +49,7 @@ it('updates a connection when found', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -73,6 +74,7 @@ it('cancels update when user declines save confirmation', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'no')
         ->assertExitCode(0);
@@ -114,6 +116,7 @@ it('preserves existing password when empty input given', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -139,6 +142,7 @@ it('auto-selects connection when only one exists', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -179,6 +183,7 @@ it('renames a connection when the name changes', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Connection 'renamed' updated successfully.")
@@ -204,6 +209,7 @@ it('returns an IO error when persisting the update throws', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain('disk full')
@@ -234,6 +240,7 @@ it('prompts the user to choose when multiple connections exist and no name is gi
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -396,6 +403,7 @@ it('fails with validation error when renaming to an existing connection name', f
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('SSL Certificate Authority', null)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsOutputToContain("A connection named 'production' already exists.")
         ->assertExitCode(4);
