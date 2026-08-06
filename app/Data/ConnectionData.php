@@ -20,6 +20,7 @@ final readonly class ConnectionData
         public bool $isProduction,
         public bool $trustServerCertificate = false,
         public ?DatabaseConnectionType $dialect = null,
+        public ?string $attrSslCa = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -33,6 +34,7 @@ final readonly class ConnectionData
         $username = $data['username'] ?? null;
         $password = $data['password'] ?? null;
         $dialect = $data['dialect'] ?? null;
+        $attrSslCa = $data['attr_ssl_ca'] ?? null;
 
         return new self(
             name: $name,
@@ -46,6 +48,7 @@ final readonly class ConnectionData
             isProduction: (bool) ($data['is_production'] ?? false),
             trustServerCertificate: (bool) ($data['trust_server_certificate'] ?? false),
             dialect: is_string($dialect) ? DatabaseConnectionType::tryFrom($dialect) : null,
+            attrSslCa: is_string($attrSslCa) ? $attrSslCa : null,
         );
     }
 
@@ -83,6 +86,10 @@ final readonly class ConnectionData
 
         if ($this->trustServerCertificate) {
             $data['trust_server_certificate'] = true;
+        }
+
+        if ($this->attrSslCa) {
+            $data['attr_ssl_ca'] = $this->attrSslCa;
         }
 
         return $data;

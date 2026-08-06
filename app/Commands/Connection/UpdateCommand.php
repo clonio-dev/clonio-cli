@@ -118,6 +118,7 @@ class UpdateCommand extends Command
         $newType = DatabaseConnectionType::from($newTypeValue);
         $typeChanged = $newType !== $current->type;
 
+        $attrSslCa = null;
         if ($newType->requiresNetworkConfig()) {
             if ($typeChanged) {
                 $host = $this->askString('Host', 'localhost');
@@ -156,6 +157,10 @@ class UpdateCommand extends Command
             $password = Crypt::encryptString($passwordInput);
         }
 
+        if($newType->requiresNetworkConfig() && ($newType === DatabaseConnectionType::Mysql || $newType === DatabaseConnectionType::MariaDB)) {
+            $attrSslCa = $this->ask('SSL Certificate Authority', $current->attrSslCa ?? null);
+        }
+
         $isProduction = $this->confirm('Is this a production connection?', $current->isProduction);
 
         $trustServerCertificate = false;
@@ -177,6 +182,7 @@ class UpdateCommand extends Command
             password: $password,
             isProduction: $isProduction,
             trustServerCertificate: $trustServerCertificate,
+            attrSslCa: $attrSslCa,
         );
     }
 

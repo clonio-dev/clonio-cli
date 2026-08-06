@@ -8,6 +8,8 @@ use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use PDO;
+use Pdo\Mysql;
 use RuntimeException;
 use Throwable;
 
@@ -90,6 +92,12 @@ class DatabaseConnectionService
 
         if ($connection->schema !== null) {
             $config['search_path'] = $connection->schema;
+        }
+
+        if($connection->attrSslCa) {
+            $config['options'] = [
+                Mysql::ATTR_SSL_CA => base_path($connection->attrSslCa),
+            ];
         }
 
         return $config;

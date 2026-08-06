@@ -29,7 +29,8 @@ class AddCommand extends Command
         {--username= : Database username}
         {--password= : Database password}
         {--production : Mark this as a production connection}
-        {--trust-server-certificate : Trust the server certificate (SQL Server with self-signed certs)}';
+        {--trust-server-certificate : Trust the server certificate (SQL Server with self-signed certs)}
+        {--attr_ssl_ca : The file path to an SSL certificate authority (CA), to enable secure encrypted connections to a MySQL database}';
 
     /**
      * @var string
@@ -227,7 +228,20 @@ class AddCommand extends Command
             }
         }
 
-        // --- Step 10: Production flag ---
+        // --- Step 10: SSL certificate ---
+        $attrSslCa = null;
+
+        if ($type->requiresNetworkConfig() && ($type === DatabaseConnectionType::Mysql || $type === DatabaseConnectionType::MariaDB)) {
+            $attrSslCaOption = $this->option('attr_ssl_ca');
+            $attrSslCa = is_string($attrSslCaOption) && $attrSslCaOption !== '' ? $attrSslCaOption : null;
+
+            if ($attrSslCa === null) {
+                $asked = $this->ask('SSL Certificate Authority');
+                $attrSslCa = is_string($asked) ? $asked : null;
+            }
+        }
+
+        // --- Step 11: Production flag ---
         $isProduction = (bool) $this->option('production');
 
         if (! $isProduction) {
@@ -238,6 +252,10 @@ class AddCommand extends Command
         if ($isProduction) {
             $this->warn('This connection is marked as production. Destructive operations will require confirmation.');
         }
+
+
+
+
 
         // --- Summary table ---
         $summaryRows = [
@@ -282,6 +300,7 @@ class AddCommand extends Command
         }
 
         $summaryRows[] = ['Production', $isProduction ? 'Yes' : 'No'];
+        $summaryRows[] = ['SSL Certificate Authority', $attrSslCa ? 'Yes' : 'No'];
 
         $this->table(['Field', 'Value'], $summaryRows);
 
@@ -305,6 +324,7 @@ class AddCommand extends Command
             isProduction: $isProduction,
             trustServerCertificate: $trustServerCertificate,
             dialect: $dialect,
+            attrSslCa: $attrSslCa,
         );
 
         try {
