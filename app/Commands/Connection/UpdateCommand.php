@@ -125,16 +125,19 @@ class UpdateCommand extends Command
                 $port = $portRaw !== '' ? (int) $portRaw : $newType->defaultPort();
                 $database = $this->askString('Database', '');
                 $username = $this->askString('Username', '');
+                $attrSslCa = $this->ask('SSL Certificate Authority', null);
             } else {
                 $host = $this->askString('Host', $current->host ?? '');
                 $portRaw = $this->askString('Port', (string) $current->port);
                 $port = $portRaw !== '' ? (int) $portRaw : $current->port;
                 $database = $this->askString('Database', $current->database ?? '');
                 $username = $this->askString('Username', $current->username ?? '');
+                $attrSslCa = $this->ask('SSL Certificate Authority', $current->attrSslCa ?? null);
             }
         } else {
             $host = null;
             $port = null;
+            $attrSslCa = null;
             if ($typeChanged) {
                 $database = $this->askString('Database file path', '');
                 $username = null;
@@ -177,6 +180,7 @@ class UpdateCommand extends Command
             password: $password,
             isProduction: $isProduction,
             trustServerCertificate: $trustServerCertificate,
+            attrSslCa: $attrSslCa,
         );
     }
 

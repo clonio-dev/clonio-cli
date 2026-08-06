@@ -45,10 +45,11 @@ class ListCommand extends Command
                 $host,
                 $connection->database ?? '—',
                 $connection->isProduction ? 'Yes' : 'No',
+                $connection->attrSslCa ? 'Yes' : 'No',
             ];
         }
 
-        $this->table(['Name', 'Driver', 'Host', 'Database', 'Production'], $rows);
+        $this->table(['Name', 'Driver', 'Host', 'Database', 'Production', 'SSL Certificate Authority'], $rows);
 
         return ExitCode::Success->value;
     }
