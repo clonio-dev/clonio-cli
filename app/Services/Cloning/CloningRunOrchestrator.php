@@ -208,6 +208,7 @@ class CloningRunOrchestrator
                     $dumpSink,
                     $keyRemapping,
                     $config->keyRemapping,
+                    $pkColumns,
                 ), null]
                 : $this->transferTable(
                     $config->options,
@@ -322,6 +323,9 @@ class CloningRunOrchestrator
         /** @var list<SkippedRow> $skippedRows */
         $skippedRows = [];
 
+        /** @var list<array{key: string, lastValue: mixed}> $sortKeys */
+        $sortKeys = [];
+
         $stats = new StatsTableTransferData;
 
         // Only pay for the row count when a consumer actually wants per-table
@@ -360,10 +364,11 @@ class CloningRunOrchestrator
                 $tOverall = microtime(true);
                 $stats->setStatus(TableRunPhase::Select);
                 $tSelect = microtime(true);
+                $seeking = $sortKeys !== [];
+                $sql = $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $pkColumns, $sortKeys);
+                $bindings = $seeking ? array_map(static fn (array $k): mixed => $k['lastValue'], $sortKeys) : [];
                 /** @var list<object> $chunk */
-                $chunk = DB::connection($sourceConn)->select(
-                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize)
-                );
+                $chunk = DB::connection($sourceConn)->select($sql, $bindings);
                 $selectSeconds = microtime(true) - $tSelect;
 
                 if ($chunk === []) {
@@ -439,6 +444,14 @@ class CloningRunOrchestrator
 
                 ($onProgress)($tableConfig->tableName, TableRunStatus::InProgress, $rows, $skipped, [], $stats);
 
+                // Advance the keyset cursor to the last row of this chunk (if seeking).
+                if ($sortKeys !== []) {
+                    $lastRow = (array) array_last($chunk);
+                    foreach ($sortKeys as $i => $sortKey) {
+                        $sortKeys[$i]['lastValue'] = $lastRow[$sortKey['key']] ?? null;
+                    }
+                }
+
                 $offset += count($chunk);
                 $loopIndex++;
             } while (count($chunk) === $chunkSize);
@@ -470,6 +483,7 @@ class CloningRunOrchestrator
      * INSERT batches into the dump file. Mirrors transferTable() minus the live
      * target connection. Returns [rowsWritten, 0, hasFailed, failureReason, []].
      *
+     * @param  list<string>  $pkColumns
      * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
     private function dumpTable(
@@ -480,6 +494,7 @@ class CloningRunOrchestrator
         SqlDumpService $dumpSink,
         ?KeyRemappingService $keyRemapping = null,
         ?KeyRemappingConfigData $keyRemappingConfig = null,
+        array $pkColumns = [],
     ): array {
         $sourceConn = $this->connector->open($source);
 
@@ -487,12 +502,16 @@ class CloningRunOrchestrator
         $offset = 0;
         $chunkSize = $options->chunkSize;
 
+        /** @var list<array{key: string, lastValue: mixed}> $sortKeys */
+        $sortKeys = [];
+
         try {
             do {
+                $seeking = $sortKeys !== [];
+                $sql = $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $pkColumns, $sortKeys);
+                $bindings = $seeking ? array_map(static fn (array $k): mixed => $k['lastValue'], $sortKeys) : [];
                 /** @var list<object> $chunk */
-                $chunk = DB::connection($sourceConn)->select(
-                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize)
-                );
+                $chunk = DB::connection($sourceConn)->select($sql, $bindings);
 
                 if ($chunk === []) {
                     break;
@@ -501,6 +520,14 @@ class CloningRunOrchestrator
                 $transformed = $this->transformChunk($chunk, $tableConfig, $engine, $keyRemapping, $keyRemappingConfig);
                 $dumpSink->writeRows($tableConfig->tableName, $transformed);
                 $rows += count($transformed);
+
+                if ($sortKeys !== []) {
+                    $lastRow = (array) array_last($chunk);
+                    foreach ($sortKeys as $i => $sortKey) {
+                        $sortKeys[$i]['lastValue'] = $lastRow[$sortKey['key']] ?? null;
+                    }
+                }
+
                 $offset += count($chunk);
             } while (count($chunk) === $chunkSize);
 
@@ -601,7 +628,117 @@ class CloningRunOrchestrator
         }
     }
 
-    private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit): string
+    /**
+     * Build the SELECT for the next chunk.
+     *
+     * When the driver and row strategy allow keyset (seek) pagination and the source
+     * has a usable ordering, `$sortKeys` is populated with the ordering columns on the
+     * first call (each `lastValue` null) and the caller fills every `lastValue` from the
+     * last fetched row before the next call; the query then seeks past that row with a
+     * bound row-value comparison instead of a growing OFFSET. When keyset does not apply
+     * (no PK, SQL Server) `$sortKeys` is cleared and the legacy LIMIT/OFFSET SQL is used.
+     *
+     * @param  list<string>  $pkColumns
+     * @param  list<array{key: string, lastValue: mixed}>  $sortKeys  by-reference seek cursor
+     */
+    private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit, array $pkColumns, array &$sortKeys): string
+    {
+        $keyColumns = $this->keysetColumns($config, $source->type, $pkColumns);
+
+        // Keyset not applicable → legacy OFFSET pagination.
+        if ($keyColumns === []) {
+            $sortKeys = [];
+
+            return $this->offsetChunkQuery($config, $source, $offset, $limit);
+        }
+
+        $rows = $config->rows;
+        $quotedTable = $this->quoteTable($config->tableName, $source->type);
+        $direction = $rows->strategy === 'last' ? 'DESC' : 'ASC';
+        $orderBy = implode(', ', array_map(
+            fn (string $c): string => $this->quoteIdentifier($c, $source->type).' '.$direction,
+            $keyColumns,
+        ));
+
+        // Respect the row-strategy limit for the ordered (non-full) strategies.
+        $chunkLimit = $limit;
+        if ($rows->strategy !== 'full') {
+            $totalLimit = $rows->limit ?? PHP_INT_MAX;
+            $chunkLimit = min($limit, max(0, $totalLimit - $offset));
+
+            if ($chunkLimit <= 0) {
+                $sortKeys = [];
+
+                return sprintf('SELECT * FROM %s WHERE 1=0', $quotedTable);
+            }
+        }
+
+        // First call: establish the cursor columns and page from the start (no WHERE).
+        if ($sortKeys === []) {
+            $sortKeys = array_map(static fn (string $c): array => ['key' => $c, 'lastValue' => null], $keyColumns);
+
+            return sprintf('SELECT * FROM %s ORDER BY %s LIMIT %d', $quotedTable, $orderBy, $chunkLimit);
+        }
+
+        // Subsequent calls: seek past the last fetched row via a bound row-value comparison.
+        $columns = implode(', ', array_map(fn (array $k): string => $this->quoteIdentifier($k['key'], $source->type), $sortKeys));
+        $placeholders = implode(', ', array_fill(0, count($sortKeys), '?'));
+        $operator = $direction === 'DESC' ? '<' : '>';
+
+        return sprintf(
+            'SELECT * FROM %s WHERE (%s) %s (%s) ORDER BY %s LIMIT %d',
+            $quotedTable,
+            $columns,
+            $operator,
+            $placeholders,
+            $orderBy,
+            $chunkLimit,
+        );
+    }
+
+    /**
+     * The ordering columns to seek by, or [] when keyset pagination does not apply
+     * (SQL Server, or no primary key to guarantee a total order).
+     *
+     * @param  list<string>  $pkColumns
+     * @return list<string>
+     */
+    private function keysetColumns(TableCloningConfigData $config, DatabaseConnectionType $type, array $pkColumns): array
+    {
+        if ($pkColumns === [] || ! $this->supportsKeysetPagination($type)) {
+            return [];
+        }
+
+        if ($config->rows->strategy === 'full') {
+            return $pkColumns;
+        }
+
+        // Ordered strategies: sort column first, PK columns appended as a tiebreaker so
+        // the ordering is total even when the sort column has duplicate values.
+        $keys = [$config->rows->sortBy ?? 'id'];
+        foreach ($pkColumns as $pk) {
+            if (! in_array($pk, $keys, true)) {
+                $keys[] = $pk;
+            }
+        }
+
+        return $keys;
+    }
+
+    private function supportsKeysetPagination(DatabaseConnectionType $type): bool
+    {
+        return in_array($type, [
+            DatabaseConnectionType::Mysql,
+            DatabaseConnectionType::MariaDB,
+            DatabaseConnectionType::PostgreSQL,
+            DatabaseConnectionType::Sqlite,
+        ], true);
+    }
+
+    /**
+     * Legacy LIMIT/OFFSET (or OFFSET/FETCH) chunk query — used when keyset does not apply.
+     */
+    private function offsetChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit): string
     {
         $table = $config->tableName;
         $rows = $config->rows;
@@ -635,6 +772,11 @@ class CloningRunOrchestrator
     }
 
     private function quoteTable(string $name, DatabaseConnectionType $driver): string
+    {
+        return $this->quoteIdentifier($name, $driver);
+    }
+
+    private function quoteIdentifier(string $name, DatabaseConnectionType $driver): string
     {
         return match ($driver) {
             DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => '`'.$name.'`',

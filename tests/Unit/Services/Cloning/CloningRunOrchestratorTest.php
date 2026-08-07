@@ -765,6 +765,63 @@ it('announces the one-shot phases via the timings status on InProgress before th
     expect($phases[2])->toBe(TableRunPhase::Insert);
 });
 
+it('uses keyset (seek) pagination instead of OFFSET when a primary key exists', function (): void {
+    $source = makeOrchestratorConnection('source');
+    $target = makeOrchestratorConnection('target');
+    $schema = makeOrchestratorSchema(); // users, PK id
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'source',
+        options: new CloningOptionsData(
+            chunkSize: 2,
+            enforceColumnTypes: false,
+            dropUnknownTables: false,
+            dropExtraColumns: false,
+            disableForeignKeyChecks: false,
+            fakerLocale: 'en_US',
+        ),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'full', limit: null, sortBy: null, clear: ClearMode::None),
+                columns: [],
+            ),
+        ],
+    );
+
+    /** @var list<array{sql: string, bindings: array<int, mixed>}> $queries */
+    $queries = [];
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturnUsing(function (string $sql, array $bindings = []) use (&$queries): array {
+        $queries[] = ['sql' => $sql, 'bindings' => $bindings];
+
+        return match (count($queries)) {
+            1 => [(object) ['id' => 1], (object) ['id' => 2]],
+            2 => [(object) ['id' => 3]],
+            default => [],
+        };
+    });
+    DB::shouldReceive('table')->andReturnSelf();
+    DB::shouldReceive('insert')->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    makeOrchestrator()->run($config, $source, $target, $schema, true, [], [], static function (): void {});
+
+    // Two chunks: full window (2), then the trailing short window (1) which ends the loop.
+    expect($queries)->toHaveCount(2);
+
+    // First chunk: ordered + limited, no OFFSET, no WHERE, no bindings.
+    expect($queries[0]['sql'])->toContain('ORDER BY')->toContain('LIMIT')
+        ->not->toContain('OFFSET')
+        ->not->toContain('WHERE');
+    expect($queries[0]['bindings'])->toBe([]);
+
+    // Second chunk: seek past the last fetched id via a bound row-value comparison.
+    expect($queries[1]['sql'])->toContain('WHERE (`id`) > (?)')->toContain('ORDER BY')
+        ->not->toContain('OFFSET');
+    expect($queries[1]['bindings'])->toBe([2]);
+});
+
 it('does not fire onTableStart for tables skipped by --skip flag', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
