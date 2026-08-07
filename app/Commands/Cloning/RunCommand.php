@@ -1021,6 +1021,13 @@ class RunCommand extends Command
             return sprintf('%.0fs', $seconds);
         }
 
+        if ($seconds >= 3600) {
+            $hours = (int) ($seconds / 3600);
+            $minutes = (int) (fmod($seconds, 3600) / 60);
+
+            return sprintf('%dh %dm', $hours, $minutes);
+        }
+
         $minutes = (int) ($seconds / 60);
         $remaining = $seconds % 60;
 
@@ -1124,23 +1131,25 @@ class RunCommand extends Command
     }
 
     /**
-     * Throughput text shown on the per-table bar: overall only in default mode,
-     * full per-phase breakdown in verbose mode.
+     * Progress detail shown on the per-table bar: ETA plus the overall pace in every
+     * verbose mode, expanded to the full per-phase pace breakdown in very verbose mode.
      */
     private function formatProgress(StatsTableTransferData $stats, bool $verbose): string
     {
-        $overall = trim($this->formatThroughput($stats->loopAggregate->latestSecondsPerMillionRows));
+        $eta = 'ETA '.$this->formatDuration($stats->estimatedSecondsRemaining);
+        $overall = trim($this->formatThroughput($stats->loopAggregate->latestPacePerMillion));
 
         if (! $verbose) {
-            return $overall === '—' ? '' : $overall;
+            return $overall === '—' ? $eta : $eta.' · '.$overall;
         }
 
         return sprintf(
-            'all %s · sel %s · tr %s · ins %s',
+            '%s · all %s · sel %s · tr %s · ins %s',
+            $eta,
             $overall,
-            trim($this->formatThroughput($stats->selectAggregate->latestSecondsPerMillionRows)),
-            trim($this->formatThroughput($stats->transformAggregate->latestSecondsPerMillionRows)),
-            trim($this->formatThroughput($stats->insertAggregate->latestSecondsPerMillionRows)),
+            trim($this->formatThroughput($stats->selectAggregate->latestPacePerMillion)),
+            trim($this->formatThroughput($stats->transformAggregate->latestPacePerMillion)),
+            trim($this->formatThroughput($stats->insertAggregate->latestPacePerMillion)),
         );
     }
 
@@ -1169,7 +1178,7 @@ class RunCommand extends Command
                 $this->formatSeconds($agg->max ?? 0.0),
                 $this->formatSeconds($agg->averageSeconds ?? 0.0),
                 $this->formatSeconds($agg->sum),
-                $this->formatThroughput($agg->secondsPerMillionRows),
+                $this->formatThroughput($agg->pacePerMillion),
             ];
         }
 

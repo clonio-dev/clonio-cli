@@ -20,9 +20,9 @@ final readonly class StatsLoopSnapshotData
         public int $rowsDoneCumulative,
         public int $rowsSkippedCumulative,
         public ?float $percentComplete,
-        public ?float $selectSecondsPerMillionRows,
-        public ?float $transformSecondsPerMillionRows,
-        public ?float $insertSecondsPerMillionRows,
-        public ?float $loopSecondsPerMillionRows,
+        public ?float $selectPacePerMillion,
+        public ?float $transformPacePerMillion,
+        public ?float $insertPacePerMillion,
+        public ?float $loopPacePerMillion,
     ) {}
 }

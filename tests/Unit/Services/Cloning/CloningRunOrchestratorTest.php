@@ -1075,19 +1075,19 @@ it('provides TableTransferTimingsData with per-loop entries, stats-over-time and
     expect($snap1->loopsRecorded)->toBe(2);
     expect($snap1->percentComplete)->toBe(100.0);
     // Snapshot holds immutable scalars captured at record time, unaffected by later loops.
-    expect($snap0->insertSecondsPerMillionRows)->not->toBeNull();
+    expect($snap0->insertPacePerMillion)->not->toBeNull();
 
     $insertAgg = $timings->aggregate(TableRunPhase::Insert);
     expect($insertAgg->count)->toBe(2);
     expect($insertAgg->min)->toBeLessThanOrEqual($insertAgg->max);
     expect($insertAgg->averageSeconds)->toBeGreaterThanOrEqual(0.0);
 
-    expect($insertAgg->secondsPerMillionRows)->not->toBeNull();
-    expect($insertAgg->latestSecondsPerMillionRows)->not->toBeNull();
+    expect($insertAgg->pacePerMillion)->not->toBeNull();
+    expect($insertAgg->latestPacePerMillion)->not->toBeNull();
 });
 
 it('returns null throughput and percent when total rows is zero on StatsTableTransferData', function (): void {
     $timings = new StatsTableTransferData;
-    expect($timings->aggregate(TableRunPhase::Insert)->secondsPerMillionRows)->toBeNull();
+    expect($timings->aggregate(TableRunPhase::Insert)->pacePerMillion)->toBeNull();
     expect($timings->percentComplete)->toBeNull();
 });

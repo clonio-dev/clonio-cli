@@ -55,6 +55,21 @@ final class StatsTableTransferData
             : null;
     }
 
+    /**
+     * Estimated wall-clock seconds until this table finishes, from the latest
+     * loop pace × outstanding rows. 0.0 once no rows remain, and 0.0 until a
+     * row total and at least one completed loop are known.
+     */
+    public float $estimatedSecondsRemaining {
+        get {
+            if ($this->rowsRemaining <= 0) {
+                return 0.0;
+            }
+
+            return $this->loopAggregate->latestPace * $this->rowsRemaining;
+        }
+    }
+
     public private(set) StatsPhaseAggregateData $selectAggregate;
 
     public private(set) StatsPhaseAggregateData $transformAggregate;
@@ -125,10 +140,10 @@ final class StatsTableTransferData
             rowsDoneCumulative: $this->rowsDone,
             rowsSkippedCumulative: $this->rowsSkipped,
             percentComplete: $this->percentComplete,
-            selectSecondsPerMillionRows: $this->selectAggregate->secondsPerMillionRows,
-            transformSecondsPerMillionRows: $this->transformAggregate->secondsPerMillionRows,
-            insertSecondsPerMillionRows: $this->insertAggregate->secondsPerMillionRows,
-            loopSecondsPerMillionRows: $this->loopAggregate->secondsPerMillionRows,
+            selectPacePerMillion: $this->selectAggregate->pacePerMillion,
+            transformPacePerMillion: $this->transformAggregate->pacePerMillion,
+            insertPacePerMillion: $this->insertAggregate->pacePerMillion,
+            loopPacePerMillion: $this->loopAggregate->pacePerMillion,
         ));
     }
 

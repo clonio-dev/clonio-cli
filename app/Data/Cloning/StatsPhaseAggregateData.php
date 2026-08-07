@@ -31,19 +31,35 @@ final class StatsPhaseAggregateData
     }
 
     /**
+     * Aggregate seconds per row across all samples,
+     * or null when no rows have been processed.
+     */
+    public ?float $pace {
+        get => $this->rowsProcessed > 0
+            ? ($this->sum / $this->rowsProcessed)
+            : null;
+    }
+
+    /**
      * Aggregate seconds per 1,000,000 rows across all samples,
      * or null when no rows have been processed.
      */
-    public ?float $secondsPerMillionRows {
-        get => $this->rowsProcessed > 0
-            ? ($this->sum / $this->rowsProcessed) * 1_000_000.0
+    public ?float $pacePerMillion {
+        get => ($pace = $this->pace) !== null
+            ? $pace * 1_000_000.0
+            : null;
+    }
+
+    public ?float $latestPace {
+        get => $this->last !== null && $this->lastRows !== null && $this->lastRows > 0
+            ? $this->last / $this->lastRows
             : null;
     }
 
     /** Latest-sample seconds per 1,000,000 rows, or null when unavailable. */
-    public ?float $latestSecondsPerMillionRows {
-        get => $this->last !== null && $this->lastRows !== null && $this->lastRows > 0
-            ? ($this->last / $this->lastRows) * 1_000_000.0
+    public ?float $latestPacePerMillion {
+        get => ($pace = $this->latestPace) !== null
+            ? $pace * 1_000_000.0
             : null;
     }
 
