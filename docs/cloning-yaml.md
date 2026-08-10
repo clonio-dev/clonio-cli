@@ -153,10 +153,11 @@ Controls which rows are transferred and whether the target table is cleared firs
 #### Row strategies
 
 | Strategy | Behaviour |
-|----------|-----------|
-| `full` | Copy all rows from the source table. |
+|---------|-----------|
+| `full`  | Copy all rows from the source table. |
 | `first` | Copy the first `limit` rows (ordered by `sort_by` ascending). |
-| `last` | Copy the last `limit` rows (ordered by `sort_by` descending). |
+| `last`  | Copy the last `limit` rows (ordered by `sort_by` descending). |
+| `skip`  | Skip this table entirely. |
 
 #### `clear` values
 
