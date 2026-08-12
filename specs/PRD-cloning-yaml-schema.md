@@ -63,10 +63,17 @@ options:
   enforce_column_types: false        # modify target column types if they differ
   drop_unknown_tables: false         # remove tables on target not present in source
   disable_foreign_key_checks: true   # disable FK constraints on target during transfer
+  remap_keys: true                   # optional (default true); false skips key remapping generation
   faker_locale: en_US                # FakerPHP locale for all fake strategies (BCP 47, e.g. de_DE)
 ```
 
-`cloning:dump` always writes all five fields. When editing by hand, all five must remain present.
+`cloning:dump` writes all of these fields. The five core fields
+(`chunk_size`, `enforce_column_types`, `drop_unknown_tables`,
+`disable_foreign_key_checks`, `faker_locale`) are required when editing by hand;
+`remap_keys` is optional and defaults to `true`. Setting `remap_keys: false`
+skips key-mapping generation and PK/FK rewriting even when a remapping
+configuration is present — equivalent to `cloning:run --skip-remapping-keys`,
+and settable at dump time via `cloning:dump --skip-remapping-keys`.
 
 ### 4.3 `tables.<table_name>`
 
@@ -83,10 +90,12 @@ tables:
   regex that matches nothing is skipped.
 - Regex keys are **not** expanded for key remapping or the
   `--skip-tables` / `--only-tables` flags — those remain literal-only.
+- Quote regex keys with **single** quotes; in double quotes YAML treats `\` as
+  an escape, so patterns containing `\d`, `\w`, etc. fail to parse.
 
 ```yaml
 tables:
-  "/^application_logs_archive_\d{2}_\d{4}$/":   # regex: all monthly archives
+  '/^application_logs_archive_\d{2}_\d{4}$/':   # regex: all monthly archives
     rows:
       strategy: last
       limit: 1
@@ -427,6 +436,14 @@ A YAML language server hint can be placed at the top of every generated file:
         "disable_foreign_key_checks": {
           "type": "boolean",
           "description": "Disable FK constraint checks on the target during data transfer."
+        },
+        "drop_extra_columns": {
+          "type": "boolean",
+          "description": "Optional (default false). Drop columns on the target that are absent in the source."
+        },
+        "remap_keys": {
+          "type": "boolean",
+          "description": "Optional (default true). Generate key mappings and rewrite PK/FK values; false skips remapping even when configured."
         },
         "faker_locale": {
           "type": "string",
