@@ -854,3 +854,18 @@ it('flags an invalid regex table key', function (): void {
 
     expect($errors)->toContain("Table '/^app_logs_(unterminated/': invalid regex pattern");
 });
+
+it('accepts options.remap_keys when boolean', function (): void {
+    $config = makeValidConfig();
+    $config['options']['remap_keys'] = false;
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([]);
+});
+
+it('flags options.remap_keys when not a boolean', function (): void {
+    $config = makeValidConfig();
+    $config['options']['remap_keys'] = 'nope';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'options.remap_keys' must be a boolean");
+});
