@@ -41,6 +41,7 @@ use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\TableConfigResolver;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\VerboseStepRenderer;
@@ -105,6 +106,7 @@ class RunCommand extends Command
         SchemaInspector $inspector,
         CloningRunOrchestrator $orchestrator,
         AuditBuffer $auditBuffer,
+        TableConfigResolver $tableResolver,
     ): int {
         $ci = (bool) $this->option('ci');
         $verbosity = $this->getOutput()->getVerbosity();
@@ -364,6 +366,14 @@ class RunCommand extends Command
 
             return ExitCode::ConnectionError->value;
         }
+
+        // Expand regex table keys against the real source schema. From here on
+        // $config->tables carry concrete table names, so the orchestrator, key
+        // mapping and audit code all keep working against literal names.
+        $config = $tableResolver->resolve($config, $sourceSchema);
+        // Regex keys may have expanded rows.strategy: skip / skip patterns into
+        // concrete names — re-merge them into the skip list.
+        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
 
         // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
         $keyRemappingService = null;

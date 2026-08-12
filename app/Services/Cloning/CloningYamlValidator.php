@@ -144,6 +144,13 @@ class CloningYamlValidator
         foreach ($tables as $tableName => $tableConfig) {
             $prefix = sprintf("Table '%s'", $tableName);
 
+            // A table key may be a slash-delimited regex; reject it early if it
+            // does not compile so the user hears about it before any DB work.
+            $key = (string) $tableName;
+            if (str_starts_with($key, '/') && @preg_match($key, '') === false) {
+                $errors[] = sprintf('%s: invalid regex pattern', $prefix);
+            }
+
             if (! is_array($tableConfig)) {
                 $errors[] = sprintf('%s: must be an object', $prefix);
 
