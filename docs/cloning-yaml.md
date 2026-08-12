@@ -47,6 +47,7 @@ options:
   drop_unknown_tables: false
   drop_extra_columns: false
   disable_foreign_key_checks: true
+  remap_keys: true
   faker_locale: en_US
 ```
 
@@ -57,6 +58,7 @@ options:
 | `drop_unknown_tables` | boolean | `false` | Drop tables from the target that do not exist in the source. |
 | `drop_extra_columns` | boolean | `false` | Drop columns from existing target tables that exist in the target but not in the source. ⚠ Irreversible — see note below. |
 | `disable_foreign_key_checks` | boolean | `true` | Disable foreign-key constraint checks on the target during data transfer. Recommended when truncating or inserting out of dependency order. |
+| `remap_keys` | boolean | `true` | Generate key mappings and rewrite primary/foreign key values when remapping is configured (inline `strategy: remapping` columns or a `key_remapping:` section). Set to `false` to skip that (often expensive) step without removing the remapping definition — equivalent to `cloning:run --skip-remapping-keys`. |
 | `faker_locale` | string | `en_US` | [FakerPHP locale](https://fakerphp.github.io/localization/) applied to all `fake` column strategies. Examples: `de_DE`, `fr_FR`, `ja_JP`. |
 
 ### Schema synchronization

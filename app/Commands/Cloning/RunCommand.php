@@ -197,6 +197,7 @@ class RunCommand extends Command
                     dropExtraColumns: $dropExtOverride ?? $opts->dropExtraColumns,
                     disableForeignKeyChecks: $fkChecksOverride ?? $opts->disableForeignKeyChecks,
                     fakerLocale: $opts->fakerLocale,
+                    remapKeys: $opts->remapKeys,
                 ),
                 tables: $config->tables,
                 keyRemapping: $config->keyRemapping,
@@ -339,7 +340,7 @@ class RunCommand extends Command
 
         // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
         $keyRemappingService = null;
-        $skipRemapping = (bool) $this->option('skip-remapping-keys');
+        $skipRemapping = (bool) $this->option('skip-remapping-keys') || ! $config->options->remapKeys;
         $keyRemappingConfig = $config->keyRemapping;
 
         if ($keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive() && ! $skipRemapping) {

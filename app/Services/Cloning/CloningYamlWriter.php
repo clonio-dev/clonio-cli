@@ -26,6 +26,7 @@ class CloningYamlWriter
         $lines[] = sprintf('  drop_unknown_tables: %s', $result->dropUnknownTables ? 'true' : 'false');
         $lines[] = sprintf('  drop_extra_columns: %s', $result->dropExtraColumns ? 'true' : 'false');
         $lines[] = sprintf('  disable_foreign_key_checks: %s', $result->disableForeignKeyChecks ? 'true' : 'false');
+        $lines[] = sprintf('  remap_keys: %s', $result->remapKeys ? 'true' : 'false');
         $lines[] = sprintf('  faker_locale: %s', $result->fakerLocale);
         $lines[] = '';
         $lines[] = 'tables:';
