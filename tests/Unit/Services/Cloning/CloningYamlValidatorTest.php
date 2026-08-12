@@ -832,3 +832,18 @@ it('flags a foreign key entry that is not an object and one missing its column',
         ->toContain('key_remapping.tables[0].foreign_keys[0]: must be an object')
         ->toContain("key_remapping.tables[0].foreign_keys[1]: 'column' is required");
 });
+
+it('accepts options.remap_keys when boolean', function (): void {
+    $config = makeValidConfig();
+    $config['options']['remap_keys'] = false;
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([]);
+});
+
+it('flags options.remap_keys when not a boolean', function (): void {
+    $config = makeValidConfig();
+    $config['options']['remap_keys'] = 'nope';
+
+    expect((new CloningYamlValidator)->validate($config))
+        ->toContain("Field 'options.remap_keys' must be a boolean");
+});
