@@ -22,6 +22,7 @@ clonio cloning:dump [options]
 | `--drop-unknown-tables` | Set `drop_unknown_tables: true` in the generated YAML |
 | `--drop-extra-columns` | Set `drop_extra_columns: true` in the generated YAML |
 | `--no-disable-fk-checks` | Set `disable_foreign_key_checks: false` in the generated YAML |
+| `--skip-remapping-keys` | Set `remap_keys: false` in the generated YAML (key remapping stays defined but disabled) |
 | `--ci` | CI mode — suppress non-error output and require `--connection` |
 
 ## Description
@@ -202,6 +203,7 @@ tables:
 | `full` | Copy all rows |
 | `first` | Copy the first N rows (requires `limit`) |
 | `last` | Copy the last N rows (requires `limit`) |
+| `skip`  | Skip this table entirely |
 
 ## PII detection
 

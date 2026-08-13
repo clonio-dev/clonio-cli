@@ -1599,6 +1599,26 @@ it('completes a real full run over SQLite and prints the summary line', function
     @unlink($target);
 });
 
+it('prints the per-table timing summary at -vvv on a real run', function (): void {
+    Storage::fake('local');
+    $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
+    $target = sys_get_temp_dir().'/clonio_run_tgt_'.uniqid().'.db';
+    makeSqliteDb($source, rows: 3);
+    makeSqliteDb($target, rows: 0);
+    writeSqliteClonioJson($source, $target);
+    Storage::disk('local')->put('test.cloning.yaml', sqliteCloningYaml());
+
+    // Live bars need a real TTY; test output is a non-decorated BufferedOutput, so
+    // -vvv takes the fallback path but still emits the per-table timing summary.
+    $this->artisan('cloning:run test.cloning.yaml --target=staging -vvv')
+        ->expectsOutputToContain('timing summary')
+        ->expectsOutputToContain('Tables:')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($source);
+    @unlink($target);
+});
+
 it('renders the verbose schema-comparison phase on a real run', function (): void {
     Storage::fake('local');
     $source = sys_get_temp_dir().'/clonio_run_src_'.uniqid().'.db';
@@ -2075,5 +2095,94 @@ it('honours --audit-channel override even without an audit config block', functi
         '--target' => 'staging',
         '--ci' => true,
         '--audit-channel' => 'local',
+    ])->assertExitCode(ExitCode::Success->value);
+});
+
+it('skips key mapping generation when options.remap_keys is false', function (): void {
+    Storage::fake('local');
+    $yaml = str_replace(
+        '  disable_foreign_key_checks: true',
+        "  disable_foreign_key_checks: true\n  remap_keys: false",
+        makeRemappingYaml(),
+    );
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    // Gate must short-circuit before any mapping is generated.
+    $remapping = Mockery::mock(KeyRemappingService::class);
+    $remapping->shouldNotReceive('generateMappings');
+    $this->app->instance(KeyRemappingService::class, $remapping);
+
+    $result = new RunResultData(
+        success: true,
+        tables: [new TableRunResultData('users', TableRunStatus::Transferred, 1, 0, 1.0, null)],
+        totalRows: 1,
+        skippedRows: 0,
+        durationSeconds: 1.0,
+        failureReason: null,
+    );
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn($result);
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::Success->value);
+});
+
+it('generates key mappings when options.remap_keys is true (default)', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYaml());
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $remapping = Mockery::mock(KeyRemappingService::class);
+    $remapping->shouldReceive('generateMappings')->once()->andReturn(['users' => 1]);
+    $remapping->shouldReceive('cleanup')->andReturnNull();
+    $this->app->instance(KeyRemappingService::class, $remapping);
+
+    $result = new RunResultData(
+        success: true,
+        tables: [new TableRunResultData('users', TableRunStatus::Transferred, 1, 0, 1.0, null)],
+        totalRows: 1,
+        skippedRows: 0,
+        durationSeconds: 1.0,
+        failureReason: null,
+    );
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn($result);
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
     ])->assertExitCode(ExitCode::Success->value);
 });
