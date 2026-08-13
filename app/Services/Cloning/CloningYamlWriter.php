@@ -97,7 +97,7 @@ class CloningYamlWriter
                     }
 
                     $lines[] = sprintf('      %s:', $column->name);
-                    $lines[] = sprintf('        strategy: %s', $column->strategy);
+                    $lines[] = sprintf('        strategy: %s', $this->encodeYamlScalar($column->strategy));
 
                     switch ($column->strategy) {
                         case 'fake':
