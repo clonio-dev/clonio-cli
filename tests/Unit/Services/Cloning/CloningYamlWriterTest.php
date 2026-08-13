@@ -8,8 +8,11 @@ use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableDumpData;
 use App\Enums\KeyRemappingStrategy;
+use App\Services\Cloning\CloningYamlLoader;
+use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\CloningYamlWriter;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Yaml\Yaml;
 
 function makeDumpResult(string $connectionName = 'production-db', array $tables = []): DumpResultData
 {
@@ -58,6 +61,24 @@ function makeKeepColumn(string $name): ColumnDumpData
         staticValue: null,
         piiDetected: false,
         piiCategory: null,
+    );
+}
+
+function makeNullColumn(string $name): ColumnDumpData
+{
+    return new ColumnDumpData(
+        name: $name,
+        strategy: 'null',
+        fakerMethod: null,
+        fakerArguments: [],
+        maskChar: null,
+        visibleChars: null,
+        preserveFormat: null,
+        hashAlgorithm: null,
+        hashSalt: null,
+        staticValue: null,
+        piiDetected: true,
+        piiCategory: 'Gender',
     );
 }
 
@@ -164,6 +185,50 @@ it('writes fake strategy column with faker_method and arguments', function (): v
     expect($yaml)->toContain('faker_arguments: []');
     // keep columns should NOT appear
     expect($yaml)->not->toContain('id:');
+});
+
+it('quotes the null strategy so YAML does not parse it as a null literal', function (): void {
+    $writer = new CloningYamlWriter;
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [makeNullColumn('gender')],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+
+    $yaml = $writer->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain('strategy: "null"');
+});
+
+it('produces a null-strategy column that round-trips as the string "null" and validates', function (): void {
+    Storage::fake('local');
+    $writer = new CloningYamlWriter;
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [makeNullColumn('gender')],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+
+    $yaml = $writer->write(makeDumpResult('prod', [$table]));
+    Storage::disk('local')->put('x.cloning.yaml', $yaml);
+
+    // Regression: previously the unquoted `strategy: null` loaded as PHP null and
+    // was silently coerced to 'keep' — the column would not be nulled.
+    $config = (new CloningYamlLoader)->load('x.cloning.yaml');
+    expect($config->getTable('users')?->getColumn('gender')?->strategy)->toBe('null');
+
+    // …and it also failed Phase-1 validation (`strategy must be one of: …`).
+    $parsed = Yaml::parse($yaml);
+    expect($parsed)->toBeArray();
+
+    if (is_array($parsed)) {
+        /** @var array<string, mixed> $parsed */
+        expect((new CloningYamlValidator)->validate($parsed))->toBe([]);
+    }
 });
 
 it('writes hash strategy column with algorithm and salt', function (): void {
