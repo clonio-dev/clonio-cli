@@ -7,6 +7,32 @@ use App\Services\Cloning\CloningYamlLoader;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 
+it('parses options.remap_keys: false', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  remap_keys: false
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+
+    Storage::disk('local')->put('my.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('my.cloning.yaml');
+
+    expect($config->options->remapKeys)->toBeFalse();
+});
+
 it('loads a valid cloning yaml file', function (): void {
     Storage::fake('local');
 
@@ -44,6 +70,7 @@ YAML;
     expect($config->options->chunkSize)->toBe(500);
     expect($config->options->enforceColumnTypes)->toBeTrue();
     expect($config->options->fakerLocale)->toBe('en_US');
+    expect($config->options->remapKeys)->toBeTrue(); // absent → defaults to true
     expect($config->tables)->toHaveCount(1);
 
     $table = $config->getTable('users');

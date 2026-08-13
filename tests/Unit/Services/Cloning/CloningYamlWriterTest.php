@@ -116,6 +116,7 @@ it('writes options block with all required fields', function (): void {
     expect($yaml)->toContain('enforce_column_types: false');
     expect($yaml)->toContain('drop_unknown_tables: false');
     expect($yaml)->toContain('disable_foreign_key_checks: true');
+    expect($yaml)->toContain('remap_keys: true');
     expect($yaml)->toContain('faker_locale: en_US');
 });
 
@@ -131,6 +132,7 @@ it('writes non-default options when overridden in DumpResultData', function (): 
         dropUnknownTables: true,
         dropExtraColumns: true,
         disableForeignKeyChecks: false,
+        remapKeys: false,
     );
 
     $yaml = $writer->write($result);
@@ -139,7 +141,8 @@ it('writes non-default options when overridden in DumpResultData', function (): 
         ->toContain('enforce_column_types: true')
         ->toContain('drop_unknown_tables: true')
         ->toContain('drop_extra_columns: true')
-        ->toContain('disable_foreign_key_checks: false');
+        ->toContain('disable_foreign_key_checks: false')
+        ->toContain('remap_keys: false');
 });
 
 it('writes fake strategy column with faker_method and arguments', function (): void {

@@ -126,6 +126,11 @@ class CloningYamlValidator
             $errors[] = "Field 'options.drop_extra_columns' must be a boolean";
         }
 
+        // remap_keys is optional (defaults to true); validate type only when present
+        if (array_key_exists('remap_keys', $options) && ! is_bool($options['remap_keys'])) {
+            $errors[] = "Field 'options.remap_keys' must be a boolean";
+        }
+
         if (! array_key_exists('faker_locale', $options) || ! is_string($options['faker_locale'])) {
             $errors[] = "Field 'options.faker_locale' must be a string";
         }
@@ -143,6 +148,13 @@ class CloningYamlValidator
 
         foreach ($tables as $tableName => $tableConfig) {
             $prefix = sprintf("Table '%s'", $tableName);
+
+            // A table key may be a slash-delimited regex; reject it early if it
+            // does not compile so the user hears about it before any DB work.
+            $key = (string) $tableName;
+            if (str_starts_with($key, '/') && @preg_match($key, '') === false) {
+                $errors[] = sprintf('%s: invalid regex pattern', $prefix);
+            }
 
             if (! is_array($tableConfig)) {
                 $errors[] = sprintf('%s: must be an object', $prefix);

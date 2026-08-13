@@ -13,5 +13,6 @@ final readonly class CloningOptionsData
         public bool $dropExtraColumns,
         public bool $disableForeignKeyChecks,
         public string $fakerLocale,
+        public bool $remapKeys = true,
     ) {}
 }

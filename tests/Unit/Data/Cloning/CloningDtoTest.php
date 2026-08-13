@@ -25,6 +25,7 @@ it('CloningOptionsData stores all fields correctly', function (): void {
     expect($opts->dropUnknownTables)->toBeFalse();
     expect($opts->disableForeignKeyChecks)->toBeTrue();
     expect($opts->fakerLocale)->toBe('de_DE');
+    expect($opts->remapKeys)->toBeTrue(); // defaults to true when omitted
 });
 
 it('TableRowConfigData stores all fields correctly', function (): void {
