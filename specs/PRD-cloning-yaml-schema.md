@@ -70,8 +70,28 @@ options:
 
 ### 4.3 `tables.<table_name>`
 
+A `tables` key is either a **literal** table name or a **regex** (a key wrapped
+in `/…/`, trailing flags allowed). Regex keys are expanded against the actual
+source tables at run time, so a single entry can configure a whole family of
+tables:
+
+- Keys without a leading `/` are always literal — there is no glob/`*` wildcard.
+- Matching is case-insensitive for both literal and regex keys.
+- When several entries match the same table, the **last** entry in file order
+  wins (list a broad regex first, then override specific tables below it).
+- A literal key naming an absent source table is still reported *not found*; a
+  regex that matches nothing is skipped.
+- Regex keys are **not** expanded for key remapping or the
+  `--skip-tables` / `--only-tables` flags — those remain literal-only.
+
 ```yaml
 tables:
+  "/^application_logs_archive_\d{2}_\d{4}$/":   # regex: all monthly archives
+    rows:
+      strategy: last
+      limit: 1
+      clear: delete
+
   users:
     rows:
       strategy: full     # required; full | first | last — no default

@@ -832,3 +832,25 @@ it('flags a foreign key entry that is not an object and one missing its column',
         ->toContain('key_remapping.tables[0].foreign_keys[0]: must be an object')
         ->toContain("key_remapping.tables[0].foreign_keys[1]: 'column' is required");
 });
+
+it('accepts a valid regex table key', function (): void {
+    $config = makeValidConfig();
+    $config['tables'] = [
+        '/^application_logs_archive_\d{2}_\d{4}$/' => ['rows' => ['strategy' => 'last', 'limit' => 1]],
+    ];
+
+    $errors = (new CloningYamlValidator)->validate($config);
+
+    expect($errors)->toBe([]);
+});
+
+it('flags an invalid regex table key', function (): void {
+    $config = makeValidConfig();
+    $config['tables'] = [
+        '/^app_logs_(unterminated/' => ['rows' => ['strategy' => 'full']],
+    ];
+
+    $errors = (new CloningYamlValidator)->validate($config);
+
+    expect($errors)->toContain("Table '/^app_logs_(unterminated/': invalid regex pattern");
+});
