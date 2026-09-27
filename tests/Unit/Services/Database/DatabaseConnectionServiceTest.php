@@ -7,6 +7,7 @@ use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\SslMode;
 use App\Services\Database\DatabaseConnectionService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Pdo\Mysql;
 
@@ -347,4 +348,74 @@ it('exposes the host actually dialled', function (): void {
 
     expect((new DatabaseConnectionService(inDocker: true))->resolvedHost($connection))->toBe('host.docker.internal')
         ->and((new DatabaseConnectionService(inDocker: false))->resolvedHost($connection))->toBe('127.0.0.1');
+});
+
+// ── open() hints ─────────────────────────────────────────────────────────────
+
+it('appends a hint and keeps the driver error when open() fails on a known TLS error', function (): void {
+    $original = new PDOException('SQLSTATE[HY000] [3159] Connections using insecure transport are prohibited while --require_secure_transport=ON.');
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andThrow($original);
+    DB::shouldReceive('purge')->once();
+
+    try {
+        (new DatabaseConnectionService(inDocker: false))->open(makeConnection(DatabaseConnectionType::Mysql));
+        $this->fail('Expected exception');
+    } catch (RuntimeException $runtimeException) {
+        expect($runtimeException->getMessage())->toContain('[3159]')
+            ->and($runtimeException->getMessage())->toContain('The server requires TLS.')
+            ->and($runtimeException->getPrevious())->toBe($original);
+    }
+});
+
+it('names the docker-rewritten host in the verify hint', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('ca.pem', 'x');
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andThrow(new PDOException('SQLSTATE[HY000] [2002] Cannot connect to MySQL using SSL'));
+    DB::shouldReceive('purge');
+
+    $connection = makeConnection(DatabaseConnectionType::Mysql, host: '127.0.0.1', ssl: new SslConfig(SslMode::Verify, 'ca.pem'));
+
+    expect(fn (): string => (new DatabaseConnectionService(inDocker: true))->open($connection))
+        ->toThrow(RuntimeException::class, 'the host name "host.docker.internal" is not in the certificate');
+});
+
+it('rethrows unrelated connection errors unchanged', function (): void {
+    $original = new PDOException('SQLSTATE[HY000] [2002] Connection refused');
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andThrow($original);
+    DB::shouldReceive('purge');
+
+    expect(fn (): string => (new DatabaseConnectionService(inDocker: false))->open(makeConnection(DatabaseConnectionType::Mysql)))
+        ->toThrow(PDOException::class, 'Connection refused');
+});
+
+// ── negotiatedCipher ─────────────────────────────────────────────────────────
+
+it('reads the mysql session cipher', function (): void {
+    DB::shouldReceive('connection')->with('c1')->andReturnSelf();
+    DB::shouldReceive('selectOne')->andReturn((object) ['Variable_name' => 'Ssl_cipher', 'Value' => 'TLS_AES_256_GCM_SHA384']);
+
+    expect((new DatabaseConnectionService(inDocker: false))->negotiatedCipher('c1', DatabaseConnectionType::Mysql))
+        ->toBe('TLS_AES_256_GCM_SHA384');
+});
+
+it('reads the postgres cipher from pg_stat_ssl', function (): void {
+    DB::shouldReceive('connection')->with('c1')->andReturnSelf();
+    DB::shouldReceive('selectOne')->andReturn((object) ['cipher' => 'TLS_AES_128_GCM_SHA256']);
+
+    expect((new DatabaseConnectionService(inDocker: false))->negotiatedCipher('c1', DatabaseConnectionType::PostgreSQL))
+        ->toBe('TLS_AES_128_GCM_SHA256');
+});
+
+it('returns null when the connection is not encrypted or the query fails', function (): void {
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('selectOne')->andReturn((object) ['Variable_name' => 'Ssl_cipher', 'Value' => ''], null);
+
+    $service = new DatabaseConnectionService(inDocker: false);
+
+    expect($service->negotiatedCipher('c1', DatabaseConnectionType::Mysql))->toBeNull()
+        ->and($service->negotiatedCipher('c1', DatabaseConnectionType::PostgreSQL))->toBeNull()
+        ->and($service->negotiatedCipher('c1', DatabaseConnectionType::SqlServer))->toBeNull();
 });

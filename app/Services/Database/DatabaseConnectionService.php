@@ -9,6 +9,7 @@ use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\SslMode;
 use App\Services\Database\Tls\CertificateFiles;
+use App\Services\Database\Tls\ConnectionErrorHint;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Pdo\Mysql;
@@ -125,8 +126,10 @@ class DatabaseConnectionService
      * Opens a live database connection and returns its dynamic name.
      *
      * The caller must call DB::purge($name) when done to release the connection.
+     * Known TLS failures are rethrown as RuntimeException with an actionable hint
+     * appended; the driver exception is kept as previous.
      *
-     * @throws RuntimeException if password decryption fails
+     * @throws RuntimeException if password decryption fails, the ssl config is invalid, or a TLS hint applies
      * @throws Throwable if the database connection cannot be established
      */
     public function open(ConnectionData $connection): string
@@ -136,9 +139,50 @@ class DatabaseConnectionService
 
         config(['database.connections.'.$name => $this->buildConfig($connection, $password)]);
 
-        DB::connection($name)->getPdo();
+        try {
+            DB::connection($name)->getPdo();
+        } catch (Throwable $throwable) {
+            DB::purge($name);
+
+            $hint = ConnectionErrorHint::for($throwable, $connection, $this->resolvedHost($connection));
+
+            if ($hint === null) {
+                throw $throwable;
+            }
+
+            throw new RuntimeException($throwable->getMessage().PHP_EOL.$hint, 0, $throwable);
+        }
 
         return $name;
+    }
+
+    /**
+     * The negotiated TLS cipher of an open connection, or null (unencrypted, unsupported driver, query failed).
+     */
+    public function negotiatedCipher(string $connectionName, DatabaseConnectionType $type): ?string
+    {
+        /** @var array{string, string}|null $query */
+        $query = match ($type) {
+            DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => ["SHOW SESSION STATUS LIKE 'Ssl_cipher'", 'Value'],
+            DatabaseConnectionType::PostgreSQL => ['SELECT cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()', 'cipher'],
+            default => null,
+        };
+
+        if ($query === null) {
+            return null;
+        }
+
+        [$sql, $column] = $query;
+
+        try {
+            $row = DB::connection($connectionName)->selectOne($sql);
+        } catch (Throwable) {
+            return null;
+        }
+
+        $value = is_object($row) ? (get_object_vars($row)[$column] ?? null) : null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
