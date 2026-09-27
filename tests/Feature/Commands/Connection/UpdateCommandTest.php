@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Data\ConnectionData;
+use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
+use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
+use Illuminate\Support\Facades\Storage;
 
-function makeUpdateConnection(string $name = 'staging'): ConnectionData
+function makeUpdateConnection(string $name = 'staging', ?SslConfig $ssl = null): ConnectionData
 {
     return new ConnectionData(
         name: $name,
@@ -18,7 +21,22 @@ function makeUpdateConnection(string $name = 'staging'): ConnectionData
         username: 'root',
         password: 'encrypted:abc123',
         isProduction: false,
+        ssl: $ssl,
     );
+}
+
+/** Config mock for "update staging" that asserts the saved connection. */
+function fakeUpdateConfig(ConnectionData $current, Closure $check): ConfigService
+{
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([$current->name => $current]);
+    $config->shouldReceive('getConnection')->with($current->name)->andReturn($current);
+    $config->shouldReceive('hasConnection')->andReturn(true);
+    $config->shouldReceive('setConnection')->once()->withArgs(
+        static fn (string $name, ConnectionData $data): bool => (bool) $check($data)
+    );
+
+    return $config;
 }
 
 it('updates a connection when found', function (): void {
@@ -49,6 +67,7 @@ it('updates a connection when found', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -73,6 +92,7 @@ it('cancels update when user declines save confirmation', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'no')
         ->assertExitCode(0);
@@ -114,6 +134,7 @@ it('preserves existing password when empty input given', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -139,6 +160,7 @@ it('auto-selects connection when only one exists', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -179,6 +201,7 @@ it('renames a connection when the name changes', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Connection 'renamed' updated successfully.")
@@ -204,6 +227,7 @@ it('returns an IO error when persisting the update throws', function (): void {
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain('disk full')
@@ -234,6 +258,7 @@ it('prompts the user to choose when multiple connections exist and no name is gi
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -267,6 +292,7 @@ it('uses default prompts when changing the driver type to another network databa
         ->expectsQuestion('Username', 'postgres')
         ->expectsQuestion('Schema', 'public')
         ->expectsQuestion('Password (press Enter to keep current)', 'newsecret')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -336,7 +362,7 @@ it('keeps the existing SQLite file path when the type is unchanged', function ()
         ->assertExitCode(0);
 });
 
-it('prompts for trust server certificate when updating a SQL Server connection', function (): void {
+it('migrates the legacy SQL Server trust flag to ssl require', function (): void {
     $mssql = new ConnectionData(
         name: 'mssql',
         type: DatabaseConnectionType::SqlServer,
@@ -347,20 +373,10 @@ it('prompts for trust server certificate when updating a SQL Server connection',
         username: 'sa',
         password: 'encrypted:abc123',
         isProduction: false,
-        trustServerCertificate: false,
+        trustServerCertificate: true,
     );
 
-    $config = Mockery::mock(ConfigService::class);
-    $config->shouldReceive('getConnections')->andReturn(['mssql' => $mssql]);
-    $config->shouldReceive('getConnection')->with('mssql')->andReturn($mssql);
-    $config->shouldReceive('hasConnection')->with('mssql')->andReturn(true);
-    $config->shouldReceive('setConnection')
-        ->once()
-        ->withArgs(function (string $name, ConnectionData $data): bool {
-            return $data->trustServerCertificate === true;
-        });
-
-    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($mssql, static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Require && $d->trustServerCertificate === false));
 
     $this->artisan('connection:update', ['name' => 'mssql'])
         ->expectsQuestion('Connection name', 'mssql')
@@ -370,8 +386,13 @@ it('prompts for trust server certificate when updating a SQL Server connection',
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'sa')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('Transport security', 'Require (encrypted, not verified)', [
+            'Require (encrypted, not verified)',
+            'Verify (encrypted + certificate check)',
+            'Disable (plaintext)',
+            'Driver default',
+        ])
         ->expectsConfirmation('Is this a production connection?', 'no')
-        ->expectsConfirmation('Trust server certificate? (required for self-signed certs)', 'yes')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
 });
@@ -396,7 +417,121 @@ it('fails with validation error when renaming to an existing connection name', f
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsOutputToContain("A connection named 'production' already exists.")
         ->assertExitCode(4);
+});
+
+it('keeps a stored CA on Enter', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->ssl?->ca === 'certs/ca.pem'));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', '')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('removes a stored CA on "none" and shows it in the diff (pgsql verify without CA is valid)', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    $current = new ConnectionData(
+        name: 'pg', type: DatabaseConnectionType::PostgreSQL, host: 'localhost', port: 5432, database: 'mydb',
+        schema: 'public', username: 'u', password: 'encrypted:abc', isProduction: false,
+        ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'),
+    );
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Verify && $d->ssl->ca === null));
+
+    $this->artisan('connection:update', ['name' => 'pg'])
+        ->expectsQuestion('Connection name', 'pg')
+        ->expectsQuestion('Database driver', 'pgsql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '5432')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'u')
+        ->expectsQuestion('Schema', 'public')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', 'none')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsTable(['Field', 'Old', 'New'], [['ssl.ca', 'certs/ca.pem', '']])
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('drops the CA when switching from verify to require', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->ssl == new SslConfig(SslMode::Require)));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('rejects an update that leaves mysql verify without a CA', function (): void {
+    $current = makeUpdateConnection();
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($current);
+    $config->shouldReceive('hasConnection')->andReturn(true);
+    $config->shouldNotReceive('setConnection');
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path (leave empty for none)', '')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsOutputToContain('mode verify requires a CA certificate for MySQL/MariaDB')
+        ->assertExitCode(4);
+});
+
+it('removes ssl when the type changes to sqlite', function (): void {
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Require));
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->ssl === null));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'sqlite')
+        ->expectsQuestion('Database file path', '/tmp/a.db')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
 });
