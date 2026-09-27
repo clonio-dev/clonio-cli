@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data;
 
 use App\Enums\DatabaseConnectionType;
+use InvalidArgumentException;
 
 final readonly class ConnectionData
 {
@@ -20,6 +21,7 @@ final readonly class ConnectionData
         public bool $isProduction,
         public bool $trustServerCertificate = false,
         public ?DatabaseConnectionType $dialect = null,
+        public ?SslConfig $ssl = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -34,9 +36,21 @@ final readonly class ConnectionData
         $password = $data['password'] ?? null;
         $dialect = $data['dialect'] ?? null;
 
+        $resolvedType = DatabaseConnectionType::from(is_string($type) ? $type : '');
+
+        try {
+            $ssl = SslConfig::fromArray($data['ssl'] ?? null);
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            throw new InvalidArgumentException(sprintf('Connection "%s": %s', $name, $invalidArgumentException->getMessage()), 0, $invalidArgumentException);
+        }
+
+        if ($ssl instanceof SslConfig && ! $resolvedType->requiresNetworkConfig()) {
+            throw new InvalidArgumentException(sprintf('Connection "%s": ssl is only supported for network connections.', $name));
+        }
+
         return new self(
             name: $name,
-            type: DatabaseConnectionType::from(is_string($type) ? $type : ''),
+            type: $resolvedType,
             host: is_string($host) ? $host : null,
             port: is_int($port) ? $port : (is_numeric($port) ? (int) $port : null),
             database: is_string($database) ? $database : null,
@@ -46,6 +60,7 @@ final readonly class ConnectionData
             isProduction: (bool) ($data['is_production'] ?? false),
             trustServerCertificate: (bool) ($data['trust_server_certificate'] ?? false),
             dialect: is_string($dialect) ? DatabaseConnectionType::tryFrom($dialect) : null,
+            ssl: $ssl,
         );
     }
 
@@ -83,6 +98,10 @@ final readonly class ConnectionData
 
         if ($this->trustServerCertificate) {
             $data['trust_server_certificate'] = true;
+        }
+
+        if ($this->ssl instanceof SslConfig) {
+            $data['ssl'] = $this->ssl->toArray();
         }
 
         return $data;

@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Data\ConnectionData;
+use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
+use App\Enums\SslMode;
 
 it('round-trips a MySQL connection through fromArray and toArray', function (): void {
     $data = [
@@ -106,3 +108,36 @@ it('round-trips a SQLite connection without network fields', function (): void {
         ->and($array)->not->toHaveKey('username')
         ->and($array)->not->toHaveKey('schema');
 });
+
+it('round-trips an ssl block', function (): void {
+    $data = [
+        'type' => 'mysql', 'host' => 'db', 'port' => 3306, 'database' => 'app', 'username' => 'u',
+        'password' => 'encrypted:x', 'is_production' => true,
+        'ssl' => ['mode' => 'verify', 'ca' => 'certs/ca.pem'],
+    ];
+
+    $connection = ConnectionData::fromArray('prod', $data);
+
+    expect($connection->ssl)->toEqual(new SslConfig(SslMode::Verify, 'certs/ca.pem'))
+        ->and($connection->toArray()['ssl'])->toBe(['mode' => 'verify', 'ca' => 'certs/ca.pem']);
+});
+
+it('does not add an ssl key to connections that never had one', function (): void {
+    $data = [
+        'type' => 'mysql', 'host' => 'db', 'port' => 3306, 'database' => 'app', 'username' => 'u',
+        'password' => 'encrypted:x', 'is_production' => false,
+    ];
+
+    $connection = ConnectionData::fromArray('legacy', $data);
+
+    expect($connection->ssl)->toBeNull()
+        ->and($connection->toArray())->toBe($data);
+});
+
+it('rejects ssl on a sqlite connection when loading, naming the connection', function (): void {
+    ConnectionData::fromArray('local', ['type' => 'sqlite', 'database' => 'a.db', 'password' => '', 'ssl' => ['mode' => 'require']]);
+})->throws(InvalidArgumentException::class, 'Connection "local": ssl is only supported for network connections.');
+
+it('prefixes invalid ssl blocks with the connection name', function (): void {
+    ConnectionData::fromArray('prod', ['type' => 'mysql', 'password' => '', 'ssl' => ['mode' => 'bogus']]);
+})->throws(InvalidArgumentException::class, 'Connection "prod": Invalid ssl mode "bogus"');
