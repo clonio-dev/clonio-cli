@@ -221,3 +221,82 @@ it('expands a template using a real generator method returning an array', functi
         ->and($result)->toStartWith('p:')
         ->and($result)->toEndWith(':end');
 });
+
+// --- Regression tests for GitHub issue #155 -------------------------------
+//
+// `applyTemplate()` gates every placeholder through `method_exists($this->faker,
+// $method)`. Faker\Generator only *declares* a handful of formatters as real
+// methods (e.g. randomNumber(), ean8(), getProviders()); string-returning
+// formatters such as firstName(), safeEmail(), city(), word(), url(), uuid()
+// are supplied by provider classes and resolved at call time via
+// Generator::__call() → format(). `method_exists()` does not see those, so the
+// condition is false, the placeholder is swallowed, and '' is substituted —
+// even though the token is a valid, working Faker method (confirmed by
+// `$faker->firstName()` returning a real value, and by the `fake` strategy,
+// which calls the method directly instead of gating on method_exists,
+// producing correct output for the same method name).
+
+it('resolves a magic-formatter Faker token (firstName) instead of rendering it empty', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: 'str={firstName} num={randomNumber}');
+
+    $result = $engine->transform('irrelevant', $col);
+
+    // Bug: currently produces "str= num=<digits>" — the string token is
+    // dropped while the real (method_exists-true) numeric token resolves.
+    expect($result)->not->toContain('str= ')
+        ->and($result)->toMatch('/^str=\S+ num=\d+$/');
+});
+
+it('resolves each documented string Faker token used in a template', function (string $token): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: "[{{$token}}]");
+
+    $result = $engine->transform('irrelevant', $col);
+
+    expect($result)->not->toBe('[]')
+        ->and($result)->not->toBe('['.']');
+})->with([
+    'firstName',
+    'lastName',
+    'name',
+    'safeEmail',
+    'city',
+    'streetName',
+    'word',
+    'url',
+    'uuid',
+    'countryCode',
+    'postcode',
+    'buildingNumber',
+    'e164PhoneNumber',
+]);
+
+it('produces a real userName in the {userName}@acme.test template, not just the literal suffix', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: '{userName}@acme.test');
+
+    $result = $engine->transform('alice@somewhere.com', $col);
+
+    // The pre-existing test only asserts toEndWith('@acme.test') and
+    // not->toBe(the literal template), both of which hold trivially even
+    // when {userName} resolves to '' (giving "@acme.test"). Assert the
+    // local part is non-empty to actually catch the regression.
+    expect($result)->toBeString();
+    $localPart = explode('@', (string) $result)[0];
+    expect($localPart)->not->toBe('');
+});
+
+it('produces real first and last names in a multi-token template, not just literal separators', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: '{firstName}.{lastName}@firma.de');
+
+    $result = $engine->transform('input', $col);
+
+    expect($result)->toBeString();
+    [$first, $lastAndDomain] = explode('.', (string) $result, 2);
+    // The pre-existing test only checks toContain('.') and toEndWith('@firma.de'),
+    // both of which hold even when both tokens render empty (".@firma.de").
+    expect($first)->not->toBe('');
+    expect($lastAndDomain)->not->toStartWith('@');
+});

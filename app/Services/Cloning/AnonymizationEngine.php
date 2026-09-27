@@ -86,8 +86,8 @@ class AnonymizationEngine
      *
      * Example: `{userName}@acme.test` → `alice.j42@acme.test`
      *
-     * Unknown methods on the Faker generator render as the empty string so
-     * pipelines fail soft; the validator rejects them at config-load time.
+     * Errors from invalid Faker methods render as the empty string so
+     * pipelines fail soft; the validator rejects invalid methods at config-load time.
      */
     private function applyTemplate(ColumnCloningConfigData $config): string
     {
@@ -99,15 +99,15 @@ class AnonymizationEngine
 
         return (string) preg_replace_callback(
             '/\{([a-zA-Z][a-zA-Z0-9]*)\}/',
-            function (array $matches): string {
+            function (array $matches) {
                 $method = $matches[1];
 
-                if (! method_exists($this->faker, $method)) {
+                try {
+                    /** @var mixed $result */
+                    $result = $this->faker->{$method}();
+                } catch (\Exception|\Error $e) {
                     return '';
                 }
-
-                /** @var mixed $result */
-                $result = $this->faker->{$method}();
 
                 if (is_array($result)) {
                     return implode(' ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $result));
