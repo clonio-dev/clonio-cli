@@ -56,7 +56,7 @@ All 3 connections OK.
 
 The `TLS` column shows the configured transport mode (`default`, `disable`, `require`, `verify`), matching `connection:list`. SQLite and Dump connections show `—` since they have no network transport.
 
-With `-v`, an additional `Cipher` column shows the negotiated TLS cipher for each successful MySQL/MariaDB/PostgreSQL connection (`—` when none was negotiated or the connection isn't a network connection). The cipher is only queried when it will actually be displayed, so no extra query runs without `-v`.
+With `-v`, an additional `Cipher` column shows the negotiated TLS cipher for each successful MySQL/MariaDB/PostgreSQL connection. Encrypted SQL Server connections show `encrypted (cipher not reported by SQL Server)`. The column shows `—` when the connection is not encrypted or isn't a network connection. The cipher is only queried when it will actually be displayed, so no extra query runs without `-v`.
 
 A summary line is always printed regardless of `--ci` mode.
 
