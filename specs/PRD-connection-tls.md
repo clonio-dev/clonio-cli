@@ -258,7 +258,7 @@ New column `TLS` showing the mode (`default`, `disable`, `require`, `verify`; `�
 ### 6.4 `connection:test`
 
 - The success line for network connections shows the mode: `prod: OK (42ms, tls: verify)` (`tls: default` when unset).
-- With `-v`, after a successful handshake, report the negotiated cipher where cheaply available (MySQL/MariaDB: `SHOW SESSION STATUS LIKE 'Ssl_cipher'`; PostgreSQL: `SELECT ssl, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()`). This is the only query beyond the handshake, verbose only, and failures are ignored. Amend PRD-connection-test §4/§7 accordingly.
+- With `-v`, after a successful handshake, report the negotiated cipher where cheaply available (MySQL/MariaDB: `SHOW SESSION STATUS LIKE 'Ssl_cipher'`; PostgreSQL: `SELECT ssl, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()`; SQL Server: `SELECT encrypt_option FROM sys.dm_exec_connections WHERE session_id = @@SPID` — Microsoft does not expose the cipher over T-SQL, so `encrypt_option = 'TRUE'` is reported as the stable label `encrypted (cipher not reported by SQL Server)`, and `'FALSE'` as no cipher at all, so the `TLS cipher:` line proves encryption for SQL Server exactly as it does for the other drivers). This is the only query beyond the handshake, verbose only, and failures are ignored. Amend PRD-connection-test §4/§7 accordingly.
 
 ---
 

@@ -66,7 +66,7 @@ A summary line is always printed regardless of `--ci` mode.
 
 ### Transport security
 
-With `-v`, a successful MySQL/MariaDB/PostgreSQL test also prints the negotiated cipher (`TLS cipher: TLS_AES_256_GCM_SHA384`). This is the only query sent beyond the handshake.
+With `-v`, a successful MySQL/MariaDB/PostgreSQL test also prints the negotiated cipher (`TLS cipher: TLS_AES_256_GCM_SHA384`). SQL Server does not expose the cipher over T-SQL, only whether the session is encrypted, so a successful encrypted SQL Server test instead prints `TLS cipher: encrypted (cipher not reported by SQL Server)`; the line is omitted when the session is not encrypted, exactly as for the other drivers. This is the only query sent beyond the handshake.
 
 TLS failures include a hint, for example:
 

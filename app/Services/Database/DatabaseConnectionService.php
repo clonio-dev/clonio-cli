@@ -156,9 +156,17 @@ class DatabaseConnectionService
 
     /**
      * The negotiated TLS cipher of an open connection, or null (unencrypted, unsupported driver, query failed).
+     *
+     * SQL Server never exposes the cipher over T-SQL, only whether the session is encrypted
+     * (sys.dm_exec_connections.encrypt_option), so it is handled separately (see
+     * sqlsrvEncryptionLabel()) and returns a stable label instead of a cipher name.
      */
     public function negotiatedCipher(string $connectionName, DatabaseConnectionType $type): ?string
     {
+        if ($type === DatabaseConnectionType::SqlServer) {
+            return $this->sqlsrvEncryptionLabel($connectionName);
+        }
+
         /** @var array{string, string}|null $query */
         $query = match ($type) {
             DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => ["SHOW SESSION STATUS LIKE 'Ssl_cipher'", 'Value'],
@@ -181,6 +189,29 @@ class DatabaseConnectionService
         $value = is_object($row) ? (get_object_vars($row)[$column] ?? null) : null;
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * Whether the open SQL Server session is encrypted, as a stable label — Microsoft does not
+     * surface the negotiated cipher via T-SQL, only encrypt_option ('TRUE'/'FALSE') on
+     * sys.dm_exec_connections. Returns null when unencrypted, so the "TLS cipher:" line is
+     * omitted exactly as it is for a plaintext MySQL/PostgreSQL connection.
+     */
+    private function sqlsrvEncryptionLabel(string $connectionName): ?string
+    {
+        try {
+            $row = DB::connection($connectionName)->selectOne(
+                'SELECT encrypt_option FROM sys.dm_exec_connections WHERE session_id = @@SPID'
+            );
+        } catch (Throwable) {
+            return null;
+        }
+
+        $value = is_object($row) ? (get_object_vars($row)['encrypt_option'] ?? null) : null;
+
+        return is_string($value) && strcasecmp($value, 'TRUE') === 0
+            ? 'encrypted (cipher not reported by SQL Server)'
+            : null;
     }
 
     /**

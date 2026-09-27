@@ -459,3 +459,31 @@ it('returns null when the connection is not encrypted or the query fails', funct
         ->and($service->negotiatedCipher('c1', DatabaseConnectionType::PostgreSQL))->toBeNull()
         ->and($service->negotiatedCipher('c1', DatabaseConnectionType::SqlServer))->toBeNull();
 });
+
+it('reports SQL Server encryption without a cipher name, since SQL Server never exposes one', function (): void {
+    DB::shouldReceive('connection')->with('c1')->andReturnSelf();
+    DB::shouldReceive('selectOne')
+        ->with('SELECT encrypt_option FROM sys.dm_exec_connections WHERE session_id = @@SPID')
+        ->andReturn((object) ['encrypt_option' => 'TRUE']);
+
+    expect((new DatabaseConnectionService(inDocker: false))->negotiatedCipher('c1', DatabaseConnectionType::SqlServer))
+        ->toBe('encrypted (cipher not reported by SQL Server)');
+});
+
+it('returns null when SQL Server reports encrypt_option FALSE', function (): void {
+    DB::shouldReceive('connection')->with('c1')->andReturnSelf();
+    DB::shouldReceive('selectOne')
+        ->with('SELECT encrypt_option FROM sys.dm_exec_connections WHERE session_id = @@SPID')
+        ->andReturn((object) ['encrypt_option' => 'FALSE']);
+
+    expect((new DatabaseConnectionService(inDocker: false))->negotiatedCipher('c1', DatabaseConnectionType::SqlServer))
+        ->toBeNull();
+});
+
+it('returns null when the SQL Server encrypt_option query throws', function (): void {
+    DB::shouldReceive('connection')->with('c1')->andReturnSelf();
+    DB::shouldReceive('selectOne')->andThrow(new RuntimeException('connection lost'));
+
+    expect((new DatabaseConnectionService(inDocker: false))->negotiatedCipher('c1', DatabaseConnectionType::SqlServer))
+        ->toBeNull();
+});
