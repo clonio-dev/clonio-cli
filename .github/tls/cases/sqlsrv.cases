@@ -1,20 +1,22 @@
-# posture      case                  expected    (PRD-connection-tls §10.1 — keep in sync; no cipher query for sqlsrv)
+# posture      case                  expected    (PRD-connection-tls §10.1 — keep in sync)
+# ODBC Driver 18's Encrypt=no still gets a fully encrypted session when the server sets
+# forceencryption=1 (tls-required), so "disable" on tls-required is OK+c, not OK-c (see † below).
 self-signed    absent                F:ver
-tls            absent                OK
-tls-required   absent                OK
-self-signed    legacy-trust          OK
-tls            legacy-trust          OK
-tls-required   legacy-trust          OK
-self-signed    disable               OK
-tls            disable               OK
+tls            absent                OK+c
+tls-required   absent                OK+c
+self-signed    legacy-trust          OK+c
+tls            legacy-trust          OK+c
+tls-required   legacy-trust          OK+c
+self-signed    disable               OK-c
+tls            disable               OK-c
 # † from Microsoft's ODBC 18 encryption table, not from the spike. If CI disagrees, fix spec + docs, never this row alone.
-tls-required   disable               OK
-self-signed    require               OK
-tls            require               OK
-tls-required   require               OK
+tls-required   disable               OK+c
+self-signed    require               OK+c
+tls            require               OK+c
+tls-required   require               OK+c
 self-signed    verify                F:ver
-tls            verify                OK
-tls-required   verify                OK
+tls            verify                OK+c
+tls-required   verify                OK+c
 self-signed    verify-host-mismatch  F:ver
 tls            verify-host-mismatch  F:host
 tls-required   verify-host-mismatch  F:host

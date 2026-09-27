@@ -398,18 +398,20 @@ PostgreSQL (`absent` = libpq `prefer`):
 | `verify-mtls` | F:tls | OK+c | OK+c | OK+c |
 | `missing-file` | F:file | F:file | F:file | F:file |
 
-SQL Server (no cipher query, §6.4, so `OK` only; ODBC Driver 18 defaults to `Encrypt=yes`):
+SQL Server (`encrypt_option` cipher query, §6.4, proves encryption per §10.1 footnote conventions; ODBC Driver 18 defaults to `Encrypt=yes`):
 
 | Case | self-signed | tls | tls-required |
 |---|---|---|---|
-| `absent` | F:ver | OK | OK |
-| `legacy-trust` | OK | OK | OK |
-| `disable` | OK | OK | OK † |
-| `require` | OK | OK | OK |
-| `verify` | F:ver | OK | OK |
+| `absent` | F:ver | OK+c | OK+c |
+| `legacy-trust` | OK+c | OK+c | OK+c |
+| `disable` | OK−c | OK−c | OK+c † |
+| `require` | OK+c | OK+c | OK+c |
+| `verify` | F:ver | OK+c | OK+c |
 | `verify-host-mismatch` | F:ver | F:host | F:host |
 
-† From Microsoft's ODBC 18 encryption table, not from the Docker spike. SQL Server forces encryption and ODBC encrypts regardless of `Encrypt=no`. The first CI run confirms this cell. If it deviates, the spec and docs are corrected; the assertion is never loosened to accept both outcomes.
+† From Microsoft's ODBC 18 encryption table, not from the Docker spike. SQL Server forces encryption and ODBC encrypts regardless of `Encrypt=no`. The first CI run confirms this cell (and that `encrypt_option` reads `TRUE` there). If it deviates, the spec and docs are corrected; the assertion is never loosened to accept both outcomes.
+
+`self-signed` and `tls` do not set `forceencryption` on the server, so `disable` (`Encrypt=no`) there is genuinely unencrypted (`OK−c`). Every other successful case sets `Encrypt=yes` (`require`/`verify`/`legacy-trust`/driver default for `absent`) or hits a forced server (`tls-required`), so it is always fully encrypted (`OK+c`), even though SQL Server never reports which cipher was used.
 
 The matrix is data-driven. A single cases file per driver family lists `case | posture | expected` rows, with an optional `<driver>=<expected>` column for a driver that deviates within its family (MySQL vs. MariaDB, ‡), and one script runs `connection:add` / `connection:test` and asserts the exit code, the required substring and the forbidden substring. Adding a posture or a case is then one row, not new workflow YAML. `F` cells without a hint assert only the exit code. The CI jobs are blocking, including SQL Server (unlike the existing optional `connection-test-mssql` job).
 
