@@ -2394,7 +2394,7 @@ In `resources/schema/clonio.schema.json`, in the network branch (`"then"` of the
                   "cert": { "type": "string", "description": "Path to the client certificate (PEM) for mutual TLS." },
                   "key": { "type": "string", "description": "Path to the client private key (PEM) for mutual TLS." }
                 },
-                "dependentRequired": { "cert": ["key"], "key": ["cert"] }
+                "dependencies": { "cert": ["key"], "key": ["cert"] }
               }
 ```
 
