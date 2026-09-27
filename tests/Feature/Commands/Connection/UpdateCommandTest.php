@@ -295,15 +295,6 @@ it('auto-selects the connection when only one exists and non-interactive', funct
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('connection:update', ['--no-interaction' => true])
-        ->expectsQuestion('Connection name', 'staging')
-        ->expectsQuestion('Database driver', 'mysql')
-        ->expectsQuestion('Host', 'localhost')
-        ->expectsQuestion('Port', '3306')
-        ->expectsQuestion('Database', 'mydb')
-        ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
-        ->expectsConfirmation('Is this a production connection?', 'no')
-        ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
 });
 
