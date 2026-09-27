@@ -11,7 +11,7 @@ clonio connection:delete [<name>] --force
 
 ## Behaviour
 
-1. If `<name>` is not provided and only one connection exists, it is selected automatically. If multiple connections exist, an interactive prompt asks you to choose one.
+1. If `<name>` is not provided and only one connection exists, it is selected automatically. If multiple connections exist, an interactive prompt asks you to choose one. In non-interactive mode (`--no-interaction`), the choice prompt is unavailable: if multiple connections exist and no `name` is given, the command fails with exit code `2` instead of guessing.
 2. If the named connection does not exist, the command exits with an error.
 3. A summary table of the connection is displayed before deletion. The password is always shown as `••••••••`.
 4. If the connection is marked as a production connection, a warning is printed.

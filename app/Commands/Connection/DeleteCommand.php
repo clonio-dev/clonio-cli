@@ -34,16 +34,10 @@ class DeleteCommand extends Command
             return ExitCode::ConfigError->value;
         }
 
-        $nameArg = $this->argument('name');
-        $name = is_string($nameArg) && $nameArg !== '' ? $nameArg : null;
+        $name = $this->resolveConnectionName($connections);
 
         if ($name === null) {
-            if (count($connections) === 1) {
-                $name = array_key_first($connections);
-            } else {
-                $choice = $this->choice('Select a connection to delete', array_keys($connections));
-                $name = is_string($choice) ? $choice : '';
-            }
+            return ExitCode::ConfigError->value;
         }
 
         $connection = $config->getConnection($name);
@@ -105,5 +99,33 @@ class DeleteCommand extends Command
         $this->info(sprintf('Connection %s deleted.', $name));
 
         return ExitCode::Success->value;
+    }
+
+    /**
+     * @param  array<string, ConnectionData>  $connections
+     */
+    private function resolveConnectionName(array $connections): ?string
+    {
+        $nameArg = $this->argument('name');
+
+        if (is_string($nameArg) && $nameArg !== '') {
+            return $nameArg;
+        }
+
+        $names = array_keys($connections);
+
+        if (count($names) === 1) {
+            return $names[0];
+        }
+
+        if (! $this->input->isInteractive()) {
+            $this->error('Multiple connections found; pass the connection name: clonio connection:delete <name>.');
+
+            return null;
+        }
+
+        $selected = $this->choice('Select a connection to delete', $names);
+
+        return is_string($selected) ? $selected : $names[0];
     }
 }

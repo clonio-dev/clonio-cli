@@ -145,6 +145,56 @@ it('prompts the user to choose when multiple connections exist and no name is gi
         ->assertExitCode(0);
 });
 
+it('fails with config error when multiple connections exist, no name given, and non-interactive', function (): void {
+    $staging = makeDeleteConnection('staging');
+    $production = makeDeleteConnection('production');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $staging,
+        'production' => $production,
+    ]);
+    $config->shouldNotReceive('getConnection');
+    $config->shouldNotReceive('deleteConnection');
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:delete', ['--no-interaction' => true])
+        ->expectsOutputToContain('Multiple connections found; pass the connection name: clonio connection:delete <name>.')
+        ->assertExitCode(2);
+});
+
+it('auto-selects the only connection when no name is given and non-interactive, but still cancels without --force', function (): void {
+    $connection = makeDeleteConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $connection]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $config->shouldReceive('deleteConnection')->never();
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:delete', ['--no-interaction' => true])
+        ->expectsConfirmation('Delete this connection?', 'no')
+        ->expectsOutputToContain('Cancelled.')
+        ->assertExitCode(0);
+});
+
+it('auto-selects the only connection when no name is given and deletes with --force in non-interactive mode', function (): void {
+    $connection = makeDeleteConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $connection]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $config->shouldReceive('deleteConnection')->with('staging')->once();
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:delete', ['--no-interaction' => true, '--force' => true])
+        ->expectsOutputToContain('Connection staging deleted.')
+        ->assertExitCode(0);
+});
+
 it('renders the schema row for a connection that has a schema', function (): void {
     $connection = new ConnectionData(
         name: 'pg',
