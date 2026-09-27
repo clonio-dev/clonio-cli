@@ -26,7 +26,7 @@ clonio cloning:run <file> [options]
 | `--skip-tables=<list>` | Comma-separated list of table names to exclude from this run |
 | `--only-tables=<list>` | Comma-separated list of table names to include; all others are skipped |
 | `--audit-channel=<list>` | Comma-separated list of channel names to use for this run (overrides `audit.default` in `clonio.json`) |
-| `--skip-remapping-keys` | Skip key mapping generation and FK rewriting |
+| `--skip-remapping-keys` | Skip key mapping generation and FK rewriting. Can also be persisted in the config via `options.remap_keys: false` (see [`.cloning.yaml`](../cloning-yaml.md#options)); the run is skipped when either the flag is set or the option is `false`. |
 | `--no-memory-limit` | Remove PHP's memory limit before generating key mappings. Useful for very large databases when `--file-based` is not viable. |
 | `--file-based` | Store key mappings in AES-256-CBC encrypted temporary files instead of RAM. Keeps memory usage bounded to the size of the largest single table's mapping. |
 | `--enforce-column-types` | Override: set `enforce_column_types: true` for this run |

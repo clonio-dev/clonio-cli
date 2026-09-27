@@ -47,6 +47,7 @@ options:
   drop_unknown_tables: false
   drop_extra_columns: false
   disable_foreign_key_checks: true
+  remap_keys: true
   faker_locale: en_US
 ```
 
@@ -57,6 +58,7 @@ options:
 | `drop_unknown_tables` | boolean | `false` | Drop tables from the target that do not exist in the source. |
 | `drop_extra_columns` | boolean | `false` | Drop columns from existing target tables that exist in the target but not in the source. ⚠ Irreversible — see note below. |
 | `disable_foreign_key_checks` | boolean | `true` | Disable foreign-key constraint checks on the target during data transfer. Recommended when truncating or inserting out of dependency order. |
+| `remap_keys` | boolean | `true` | Generate key mappings and rewrite primary/foreign key values when remapping is configured (inline `strategy: remapping` columns or a `key_remapping:` section). Set to `false` to skip that (often expensive) step without removing the remapping definition — equivalent to `cloning:run --skip-remapping-keys`. |
 | `faker_locale` | string | `en_US` | [FakerPHP locale](https://fakerphp.github.io/localization/) applied to all `fake` column strategies. Examples: `de_DE`, `fr_FR`, `ja_JP`. |
 
 ### Schema synchronization
@@ -78,7 +80,8 @@ The three schema-control options together determine how closely the target schem
 
 ## Tables
 
-Each key under `tables` is the exact table name in the source database.
+Each key under `tables` is either the exact table name in the source database
+(a **literal**) or a **regex** that matches one or more table names.
 
 ```yaml
 tables:
@@ -99,6 +102,50 @@ tables:
       sort_by: created_at
 ```
 
+### Matching table names with regex
+
+Wrap a key in `/…/` to treat it as a [PCRE regex](https://www.php.net/manual/en/reference.pcre.pattern.syntax.php)
+(trailing flags allowed, e.g. `/…/i`). At run time it is expanded against the
+actual tables in the source database, so one entry can configure a whole family
+of tables:
+
+```yaml
+tables:
+  # Every monthly archive table gets the same rule
+  '/^application_logs_archive_\d{2}_\d{4}$/':
+    rows:
+      strategy: last
+      limit: 1
+      clear: delete
+```
+
+> **Quote regex keys with single quotes.** In a double-quoted YAML scalar `\`
+> is an escape character, so `\d`, `\w`, `\.` etc. make the parser fail
+> (`Found unknown escape character "\d"`). Single quotes pass the pattern
+> through verbatim.
+
+- **Keys without a leading `/` are always literal.** There is no glob/`*`
+  wildcard — use a regex instead (`.*` covers what `*` would).
+- **Matching is case-insensitive** (both literal and regex keys).
+- **The last matching entry in the file wins.** List a broad regex first, then
+  override individual tables with a more specific regex or literal below it:
+
+  ```yaml
+  tables:
+    '/^app_logs_.*/':            # default: keep only the newest row
+      rows: {strategy: last, limit: 1}
+    app_logs_critical:           # …but copy this one in full
+      rows: {strategy: full}
+  ```
+
+- A literal key that names a table **not** present in the source is still
+  reported as *not found* during the run. A regex that matches no table is
+  simply skipped.
+
+> **Note.** Key remapping (inline `strategy: remapping` columns and the legacy
+> `key_remapping:` section) and the `--skip-tables` / `--only-tables` flags
+> operate on **literal** table names only; regex keys are not expanded for them.
+
 ### `rows`
 
 Controls which rows are transferred and whether the target table is cleared first.
@@ -113,10 +160,11 @@ Controls which rows are transferred and whether the target table is cleared firs
 #### Row strategies
 
 | Strategy | Behaviour |
-|----------|-----------|
-| `full` | Copy all rows from the source table. |
+|---------|-----------|
+| `full`  | Copy all rows from the source table. |
 | `first` | Copy the first `limit` rows (ordered by `sort_by` ascending). |
-| `last` | Copy the last `limit` rows (ordered by `sort_by` descending). |
+| `last`  | Copy the last `limit` rows (ordered by `sort_by` descending). |
+| `skip`  | Skip this table entirely. |
 
 #### `clear` values
 
