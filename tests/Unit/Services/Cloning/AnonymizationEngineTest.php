@@ -170,14 +170,6 @@ it('keeps literal text outside placeholders', function (): void {
     expect($result)->toEndWith('-suffix');
 });
 
-it('renders unknown faker method as empty string in template', function (): void {
-    $engine = new AnonymizationEngine;
-    $col = makeColumn('template', template: 'before-{thisMethodDoesNotExist}-after');
-    $result = $engine->transform('input', $col);
-
-    expect($result)->toBe('before--after');
-});
-
 it('returns empty string when template is null or empty', function (): void {
     $engine = new AnonymizationEngine;
     $col = makeColumn('template', template: null);
@@ -220,4 +212,69 @@ it('expands a template using a real generator method returning an array', functi
     expect($result)->toBeString()
         ->and($result)->toStartWith('p:')
         ->and($result)->toEndWith(':end');
+});
+
+it('resolves a magic-formatter Faker token (firstName) instead of rendering it empty', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: 'str={firstName} num={randomNumber}');
+
+    $result = $engine->transform('irrelevant', $col);
+
+    expect($result)->not->toContain('str= ')
+        ->and($result)->toMatch('/^str=\S+ num=\d+$/');
+});
+
+it('resolves each documented string Faker token used in a template', function (string $token): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: "[{{$token}}]");
+
+    $result = $engine->transform('irrelevant', $col);
+
+    expect($result)->not->toBe('[]')
+        ->and($result)->not->toBe('['.']');
+})->with([
+    'firstName',
+    'lastName',
+    'name',
+    'safeEmail',
+    'city',
+    'streetName',
+    'word',
+    'url',
+    'uuid',
+    'countryCode',
+    'postcode',
+    'buildingNumber',
+    'e164PhoneNumber',
+]);
+
+it('renders unknown faker method as empty string in template', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: 'before-{thisMethodDoesNotExist}-after');
+    $result = $engine->transform('input', $col);
+
+    expect($result)->toBe('before--after');
+});
+
+it('produces a real userName in the {userName}@acme.test template, not just the literal suffix', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: '{userName}@acme.test');
+
+    $result = $engine->transform('alice@somewhere.com', $col);
+
+    expect($result)->toBeString();
+    $localPart = explode('@', (string) $result)[0];
+    expect($localPart)->not->toBe('');
+});
+
+it('produces real first and last names in a multi-token template, not just literal separators', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('template', template: '{firstName}.{lastName}@firma.de');
+
+    $result = $engine->transform('input', $col);
+
+    expect($result)->toBeString();
+    [$first, $lastAndDomain] = explode('.', (string) $result, 2);
+    expect($first)->not->toBe('');
+    expect($lastAndDomain)->not->toStartWith('@');
 });

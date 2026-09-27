@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Cloning;
 
 use App\Data\Cloning\ColumnCloningConfigData;
+use Error;
+use Exception;
 use Faker\Factory;
 use Faker\Generator;
 
@@ -86,8 +88,8 @@ class AnonymizationEngine
      *
      * Example: `{userName}@acme.test` → `alice.j42@acme.test`
      *
-     * Unknown methods on the Faker generator render as the empty string so
-     * pipelines fail soft; the validator rejects them at config-load time.
+     * Errors from invalid Faker methods render as the empty string so
+     * pipelines fail soft; the validator rejects invalid methods at config-load time.
      */
     private function applyTemplate(ColumnCloningConfigData $config): string
     {
@@ -102,12 +104,12 @@ class AnonymizationEngine
             function (array $matches): string {
                 $method = $matches[1];
 
-                if (! method_exists($this->faker, $method)) {
+                try {
+                    /** @var mixed $result */
+                    $result = $this->faker->{$method}();
+                } catch (Exception|Error) {
                     return '';
                 }
-
-                /** @var mixed $result */
-                $result = $this->faker->{$method}();
 
                 if (is_array($result)) {
                     return implode(' ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $result));
