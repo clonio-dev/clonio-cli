@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Logging\AuditBuffer;
 use App\Services\Config\ConfigService;
+use App\Services\Runtime\PackagedRuntimeDetector;
 use Composer\InstalledVersions;
 use Dotenv\Dotenv;
 use Illuminate\Support\Env;
@@ -36,6 +37,8 @@ class AppServiceProvider extends ServiceProvider
             if (is_string($key) && $key !== '') {
                 config(['app.key' => $key]);
             }
+
+            $this->redirectStoragePathWhenPackaged($cwd);
         }
 
         // Override git.version: prefer the VERSION file baked into the PHAR,
@@ -71,6 +74,46 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AuditBuffer::class, static fn (): AuditBuffer => new AuditBuffer);
 
         $this->mergeClonioJsonLogging();
+    }
+
+    /**
+     * Redirect `storage_path()` to a writable directory next to the binary
+     * when running as a PHAR or SPC-compiled standalone executable.
+     *
+     * `storage_path()` defaults to `base_path('storage')`, which resolves to
+     * a `phar://` stream inside a packaged runtime — readable, but never
+     * writable. Nothing in this app calls `storage_path()` directly, but
+     * Laravel's own `LogManager::createEmergencyLogger()` falls back to it
+     * whenever resolving/writing the configured log channel throws, and a
+     * failed emergency write then crashes with an unhandled
+     * "open mode append not supported" phar error (see issue #156). Pointing
+     * `storage_path()` at the current working directory keeps that fallback
+     * writable, mirroring how `clonio.json` is written to `cwd`, not the
+     * read-only archive.
+     *
+     * This deliberately differs from the sample in the Laravel Zero logging
+     * docs (https://laravel-zero.com/docs/logging), which only overrides
+     * `logging.channels.single.path` when `Phar::running()` is truthy:
+     *  - `config/logging.php` has no `single` channel by default, and the
+     *    crash actually comes from the vendor `emergency` fallback above, not
+     *    from any channel this app defines — patching `single`'s path
+     *    wouldn't touch it.
+     *  - `Phar::running()` alone misses the SPC micro-SAPI standalone
+     *    binaries this project also ships (see `BinaryResolver`, which checks
+     *    `PHP_SAPI === 'micro'` for exactly this reason) — one of the two bug
+     *    reports on #156 was against that standalone binary.
+     * Redirecting the global `storage_path()` in `register()` — before any
+     * provider's `boot()` runs and before any `Log::` call is possible —
+     * fixes the fallback regardless of which channel is active or which of
+     * the two packaged runtimes is in use.
+     */
+    private function redirectStoragePathWhenPackaged(string $cwd): void
+    {
+        if (! $this->app->make(PackagedRuntimeDetector::class)->isPackaged()) {
+            return;
+        }
+
+        $this->app->useStoragePath($cwd.DIRECTORY_SEPARATOR.'storage');
     }
 
     /**
