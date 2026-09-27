@@ -1,7 +1,7 @@
 # PRD — Secure Transport (TLS) for Connections
 
 **Version:** 0.4
-**Status:** Draft
+**Status:** Implemented — CI TLS matrix pending first run
 **Date:** 2026-09-27
 **Issue:** [#149 — Connections using insecure transport are prohibited](https://github.com/clonio-dev/clonio-cli/issues/149)
 **Supersedes:** [PR #163](https://github.com/clonio-dev/clonio-cli/pull/163) (not merged — see §12)
@@ -313,23 +313,23 @@ Exit code stays `ConnectionError` (3).
 
 ## 10. Acceptance Criteria
 
-- [ ] A MySQL 8 server started with `--require_secure_transport=ON` accepts a connection with `ssl.mode = require` and no CA; `connection:test` exits 0.
-- [ ] The same server with `ssl.mode = verify` and the server's CA file connects; with a wrong CA it fails with the verification hint (§8) and exit code 3.
-- [ ] The same server without `ssl` fails with the `require_secure_transport` hint (§8).
-- [ ] MariaDB: same three cases.
-- [ ] PostgreSQL: `require` → `sslmode=require`; `verify` + `ca` → `sslmode=verify-full`, `sslrootcert=<resolved path>`; `verify` without `ca` → `sslrootcert=system` (unit test on `buildConfig()`).
-- [ ] SQL Server: `require` → `encrypt=yes, trust_server_certificate=yes`; legacy `trust_server_certificate: true` without `ssl` behaves as today (unit tests).
-- [ ] Relative `ca` path resolves against cwd (`Storage::fake('local')`), `~/` against `$HOME`, absolute stays unchanged. `base_path()` is never involved (unit test).
-- [ ] `connection:add --ssl-mode=verify --ssl-ca=certs/ca.pem ...` runs fully non-interactively.
-- [ ] `connection:add` for a network driver without `--ssl-mode` offers `Require` as the preselected choice; `--no-interaction` stores `ssl: { mode: require }`.
-- [ ] `connection:update` keeps a stored CA on Enter, removes it on `none`, and the diff shows the change.
-- [ ] Existing `clonio.json` files without `ssl` load and connect exactly as before (regression tests on existing fixtures).
-- [ ] `clonio.schema.json` validates all examples in §4, rejects `ssl` on sqlite, rejects `cert` without `key`.
-- [ ] `composer test` passes (PHPStan level max, type coverage ≥ 90 %, coverage ≥ 85 %).
+- [x] A MySQL 8 server started with `--require_secure_transport=ON` accepts a connection with `ssl.mode = require` and no CA; `connection:test` exits 0. (verified live via Docker smoke test, Task 11)
+- [ ] The same server with `ssl.mode = verify` and the server's CA file connects; with a wrong CA it fails with the verification hint (§8) and exit code 3. (pending first CI run — not pushed yet)
+- [ ] The same server without `ssl` fails with the `require_secure_transport` hint (§8). (pending first CI run — not pushed yet)
+- [ ] MariaDB: same three cases. (pending first CI run — not pushed yet)
+- [x] PostgreSQL: `require` → `sslmode=require`; `verify` + `ca` → `sslmode=verify-full`, `sslrootcert=<resolved path>`; `verify` without `ca` → `sslrootcert=system` (unit test on `buildConfig()`).
+- [x] SQL Server: `require` → `encrypt=yes, trust_server_certificate=yes`; legacy `trust_server_certificate: true` without `ssl` behaves as today (unit tests).
+- [x] Relative `ca` path resolves against cwd (`Storage::fake('local')`), `~/` against `$HOME`, absolute stays unchanged. `base_path()` is never involved (unit test).
+- [x] `connection:add --ssl-mode=verify --ssl-ca=certs/ca.pem ...` runs fully non-interactively.
+- [x] `connection:add` for a network driver without `--ssl-mode` offers `Require` as the preselected choice; `--no-interaction` stores `ssl: { mode: require }`. (also verified live via Docker smoke test, Task 11)
+- [x] `connection:update` keeps a stored CA on Enter, removes it on `none`, and the diff shows the change.
+- [x] Existing `clonio.json` files without `ssl` load and connect exactly as before (regression tests on existing fixtures).
+- [x] `clonio.schema.json` validates all examples in §4, rejects `ssl` on sqlite, rejects `cert` without `key`. (Task 11 found `dependentRequired` has no effect under the schema's declared draft-07 — fixed to `dependencies`, the draft-07 equivalent, and re-verified with a Draft7Validator)
+- [x] `composer test` passes (PHPStan level max, type coverage ≥ 90 %, coverage ≥ 85 %).
 
-- [ ] Every cell of the end-to-end matrix in §10.1 passes in GitHub Actions.
-- [ ] The feature is documented in the docs project (§10.2).
-- [ ] Existing workflows keep passing with the new default. Connections to stock `postgres:16` services in `connection-test.yml` and `cloning-run-test.yml` pass `--ssl-mode=disable`.
+- [ ] Every cell of the end-to-end matrix in §10.1 passes in GitHub Actions. (pending first CI run — not pushed yet)
+- [x] The feature is documented in the docs project (§10.2).
+- [ ] Existing workflows keep passing with the new default. Connections to stock `postgres:16` services in `connection-test.yml` and `cloning-run-test.yml` pass `--ssl-mode=disable`. (flag confirmed present in both workflow files; passing status pending first CI run — not pushed yet)
 
 ### 10.1 End-to-end test matrix (GitHub Actions)
 
