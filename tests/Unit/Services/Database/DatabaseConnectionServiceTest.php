@@ -3,8 +3,12 @@
 declare(strict_types=1);
 
 use App\Data\ConnectionData;
+use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
+use App\Enums\SslMode;
 use App\Services\Database\DatabaseConnectionService;
+use Illuminate\Support\Facades\Storage;
+use Pdo\Mysql;
 
 beforeEach(function (): void {
     config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
@@ -15,6 +19,8 @@ function makeConnection(
     string $password = 'secret',
     ?string $schema = null,
     ?string $host = null,
+    ?SslConfig $ssl = null,
+    bool $trustServerCertificate = false,
 ): ConnectionData {
     return new ConnectionData(
         name: 'test',
@@ -26,6 +32,8 @@ function makeConnection(
         username: $type === DatabaseConnectionType::Sqlite ? null : 'root',
         password: $password,
         isProduction: false,
+        trustServerCertificate: $trustServerCertificate,
+        ssl: $ssl,
     );
 }
 
@@ -205,4 +213,138 @@ it('does not rewrite hosts when not running in docker', function (): void {
     );
 
     expect($config['host'])->toBe('127.0.0.1');
+});
+
+// ── TLS mapping ──────────────────────────────────────────────────────────────
+
+it('adds no TLS keys when ssl is unset', function (DatabaseConnectionType $type): void {
+    $config = (new DatabaseConnectionService(inDocker: false))->buildConfig(makeConnection($type), 'secret');
+
+    expect($config)->not->toHaveKeys(['options', 'sslmode', 'sslrootcert', 'encrypt', 'trust_server_certificate']);
+})->with([DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB, DatabaseConnectionType::PostgreSQL, DatabaseConnectionType::SqlServer]);
+
+it('maps mysql require to an empty CA with verification off', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::Mysql, ssl: new SslConfig(SslMode::Require)), 'secret');
+
+    expect($config['options'])->toBe([Mysql::ATTR_SSL_CA => '', Mysql::ATTR_SSL_VERIFY_SERVER_CERT => false]);
+});
+
+it('maps mariadb verify to the resolved CA with verification on', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::MariaDB, ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem')), 'secret');
+
+    expect($config['options'])->toBe([
+        Mysql::ATTR_SSL_CA => Storage::disk('local')->path('certs/ca.pem'),
+        Mysql::ATTR_SSL_VERIFY_SERVER_CERT => true,
+    ]);
+});
+
+it('adds client certificate options for mysql mutual TLS', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('c.pem', 'x');
+    Storage::disk('local')->put('k.pem', 'x');
+
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::Mysql, ssl: new SslConfig(SslMode::Require, null, 'c.pem', 'k.pem')), 'secret');
+
+    expect($config['options'])->toMatchArray([
+        Mysql::ATTR_SSL_CERT => Storage::disk('local')->path('c.pem'),
+        Mysql::ATTR_SSL_KEY => Storage::disk('local')->path('k.pem'),
+    ]);
+});
+
+it('passes no options for mysql disable', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::Mysql, ssl: new SslConfig(SslMode::Disable)), 'secret');
+
+    expect($config)->not->toHaveKey('options');
+});
+
+it('maps pgsql modes to sslmode', function (SslMode $mode, string $sslmode): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig($mode)), 'secret');
+
+    expect($config['sslmode'])->toBe($sslmode);
+})->with([
+    [SslMode::Disable, 'disable'],
+    [SslMode::Require, 'require'],
+    [SslMode::Verify, 'verify-full'],
+]);
+
+it('uses the resolved CA as sslrootcert for pgsql verify', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem')), 'secret');
+
+    expect($config['sslrootcert'])->toBe(Storage::disk('local')->path('certs/ca.pem'));
+});
+
+it('falls back to the system trust store for pgsql verify without a CA', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify)), 'secret');
+
+    expect($config['sslrootcert'])->toBe('system');
+});
+
+it('never sets sslrootcert for pgsql require', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Require)), 'secret');
+
+    expect($config)->not->toHaveKey('sslrootcert');
+});
+
+it('maps sqlsrv modes to encrypt and trust_server_certificate strings', function (SslMode $mode, array $expected): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::SqlServer, ssl: new SslConfig($mode)), 'secret');
+
+    expect($config)->toMatchArray($expected);
+})->with([
+    'disable' => [SslMode::Disable, ['encrypt' => 'no']],
+    'require' => [SslMode::Require, ['encrypt' => 'yes', 'trust_server_certificate' => 'yes']],
+    'verify' => [SslMode::Verify, ['encrypt' => 'yes', 'trust_server_certificate' => 'no']],
+]);
+
+it('keeps the legacy sqlsrv trust flag when ssl is unset', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::SqlServer, trustServerCertificate: true), 'secret');
+
+    expect($config['trust_server_certificate'])->toBeTrue()
+        ->and($config)->not->toHaveKey('encrypt');
+});
+
+it('lets ssl win over the legacy sqlsrv trust flag', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::SqlServer, ssl: new SslConfig(SslMode::Verify), trustServerCertificate: true), 'secret');
+
+    expect($config['trust_server_certificate'])->toBe('no');
+});
+
+it('fails before connecting when a certificate file is missing, naming the resolved path', function (): void {
+    Storage::fake('local');
+    $service = new DatabaseConnectionService(inDocker: false);
+    $connection = makeConnection(DatabaseConnectionType::Mysql, ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+
+    expect(fn (): array => $service->buildConfig($connection, 'secret'))
+        ->toThrow(RuntimeException::class, 'Certificate file not found: '.Storage::disk('local')->path('certs/ca.pem'));
+});
+
+it('rejects an ssl block that breaks the rules at connect time', function (): void {
+    $service = new DatabaseConnectionService(inDocker: false);
+    $connection = makeConnection(DatabaseConnectionType::Mysql, ssl: new SslConfig(SslMode::Verify));
+
+    expect(fn (): array => $service->buildConfig($connection, 'secret'))
+        ->toThrow(RuntimeException::class, 'Invalid ssl configuration for connection "test": mode verify requires a CA certificate for MySQL/MariaDB');
+});
+
+it('exposes the host actually dialled', function (): void {
+    $connection = makeConnection(DatabaseConnectionType::Mysql, host: '127.0.0.1');
+
+    expect((new DatabaseConnectionService(inDocker: true))->resolvedHost($connection))->toBe('host.docker.internal')
+        ->and((new DatabaseConnectionService(inDocker: false))->resolvedHost($connection))->toBe('127.0.0.1');
 });

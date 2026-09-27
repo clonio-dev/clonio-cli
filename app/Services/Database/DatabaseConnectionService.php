@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Database;
 
 use App\Data\ConnectionData;
+use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
+use App\Enums\SslMode;
+use App\Services\Database\Tls\CertificateFiles;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Pdo\Mysql;
 use RuntimeException;
 use Throwable;
 
@@ -20,11 +24,14 @@ class DatabaseConnectionService
 
     private readonly bool $inDocker;
 
-    public function __construct(?bool $inDocker = null)
+    private readonly CertificateFiles $certificates;
+
+    public function __construct(?bool $inDocker = null, ?CertificateFiles $certificates = null)
     {
         // /.dockerenv is created by the Docker engine inside every container and
         // is the most portable signal across Linux, macOS, and Windows daemons.
         $this->inDocker = $inDocker ?? is_file('/.dockerenv');
+        $this->certificates = $certificates ?? new CertificateFiles;
     }
 
     /**
@@ -82,17 +89,19 @@ class DatabaseConnectionService
             $config['charset'] = 'UTF8';
         } elseif ($connection->type === DatabaseConnectionType::SqlServer) {
             $config['charset'] = 'utf8';
-
-            if ($connection->trustServerCertificate) {
-                $config['trust_server_certificate'] = true;
-            }
         }
 
         if ($connection->schema !== null) {
             $config['search_path'] = $connection->schema;
         }
 
-        return $config;
+        return $this->applyTls($config, $connection);
+    }
+
+    /** The host PDO will actually dial (after the Docker loopback rewrite). */
+    public function resolvedHost(ConnectionData $connection): ?string
+    {
+        return $this->resolveHost($connection->host);
     }
 
     /**
@@ -130,5 +139,121 @@ class DatabaseConnectionService
         DB::connection($name)->getPdo();
 
         return $name;
+    }
+
+    /**
+     * Translates the connection's ssl block into driver config (PRD-connection-tls §5).
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     *
+     * @throws RuntimeException when the ssl block breaks a rule or a certificate file is missing
+     */
+    private function applyTls(array $config, ConnectionData $connection): array
+    {
+        $ssl = $connection->ssl;
+
+        if (! $ssl instanceof SslConfig) {
+            // Legacy flag, only honoured while no ssl block exists.
+            if ($connection->type === DatabaseConnectionType::SqlServer && $connection->trustServerCertificate) {
+                $config['trust_server_certificate'] = true;
+            }
+
+            return $config;
+        }
+
+        $violations = $ssl->violations($connection->type);
+
+        if ($violations !== []) {
+            throw new RuntimeException(sprintf('Invalid ssl configuration for connection "%s": %s', $connection->name, implode('; ', $violations)));
+        }
+
+        // mysqlnd reports a missing file only as the generic "[2002] Cannot connect to MySQL using SSL".
+        $unreadable = $this->certificates->unreadable($ssl);
+
+        if ($unreadable !== []) {
+            throw new RuntimeException('Certificate file not found: '.$unreadable[0]);
+        }
+
+        return match ($connection->type) {
+            DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => $this->applyMysqlTls($config, $ssl),
+            DatabaseConnectionType::PostgreSQL => $this->applyPgsqlTls($config, $ssl),
+            DatabaseConnectionType::SqlServer => $this->applySqlsrvTls($config, $ssl),
+            default => $config,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function applyMysqlTls(array $config, SslConfig $ssl): array
+    {
+        if ($ssl->mode === SslMode::Disable) {
+            return $config;
+        }
+
+        // mysqlnd only switches TLS on once an SSL option is present. An empty CA does that
+        // without restricting ciphers. VERIFY_SERVER_CERT must always be explicit: mysqlnd
+        // verifies CA and hostname by default as soon as TLS is on. Verified against
+        // MySQL 8.4 and MariaDB 11 (PRD-connection-tls §5.1).
+        $options = [
+            Mysql::ATTR_SSL_CA => $ssl->mode === SslMode::Verify && $ssl->ca !== null ? $this->certificates->resolve($ssl->ca) : '',
+            Mysql::ATTR_SSL_VERIFY_SERVER_CERT => $ssl->mode === SslMode::Verify,
+        ];
+
+        if ($ssl->cert !== null && $ssl->key !== null) {
+            $options[Mysql::ATTR_SSL_CERT] = $this->certificates->resolve($ssl->cert);
+            $options[Mysql::ATTR_SSL_KEY] = $this->certificates->resolve($ssl->key);
+        }
+
+        $config['options'] = $options;
+
+        return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function applyPgsqlTls(array $config, SslConfig $ssl): array
+    {
+        $config['sslmode'] = match ($ssl->mode) {
+            SslMode::Disable => 'disable',
+            SslMode::Require => 'require',
+            SslMode::Verify => 'verify-full',
+        };
+
+        if ($ssl->mode === SslMode::Verify) {
+            // Without a CA, "system" makes libpq (>= 16) use the OS trust store instead of ~/.postgresql/root.crt.
+            $config['sslrootcert'] = $ssl->ca !== null ? $this->certificates->resolve($ssl->ca) : 'system';
+        }
+
+        if ($ssl->mode !== SslMode::Disable && $ssl->cert !== null && $ssl->key !== null) {
+            $config['sslcert'] = $this->certificates->resolve($ssl->cert);
+            $config['sslkey'] = $this->certificates->resolve($ssl->key);
+        }
+
+        return $config;
+    }
+
+    /**
+     * Values are strings: SqlServerConnector interpolates them into the DSN, where false renders empty.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function applySqlsrvTls(array $config, SslConfig $ssl): array
+    {
+        if ($ssl->mode === SslMode::Disable) {
+            $config['encrypt'] = 'no';
+
+            return $config;
+        }
+
+        $config['encrypt'] = 'yes';
+        $config['trust_server_certificate'] = $ssl->mode === SslMode::Require ? 'yes' : 'no';
+
+        return $config;
     }
 }
