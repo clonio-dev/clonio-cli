@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\ConnectionData;
+use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Storage;
 
 beforeEach(function (): void {
     config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
@@ -29,6 +32,27 @@ function fakeConfigReadOnly(): ConfigService
     return $mock;
 }
 
+/** Config mock that asserts the saved connection matches $check. */
+function fakeConfigExpecting(Closure $check): ConfigService
+{
+    $mock = Mockery::mock(ConfigService::class);
+    $mock->shouldReceive('hasConnection')->andReturn(false);
+    $mock->shouldReceive('setConnection')->once()->withArgs(
+        static fn (string $name, ConnectionData $data): bool => (bool) $check($data)
+    );
+
+    return $mock;
+}
+
+/** @return array<string, string> */
+function mysqlFlags(): array
+{
+    return [
+        'name' => 'my_db', '--type' => 'mysql', '--host' => 'db.example.com', '--port' => '3306',
+        '--database' => 'mydb', '--username' => 'root', '--password' => 'secret',
+    ];
+}
+
 it('successfully adds a MySQL connection with all options provided via flags', function (): void {
     $this->app->instance(ConfigService::class, fakeConfig());
 
@@ -41,6 +65,8 @@ it('successfully adds a MySQL connection with all options provided via flags', f
         '--username' => 'root',
         '--password' => 'secret',
     ])
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -162,6 +188,8 @@ it('cancels when the user declines the save confirmation', function (): void {
         '--username' => 'root',
         '--password' => 'secret',
     ])
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'no')
         ->expectsOutputToContain('Cancelled.')
@@ -179,6 +207,8 @@ it('prompts interactively for every MySQL field when no flags are given', functi
         ->expectsQuestion('Database name', 'mydb')
         ->expectsQuestion('Username', 'root')
         ->expectsQuestion('Password', 'secret')
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -235,14 +265,18 @@ it('prompts for the schema on a PostgreSQL connection', function (): void {
         '--password' => 'secret',
     ])
         ->expectsQuestion('Schema', 'public')
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->expectsOutputToContain('public')
         ->assertExitCode(0);
 });
 
-it('prompts for trust server certificate on a SQL Server connection', function (): void {
-    $this->app->instance(ConfigService::class, fakeConfig());
+it('prompts for transport security on a SQL Server connection without asking for files', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Verify
+    ));
 
     $this->artisan('connection:add', [
         'name' => 'mssql_db',
@@ -253,10 +287,10 @@ it('prompts for trust server certificate on a SQL Server connection', function (
         '--username' => 'sa',
         '--password' => 'secret',
     ])
-        ->expectsConfirmation('Trust server certificate? (required for self-signed certs)', 'yes')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
-        ->expectsOutputToContain('Trust certificate')
+        ->expectsOutputToContain('Transport security')
         ->assertExitCode(0);
 });
 
@@ -273,6 +307,8 @@ it('shows a production warning when the connection is marked production', functi
         '--password' => 'secret',
         '--production' => true,
     ])
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsOutputToContain('This connection is marked as production.')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -326,8 +362,166 @@ it('returns an IO error when persisting the connection throws', function (): voi
         '--username' => 'root',
         '--password' => 'secret',
     ])
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->expectsOutputToContain('Failed to save connection: disk full')
         ->assertExitCode(5);
+});
+
+it('defaults new network connections to require without interaction', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Require && ! $d->ssl->hasCertificateFiles()
+    ));
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--no-interaction' => true])
+        ->assertExitCode(0);
+});
+
+it('offers the transport modes in order', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Disable
+    ));
+
+    $this->artisan('connection:add', mysqlFlags())
+        ->expectsChoice('Transport security', 'Disable (plaintext)', [
+            'Require (encrypted, not verified)',
+            'Verify (encrypted + certificate check)',
+            'Disable (plaintext)',
+            'Driver default',
+        ])
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('stores no ssl block when Driver default is chosen', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl === null
+    ));
+
+    $this->artisan('connection:add', mysqlFlags())
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('creates a verify connection fully non-interactively', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Verify && $d->ssl->ca === 'certs/ca.pem'
+    ));
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-mode' => 'verify', '--ssl-ca' => 'certs/ca.pem', '--no-interaction' => true])
+        ->assertExitCode(0);
+});
+
+it('asks for the CA when verify is chosen interactively', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->ca === 'certs/ca.pem'
+    ));
+
+    $this->artisan('connection:add', mysqlFlags())
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path (leave empty for none)', 'certs/ca.pem')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsOutputToContain('CA certificate')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('asks for client certificate and key when mutual TLS is confirmed', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('c.pem', 'x');
+    Storage::disk('local')->put('k.pem', 'x');
+    chmod(Storage::disk('local')->path('k.pem'), 0600);
+
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->cert === 'c.pem' && $d->ssl->key === 'k.pem'
+    ));
+
+    $this->artisan('connection:add', mysqlFlags())
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'yes')
+        ->expectsQuestion('Client certificate path (leave empty for none)', 'c.pem')
+        ->expectsQuestion('Client key path (leave empty for none)', 'k.pem')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('warns when the client key is readable by others', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('c.pem', 'x');
+    Storage::disk('local')->put('k.pem', 'x');
+    chmod(Storage::disk('local')->path('k.pem'), 0644);
+
+    $this->app->instance(ConfigService::class, fakeConfig());
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-mode' => 'require', '--ssl-cert' => 'c.pem', '--ssl-key' => 'k.pem', '--no-interaction' => true])
+        ->expectsOutputToContain('chmod 600')
+        ->assertExitCode(0);
+})->skipOnWindows();
+
+it('rejects an unknown ssl mode', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-mode' => 'prefer'])
+        ->expectsOutputToContain("Unknown ssl mode: 'prefer'. Valid modes: require, verify, disable.")
+        ->assertExitCode(4);
+});
+
+it('rejects ssl options on sqlite', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', ['name' => 'local', '--type' => 'sqlite', '--database' => '/tmp/a.db', '--ssl-mode' => 'require'])
+        ->expectsOutputToContain('ssl is only supported for network connections')
+        ->assertExitCode(4);
+});
+
+it('rejects certificate paths on sqlsrv', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', [
+        'name' => 'mssql', '--type' => 'sqlsrv', '--host' => 'h', '--port' => '1433', '--database' => 'd',
+        '--username' => 'sa', '--password' => 'p', '--ssl-mode' => 'verify', '--ssl-ca' => 'ca.pem',
+    ])
+        ->expectsOutputToContain('sqlsrv uses the system trust store; certificate paths are not supported')
+        ->assertExitCode(4);
+});
+
+it('rejects verify without a CA on mysql', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-mode' => 'verify', '--no-interaction' => true])
+        ->expectsOutputToContain('mode verify requires a CA certificate for MySQL/MariaDB')
+        ->assertExitCode(4);
+});
+
+it('rejects a CA file that does not exist, showing the resolved path', function (): void {
+    Storage::fake('local');
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-mode' => 'verify', '--ssl-ca' => 'certs/missing.pem'])
+        ->expectsOutputToContain(Storage::disk('local')->path('certs/missing.pem'))
+        ->assertExitCode(4);
+});
+
+it('treats --trust-server-certificate as a deprecated alias for require on sqlsrv', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Require && $d->trustServerCertificate === false
+    ));
+
+    $this->artisan('connection:add', [
+        'name' => 'mssql', '--type' => 'sqlsrv', '--host' => 'h', '--port' => '1433', '--database' => 'd',
+        '--username' => 'sa', '--password' => 'p', '--trust-server-certificate' => true, '--no-interaction' => true,
+    ])->assertExitCode(0);
 });

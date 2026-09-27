@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Commands\Connection;
 
+use App\Commands\Connection\Concerns\PromptsForSsl;
 use App\Data\ConnectionData;
+use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
+use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
 use Illuminate\Support\Facades\Crypt;
 use LaravelZero\Framework\Commands\Command;
@@ -15,6 +18,8 @@ use Throwable;
 
 class AddCommand extends Command
 {
+    use PromptsForSsl;
+
     /**
      * @var string
      */
@@ -29,7 +34,11 @@ class AddCommand extends Command
         {--username= : Database username}
         {--password= : Database password}
         {--production : Mark this as a production connection}
-        {--trust-server-certificate : Trust the server certificate (SQL Server with self-signed certs)}';
+        {--ssl-mode= : Transport security — disable|require|verify (network drivers only, default: require)}
+        {--ssl-ca= : Path to CA certificate (PEM), used with --ssl-mode=verify}
+        {--ssl-cert= : Path to client certificate (PEM, mutual TLS)}
+        {--ssl-key= : Path to client private key (PEM, mutual TLS)}
+        {--trust-server-certificate : Deprecated — alias for --ssl-mode=require (SQL Server)}';
 
     /**
      * @var string
@@ -216,21 +225,66 @@ class AddCommand extends Command
             }
         }
 
-        // --- Step 9: Trust server certificate (SQL Server only) ---
-        $trustServerCertificate = false;
+        // --- Step 9: Transport security (network drivers only) ---
+        $ssl = null;
+        $sslModeValue = $this->stringOption('ssl-mode');
+        $sslCa = $this->stringOption('ssl-ca');
+        $sslCert = $this->stringOption('ssl-cert');
+        $sslKey = $this->stringOption('ssl-key');
+        $hasSslFileOptions = $sslCa !== null || $sslCert !== null || $sslKey !== null;
 
-        if ($type === DatabaseConnectionType::SqlServer) {
-            $trustServerCertificate = (bool) $this->option('trust-server-certificate');
+        if (! $type->requiresNetworkConfig()) {
+            if ($sslModeValue !== null || $hasSslFileOptions) {
+                $this->error('ssl is only supported for network connections');
 
-            if (! $trustServerCertificate) {
-                $trustServerCertificate = $this->confirm('Trust server certificate? (required for self-signed certs)', false);
+                return ExitCode::ValidationError->value;
             }
+        } else {
+            if ($sslModeValue === null && $type === DatabaseConnectionType::SqlServer && (bool) $this->option('trust-server-certificate')) {
+                $sslModeValue = SslMode::Require->value;
+            }
+
+            if ($sslModeValue !== null) {
+                $mode = SslMode::tryFrom($sslModeValue);
+
+                if (! $mode instanceof SslMode) {
+                    $this->error(sprintf("Unknown ssl mode: '%s'. Valid modes: %s.", $sslModeValue, implode(', ', SslMode::values())));
+
+                    return ExitCode::ValidationError->value;
+                }
+
+                $ssl = new SslConfig($mode, $sslCa, $sslCert, $sslKey);
+            } else {
+                $mode = $this->askSslMode(SslMode::Require);
+
+                if ($mode instanceof SslMode) {
+                    $ssl = $hasSslFileOptions
+                        ? new SslConfig($mode, $sslCa, $sslCert, $sslKey)
+                        : $this->askSslFiles($type, $mode, null);
+                } elseif ($hasSslFileOptions) {
+                    $this->error('certificate files require mode require or verify');
+
+                    return ExitCode::ValidationError->value;
+                }
+            }
+
+            $sslErrors = $this->sslErrors($type, $ssl);
+
+            if ($sslErrors !== []) {
+                foreach ($sslErrors as $sslError) {
+                    $this->error($sslError);
+                }
+
+                return ExitCode::ValidationError->value;
+            }
+
+            $this->warnIfKeyExposed($ssl);
         }
 
         // --- Step 10: Production flag ---
         $isProduction = (bool) $this->option('production');
 
-        if (! $isProduction) {
+        if (! $isProduction && $this->input->isInteractive()) {
             $isProduction = $this->confirm('Is this a production connection?', false);
         }
 
@@ -273,8 +327,20 @@ class AddCommand extends Command
             $summaryRows[] = ['Password', '••••••••'];
         }
 
-        if ($type === DatabaseConnectionType::SqlServer) {
-            $summaryRows[] = ['Trust certificate', $trustServerCertificate ? 'Yes' : 'No'];
+        if ($type->requiresNetworkConfig()) {
+            $summaryRows[] = ['Transport security', $ssl instanceof SslConfig ? $ssl->mode->label() : 'Driver default'];
+
+            if ($ssl instanceof SslConfig && $ssl->ca !== null) {
+                $summaryRows[] = ['CA certificate', $ssl->ca];
+            }
+
+            if ($ssl instanceof SslConfig && $ssl->cert !== null) {
+                $summaryRows[] = ['Client certificate', $ssl->cert];
+            }
+
+            if ($ssl instanceof SslConfig && $ssl->key !== null) {
+                $summaryRows[] = ['Client key', $ssl->key];
+            }
         }
 
         if ($type === DatabaseConnectionType::Dump) {
@@ -286,7 +352,7 @@ class AddCommand extends Command
         $this->table(['Field', 'Value'], $summaryRows);
 
         // --- Confirm save ---
-        if (! $this->confirm('Save this connection?', true)) {
+        if ($this->input->isInteractive() && ! $this->confirm('Save this connection?', true)) {
             $this->line('Cancelled.');
 
             return ExitCode::Success->value;
@@ -303,8 +369,8 @@ class AddCommand extends Command
             username: $username,
             password: $encryptedPassword,
             isProduction: $isProduction,
-            trustServerCertificate: $trustServerCertificate,
             dialect: $dialect,
+            ssl: $ssl,
         );
 
         try {
@@ -318,5 +384,12 @@ class AddCommand extends Command
         $this->info(sprintf("Connection '%s' added successfully.", $name));
 
         return ExitCode::Success->value;
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }
