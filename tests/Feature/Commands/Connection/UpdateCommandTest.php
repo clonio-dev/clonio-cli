@@ -446,6 +446,59 @@ it('keeps a stored CA on Enter', function (): void {
         ->assertExitCode(0);
 });
 
+it('keeps a stored CA and verify mode under --no-interaction, asking nothing', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig(
+        $current,
+        static fn (ConnectionData $d): bool => $d->ssl instanceof SslConfig
+            && $d->ssl->mode === SslMode::Verify
+            && $d->ssl->ca === 'certs/ca.pem'
+    ));
+
+    $this->artisan('connection:update', ['name' => 'staging', '--no-interaction' => true])
+        ->doesntExpectOutputToContain('CA certificate path')
+        ->assertExitCode(0);
+});
+
+it('preserves a non-null dialect across an update', function (): void {
+    $current = new ConnectionData(
+        name: 'dump-target',
+        type: DatabaseConnectionType::Dump,
+        host: null,
+        port: null,
+        database: '/tmp/out.sql',
+        schema: null,
+        username: null,
+        password: '',
+        isProduction: false,
+        dialect: DatabaseConnectionType::Mysql,
+    );
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['dump-target' => $current]);
+    $config->shouldReceive('getConnection')->with('dump-target')->andReturn($current);
+    $config->shouldReceive('hasConnection')->with('dump-target')->andReturn(true);
+    $config->shouldReceive('setConnection')
+        ->once()
+        ->withArgs(function (string $name, ConnectionData $data): bool {
+            return $data->dialect === DatabaseConnectionType::Mysql;
+        });
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update', ['name' => 'dump-target'])
+        ->expectsQuestion('Connection name', 'dump-target')
+        ->expectsQuestion('Database driver', 'dump')
+        ->expectsQuestion('Database file path', '/tmp/out.sql')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
 it('removes a stored CA on "none" and shows it in the diff (pgsql verify without CA is valid)', function (): void {
     Storage::fake('local');
     Storage::disk('local')->put('certs/ca.pem', 'x');

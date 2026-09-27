@@ -70,7 +70,9 @@ class UpdateCommand extends Command
 
         $this->showDiff($current, $updated);
 
-        if (! $this->confirm('Save changes?', true)) {
+        $save = $this->input->isInteractive() ? $this->confirm('Save changes?', true) : true;
+
+        if (! $save) {
             $this->info('No changes saved.');
 
             return ExitCode::Success->value;
@@ -126,12 +128,18 @@ class UpdateCommand extends Command
 
         $typeValues = DatabaseConnectionType::values();
         $currentTypeIndex = array_search($current->type->value, $typeValues, true);
-        $selectedDriver = $this->choice(
-            'Database driver',
-            $typeValues,
-            $currentTypeIndex !== false ? (int) $currentTypeIndex : 0,
-        );
-        $newTypeValue = is_string($selectedDriver) ? $selectedDriver : $current->type->value;
+
+        if ($this->input->isInteractive()) {
+            $selectedDriver = $this->choice(
+                'Database driver',
+                $typeValues,
+                $currentTypeIndex !== false ? (int) $currentTypeIndex : 0,
+            );
+            $newTypeValue = is_string($selectedDriver) ? $selectedDriver : $current->type->value;
+        } else {
+            $newTypeValue = $current->type->value;
+        }
+
         $newType = DatabaseConnectionType::from($newTypeValue);
         $typeChanged = $newType !== $current->type;
 
@@ -175,7 +183,9 @@ class UpdateCommand extends Command
 
         $ssl = $newType->requiresNetworkConfig() ? $this->promptForSsl($current, $newType) : null;
 
-        $isProduction = $this->confirm('Is this a production connection?', $current->isProduction);
+        $isProduction = $this->input->isInteractive()
+            ? $this->confirm('Is this a production connection?', $current->isProduction)
+            : $current->isProduction;
 
         return new ConnectionData(
             name: $newName,
@@ -221,6 +231,10 @@ class UpdateCommand extends Command
 
     private function askString(string $question, string $default): string
     {
+        if (! $this->input->isInteractive()) {
+            return $default;
+        }
+
         $answer = $this->ask($question, $default !== '' ? $default : null);
 
         return is_string($answer) ? $answer : $default;
