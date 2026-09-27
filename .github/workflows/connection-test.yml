@@ -91,7 +91,7 @@ jobs:
           php clonio connection:add postgres-test \
             --type=pgsql --host=127.0.0.1 --port=5432 \
             --database=clonio_test --username=postgres --password=secret \
-            --schema=public --no-interaction
+            --schema=public --ssl-mode=disable --no-interaction
 
           php clonio connection:add sqlite-test \
             --type=sqlite --database=/tmp/clonio_test.sqlite \

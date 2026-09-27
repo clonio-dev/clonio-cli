@@ -223,7 +223,7 @@ jobs:
             php clonio connection:add source \
               --type=pgsql --host=127.0.0.1 --port=5432 \
               --database=${{ matrix.source_db }} --username=postgres --password=secret \
-              --schema=public --no-interaction
+              --schema=public --ssl-mode=disable --no-interaction
           elif [ "${{ matrix.source }}" = "sqlite" ]; then
             php clonio connection:add source \
               --type=sqlite --database=${{ matrix.source_db }} \
@@ -251,7 +251,7 @@ jobs:
             php clonio connection:add target \
               --type=pgsql --host=127.0.0.1 --port=5432 \
               --database=${{ matrix.target_db }} --username=postgres --password=secret \
-              --schema=public --no-interaction
+              --schema=public --ssl-mode=disable --no-interaction
           elif [ "${{ matrix.target }}" = "sqlite" ]; then
             php clonio connection:add target \
               --type=sqlite --database=${{ matrix.target_db }} \

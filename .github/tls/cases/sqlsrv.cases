@@ -1,0 +1,20 @@
+# posture      case                  expected    (PRD-connection-tls §10.1 — keep in sync; no cipher query for sqlsrv)
+self-signed    absent                F:ver
+tls            absent                OK
+tls-required   absent                OK
+self-signed    legacy-trust          OK
+tls            legacy-trust          OK
+tls-required   legacy-trust          OK
+self-signed    disable               OK
+tls            disable               OK
+# † from Microsoft's ODBC 18 encryption table, not from the spike. If CI disagrees, fix spec + docs, never this row alone.
+tls-required   disable               OK
+self-signed    require               OK
+tls            require               OK
+tls-required   require               OK
+self-signed    verify                F:ver
+tls            verify                OK
+tls-required   verify                OK
+self-signed    verify-host-mismatch  F:ver
+tls            verify-host-mismatch  F:host
+tls-required   verify-host-mismatch  F:host

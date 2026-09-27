@@ -1,0 +1,81 @@
+name: connection TLS matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # PRD-connection-tls §10.1: every driver × server posture × client configuration against a real server.
+  tls-matrix:
+    name: TLS ${{ matrix.driver }} / ${{ matrix.posture }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { driver: mysql, posture: plain, extensions: pdo_mysql }
+          - { driver: mysql, posture: tls, extensions: pdo_mysql }
+          - { driver: mysql, posture: tls-required, extensions: pdo_mysql }
+          - { driver: mysql, posture: mtls-required, extensions: pdo_mysql }
+          - { driver: mariadb, posture: plain, extensions: pdo_mysql }
+          - { driver: mariadb, posture: tls, extensions: pdo_mysql }
+          - { driver: mariadb, posture: tls-required, extensions: pdo_mysql }
+          - { driver: mariadb, posture: mtls-required, extensions: pdo_mysql }
+          - { driver: pgsql, posture: plain, extensions: pdo_pgsql }
+          - { driver: pgsql, posture: tls, extensions: pdo_pgsql }
+          - { driver: pgsql, posture: tls-required, extensions: pdo_pgsql }
+          - { driver: pgsql, posture: mtls-required, extensions: pdo_pgsql }
+          - { driver: sqlsrv, posture: self-signed, extensions: "sqlsrv, pdo_sqlsrv" }
+          - { driver: sqlsrv, posture: tls, extensions: "sqlsrv, pdo_sqlsrv" }
+          - { driver: sqlsrv, posture: tls-required, extensions: "sqlsrv, pdo_sqlsrv" }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Microsoft ODBC Driver 18
+        if: matrix.driver == 'sqlsrv'
+        run: |
+          curl -sSL -O "https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:v2
+          extensions: ${{ matrix.extensions }}
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Generate APP_KEY
+        run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
+
+      - name: Generate test PKI
+        run: bash .github/tls/make-certs.sh certs
+
+      - name: Start ${{ matrix.driver }} (${{ matrix.posture }})
+        run: bash .github/tls/start-server.sh ${{ matrix.driver }} ${{ matrix.posture }} certs
+
+      - name: Run cases
+        run: bash .github/tls/run-matrix.sh ${{ matrix.driver }} ${{ matrix.posture }} certs
+
+      - name: Show clonio.json and server log on failure
+        if: failure()
+        run: |
+          cat clonio.json 2>/dev/null || echo "clonio.json not found"
+          docker logs clonio-tls-db 2>&1 | tail -100
