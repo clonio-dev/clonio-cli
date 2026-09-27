@@ -11,6 +11,7 @@ jobs:
   tls-matrix:
     name: TLS ${{ matrix.driver }} / ${{ matrix.posture }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false

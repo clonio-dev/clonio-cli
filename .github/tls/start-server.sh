@@ -113,7 +113,7 @@ case "$driver" in
         printf '[network]\ntlscert = /certs/server.pem\ntlskey = /certs/server-key.pem\ntlsprotocols = 1.2\nforceencryption = %s\n' \
           "$force" > "$conf/mssql.conf"
         chmod 644 "$conf/mssql.conf"
-        "${run[@]}" -v "$certs:/certs:ro" -v "$conf/mssql.conf:/var/opt/mssql/mssql.conf:ro" "$image"
+        "${run[@]}" -v "$certs:/certs:ro" -v "$conf/mssql.conf:/var/opt/mssql/mssql.conf" "$image"
 
         # The sqlsrv `verify` mode (and ODBC 18's default) use the OS trust store (§5.3).
         sudo cp "$certs/ca.pem" /usr/local/share/ca-certificates/clonio-test-ca.crt
@@ -124,6 +124,25 @@ case "$driver" in
 
     wait_for "SQL Server" docker exec "$name" /opt/mssql-tools18/bin/sqlcmd \
       -S localhost -U sa -P 'Clonio@Strong1' -Q 'SELECT 1' -b -C
+
+    if [ "$posture" != self-signed ]; then
+      # Without this check a rejected test cert silently falls back to the self-generated one and the
+      # matrix would test the wrong posture. SQL Server 2022 logs:
+      #   The certificate [Certificate File:'/certs/server.pem', Private Key File:'/certs/server-key.pem'] was successfully loaded for encryption.
+      loaded=0
+      for _ in $(seq 1 15); do
+        if docker logs "$name" 2>&1 | grep -F "Certificate File:'/certs/server.pem'" | grep -qF 'successfully loaded for encryption'; then
+          loaded=1
+          break
+        fi
+        sleep 2
+      done
+      if [ "$loaded" -ne 1 ]; then
+        echo "SQL Server did not load /certs/server.pem for encryption" >&2
+        docker logs "$name" 2>&1 | tail -80 >&2
+        exit 1
+      fi
+    fi
     ;;
 
   *)

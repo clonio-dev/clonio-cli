@@ -24,16 +24,16 @@ fi
 
 case "$driver" in
   mysql | mariadb)
-    family=mysql host=127.0.0.1 port="${CLONIO_TLS_PORT:-3306}"
+    family=mysql drivers="mysql mariadb" host=127.0.0.1 port="${CLONIO_TLS_PORT:-3306}"
     db=(--database=clonio_test --username=root --password=secret)
     ;;
   pgsql)
-    family=pgsql host=127.0.0.1 port="${CLONIO_TLS_PORT:-5432}"
+    family=pgsql drivers=pgsql host=127.0.0.1 port="${CLONIO_TLS_PORT:-5432}"
     db=(--database=clonio_test --username=postgres --password=secret --schema=public)
     ;;
   sqlsrv)
     # localhost rather than 127.0.0.1: DNS SANs are matched by every TLS stack, IP SANs not necessarily by ODBC.
-    family=sqlsrv host=localhost port="${CLONIO_TLS_PORT:-1433}"
+    family=sqlsrv drivers=sqlsrv host=localhost port="${CLONIO_TLS_PORT:-1433}"
     db=(--database=master --username=sa --password=Clonio@Strong1)
     ;;
   *)
@@ -54,15 +54,17 @@ fi
 add() { # add <name> <host> [options...]
   local name="$1" dial="$2"
   shift 2
-  php clonio connection:add "$name" --type="$driver" --host="$dial" --port="$port" "${db[@]}" "$@" --no-interaction
+  php clonio connection:add "$name" --type="$driver" --host="$dial" --port="$port" "${db[@]}" "$@" --no-interaction </dev/null
 }
 
 # Rewrites one connection in clonio.json, keeping the file's permissions.
 edit_json() { # edit_json <jq filter> <name>
-  local tmp
+  local tmp rc
   tmp="$(mktemp)"
   jq --arg n "$2" "$1" clonio.json > "$tmp" && cat "$tmp" > clonio.json
+  rc=$?
   rm -f "$tmp"
+  return "$rc"
 }
 
 # shellcheck disable=SC2016 # $n in the jq filters is a jq variable, not a shell one
@@ -111,6 +113,13 @@ while read -r case expected override; do
       echo "malformed override '$override' in $family.cases (want <driver>=<expected>)" >&2
       exit 2
     fi
+    case " $drivers " in
+      *" ${override%%=*} "*) ;;
+      *)
+        echo "override '$override' in $family.cases names a driver outside the family ($drivers)" >&2
+        exit 2
+        ;;
+    esac
     if [ "${override%%=*}" = "$driver" ]; then
       expected="${override#*=}"
     fi
@@ -118,14 +127,15 @@ while read -r case expected override; do
   name="tls-$case"
   echo "::group::$driver / $posture / $case (expect $expected)"
 
+  # A failed setup (connection:add or the jq rewrite) counts as a failed row, never as a skip.
   if ! setup_case "$case" "$name"; then
     echo "::endgroup::"
-    echo "::error::$driver/$posture/$case: connection:add failed"
+    echo "::error::$driver/$posture/$case: setup failed (connection:add or clonio.json edit)"
     failures=$((failures + 1))
     continue
   fi
 
-  out="$(php clonio connection:test "$name" -v 2>&1)"
+  out="$(php clonio connection:test "$name" -v 2>&1 </dev/null)"
   code=$?
   printf '%s\nexit code: %s\n' "$out" "$code"
 
