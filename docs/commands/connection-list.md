@@ -14,13 +14,13 @@ clonio connection:list
 2. If connections exist, they are displayed in a table with the following columns:
 
 ```
- ────────────┬────────────┬──────────────────┬────────────┬────────────
-  Name         Driver       Host               Database     Production
- ────────────┼────────────┼──────────────────┼────────────┼────────────
-  local        sqlite       —                  local.db     No
-  staging      mysql        staging.db:3306    myapp        No
-  prod         pgsql        db.example.com     myapp        Yes
- ────────────┴────────────┴──────────────────┴────────────┴────────────
+ ────────────┬────────────┬──────────────────┬────────────┬────────────┬────────────
+  Name         Driver       Host               Database     TLS          Production
+ ────────────┼────────────┼──────────────────┼────────────┼────────────┼────────────
+  local        sqlite       —                  local.db     —            No
+  staging      mysql        staging.db:3306    myapp        require      No
+  prod         pgsql        db.example.com     myapp        verify       Yes
+ ────────────┴────────────┴──────────────────┴────────────┴────────────┴────────────
 ```
 
 ### Columns
@@ -31,6 +31,7 @@ clonio connection:list
 | **Driver** | Database driver (`sqlite`, `mysql`, `mariadb`, `pgsql`, `sqlsrv`) |
 | **Host** | Host and port (e.g. `db.example.com:3306`). Shown as `—` for SQLite connections |
 | **Database** | Database name or file path. Shown as `—` if not set |
+| **TLS** | Transport security mode: `default` (no `ssl` set), `disable`, `require`, `verify`. `—` for SQLite and dump |
 | **Production** | `Yes` if the connection is marked as production, `No` otherwise |
 
 ## Options

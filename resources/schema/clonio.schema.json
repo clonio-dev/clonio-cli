@@ -123,6 +123,27 @@
                 "type": "boolean",
                 "description": "Whether this is a production database.",
                 "default": false
+              },
+              "trust_server_certificate": {
+                "type": "boolean",
+                "description": "Deprecated (SQL Server). Use ssl.mode = require instead. Ignored when ssl is set."
+              },
+              "ssl": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mode"],
+                "description": "Transport security (TLS) for this connection. Absent = driver default.",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": ["disable", "require", "verify"],
+                    "description": "disable = plaintext; require = encrypted, certificate not verified; verify = encrypted, CA and hostname verified."
+                  },
+                  "ca": { "type": "string", "description": "Path to the CA certificate (PEM). Only with mode verify. Relative paths resolve against the working directory." },
+                  "cert": { "type": "string", "description": "Path to the client certificate (PEM) for mutual TLS." },
+                  "key": { "type": "string", "description": "Path to the client private key (PEM) for mutual TLS." }
+                },
+                "dependentRequired": { "cert": ["key"], "key": ["cert"] }
               }
             }
           }
@@ -140,7 +161,9 @@
         "schema": { "type": "string" },
         "username": { "type": "string" },
         "password": { "type": "string" },
-        "is_production": { "type": "boolean" }
+        "is_production": { "type": "boolean" },
+        "trust_server_certificate": { "type": "boolean" },
+        "ssl": { "type": "object" }
       }
     },
     "piiClass": {
