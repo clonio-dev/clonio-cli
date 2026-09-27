@@ -26,6 +26,22 @@ function makeMysqlConnection(string $name = 'staging', string $password = 'secre
     );
 }
 
+function makePgsqlConnection(string $name = 'prod', ?SslConfig $ssl = null): ConnectionData
+{
+    return new ConnectionData(
+        name: $name,
+        type: DatabaseConnectionType::PostgreSQL,
+        host: 'db',
+        port: 5432,
+        database: 'app',
+        schema: 'public',
+        username: 'root',
+        password: 'secret',
+        isProduction: false,
+        ssl: $ssl,
+    );
+}
+
 function makeSqliteConnection(string $name = 'local', string $path = ''): ConnectionData
 {
     return new ConnectionData(
@@ -341,4 +357,92 @@ it('fails with exit 3 before connecting when a certificate file is missing', fun
     $this->artisan('connection:test', ['name' => 'staging'])
         ->expectsOutputToContain('Certificate file not found:')
         ->assertExitCode(ExitCode::ConnectionError->value);
+});
+
+it('shows a TLS column with the configured mode for each connection in the overview table', function (): void {
+    $mysqlWithSsl = new ConnectionData(
+        name: 'staging', type: DatabaseConnectionType::Mysql, host: 'localhost', port: 3306, database: 'mydb',
+        schema: null, username: 'root', password: 'secret', isProduction: false, ssl: new SslConfig(SslMode::Require),
+    );
+    $pgsql = makePgsqlConnection('prod');
+    $sqlite = makeSqliteConnection('local', __FILE__);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $mysqlWithSsl,
+        'prod' => $pgsql,
+        'local' => $sqlite,
+    ]);
+    $this->app->instance(ConfigService::class, $config);
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(Mockery::mock(PDO::class));
+    DB::shouldReceive('purge');
+
+    $this->artisan('connection:test')
+        ->expectsOutputToContain('TLS')
+        ->expectsOutputToContain('require')
+        ->expectsOutputToContain('default')
+        ->expectsOutputToContain('—')
+        ->doesntExpectOutputToContain('Cipher')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('shows a Cipher column with the negotiated cipher under -v, and does not query it otherwise', function (): void {
+    $mysql = makeMysqlConnection('staging');
+    $sqlite = makeSqliteConnection('local', __FILE__);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $mysql,
+        'local' => $sqlite,
+    ]);
+    $this->app->instance(ConfigService::class, $config);
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(Mockery::mock(PDO::class));
+    DB::shouldReceive('selectOne')->once()->andReturn((object) ['Variable_name' => 'Ssl_cipher', 'Value' => 'TLS_AES_256_GCM_SHA384']);
+    DB::shouldReceive('purge');
+
+    $this->artisan('connection:test', ['-v' => true])
+        ->expectsOutputToContain('Cipher')
+        ->expectsOutputToContain('TLS_AES_256_GCM_SHA384')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('does not query the negotiated cipher for the overview table without -v', function (): void {
+    $mysql = makeMysqlConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $mysql,
+    ]);
+    $this->app->instance(ConfigService::class, $config);
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(Mockery::mock(PDO::class));
+    DB::shouldReceive('selectOne')->never();
+    DB::shouldReceive('purge');
+
+    $this->artisan('connection:test')
+        ->doesntExpectOutputToContain('Cipher')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('does not query the negotiated cipher for the overview table in --ci -v mode', function (): void {
+    $mysql = makeMysqlConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $mysql,
+    ]);
+    $this->app->instance(ConfigService::class, $config);
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(Mockery::mock(PDO::class));
+    DB::shouldReceive('selectOne')->never();
+    DB::shouldReceive('purge');
+
+    $this->artisan('connection:test', ['--ci' => true, '-v' => true])
+        ->assertExitCode(ExitCode::Success->value);
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Connection;
 
+use App\Commands\Connection\Concerns\DescribesTls;
 use App\Data\ConnectionData;
 use App\Enums\ExitCode;
 use App\Services\Config\ConfigService;
@@ -11,6 +12,8 @@ use LaravelZero\Framework\Commands\Command;
 
 class ListCommand extends Command
 {
+    use DescribesTls;
+
     /**
      * @var string
      */
@@ -39,9 +42,7 @@ class ListCommand extends Command
                 ? $connection->host.($connection->port !== null ? ':'.$connection->port : '')
                 : '—';
 
-            $tls = $connection->type->requiresNetworkConfig()
-                ? ($connection->ssl?->mode->value ?? 'default')
-                : '—';
+            $tls = $this->tlsLabel($connection);
 
             $rows[] = [
                 $name,

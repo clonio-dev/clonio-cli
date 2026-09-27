@@ -43,16 +43,20 @@ staging: FAILED — Connection refused
 When no name is given, every connection in `clonio.json` is tested and the results are displayed in a table:
 
 ```
- ────────────┬────────────┬────────┬────────
-  Connection   Driver       Status   Time
- ────────────┼────────────┼────────┼────────
-  local        SQLite       OK       1ms
-  staging      MySQL        OK       38ms
-  prod         PostgreSQL   OK       55ms
- ────────────┴────────────┴────────┴────────
+ ────────────┬────────────┬─────────┬────────┬────────
+  Connection   Driver       TLS      Status   Time
+ ────────────┼────────────┼─────────┼────────┼────────
+  local        SQLite       —        OK       1ms
+  staging      MySQL        require  OK       38ms
+  prod         PostgreSQL   default  OK       55ms
+ ────────────┴────────────┴─────────┴────────┴────────
 
 All 3 connections OK.
 ```
+
+The `TLS` column shows the configured transport mode (`default`, `disable`, `require`, `verify`), matching `connection:list`. SQLite and Dump connections show `—` since they have no network transport.
+
+With `-v`, an additional `Cipher` column shows the negotiated TLS cipher for each successful MySQL/MariaDB/PostgreSQL connection (`—` when none was negotiated or the connection isn't a network connection). The cipher is only queried when it will actually be displayed, so no extra query runs without `-v`.
 
 A summary line is always printed regardless of `--ci` mode.
 

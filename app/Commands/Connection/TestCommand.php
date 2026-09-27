@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Connection;
 
+use App\Commands\Connection\Concerns\DescribesTls;
 use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
@@ -16,6 +17,8 @@ use Throwable;
 
 class TestCommand extends Command
 {
+    use DescribesTls;
+
     /**
      * @var string
      */
@@ -50,7 +53,8 @@ class TestCommand extends Command
             return ExitCode::ConfigError->value;
         }
 
-        [$ok, $message, $elapsed, $exitCode] = $this->testConnection($connection, $connector);
+        $verbose = $this->output->isVerbose();
+        [$ok, $message, $elapsed, $exitCode, $cipher] = $this->testConnection($connection, $connector, $verbose && ! $ci);
 
         if ($ok) {
             if (! $ci) {
@@ -65,10 +69,10 @@ class TestCommand extends Command
                 } elseif ($connection->type === DatabaseConnectionType::Sqlite) {
                     $this->line(sprintf('%s: OK (%dms)', $name, $elapsed));
                 } else {
-                    $this->line(sprintf('%s: OK (%dms, tls: %s)', $name, $elapsed, $connection->ssl?->mode->value ?? 'default'));
+                    $this->line(sprintf('%s: OK (%dms, tls: %s)', $name, $elapsed, $this->tlsLabel($connection)));
 
-                    if ($message !== '') {
-                        $this->line('  '.$message);
+                    if ($cipher !== null) {
+                        $this->line('  TLS cipher: '.$cipher);
                     }
                 }
             }
@@ -91,30 +95,50 @@ class TestCommand extends Command
             return ExitCode::ConfigError->value;
         }
 
+        $verbose = $this->output->isVerbose();
+        $wantCipher = $verbose && ! $ci;
+
         $rows = [];
         $failCount = 0;
         $worstExitCode = ExitCode::Success;
 
         foreach ($connections as $name => $connection) {
-            [$ok, $message, $elapsed, $exitCode] = $this->testConnection($connection, $connector);
+            [$ok, $message, $elapsed, $exitCode, $cipher] = $this->testConnection($connection, $connector, $wantCipher);
 
             if (! $ok) {
                 $failCount++;
                 $worstExitCode = $exitCode;
             }
 
-            $rows[] = [
+            $row = [
                 'Connection' => $name,
                 'Driver' => $connection->type->label(),
-                'Status' => $ok ? 'OK' : 'FAILED — '.$message,
-                'Time' => $ok ? $elapsed.'ms' : '-',
+                'TLS' => $this->tlsLabel($connection),
             ];
+
+            if ($verbose) {
+                $row['Cipher'] = $cipher ?? '—';
+            }
+
+            $row['Status'] = $ok ? 'OK' : 'FAILED — '.$message;
+            $row['Time'] = $ok ? $elapsed.'ms' : '-';
+
+            $rows[] = $row;
         }
 
         $total = count($connections);
 
         if (! $ci) {
-            $this->table(['Connection', 'Driver', 'Status', 'Time'], $rows);
+            $headers = ['Connection', 'Driver', 'TLS'];
+
+            if ($verbose) {
+                $headers[] = 'Cipher';
+            }
+
+            $headers[] = 'Status';
+            $headers[] = 'Time';
+
+            $this->table($headers, $rows);
         } else {
             foreach ($rows as $row) {
                 if (str_starts_with($row['Status'], 'FAILED')) {
@@ -135,23 +159,26 @@ class TestCommand extends Command
     }
 
     /**
-     * Test a single connection and return [bool $ok, string $message, int $elapsedMs, ExitCode].
+     * Test a single connection and return [bool $ok, string $message, int $elapsedMs, ExitCode, ?string $cipher].
      *
-     * @return array{bool, string, int, ExitCode}
+     * $wantCipher gates the extra cipher query on network connections — callers pass true only
+     * when the negotiated cipher will actually be shown, so nothing is queried and discarded.
+     *
+     * @return array{bool, string, int, ExitCode, ?string}
      */
-    private function testConnection(ConnectionData $connection, DatabaseConnectionService $connector): array
+    private function testConnection(ConnectionData $connection, DatabaseConnectionService $connector, bool $wantCipher): array
     {
         $start = hrtime(true);
 
         if ($connection->type === DatabaseConnectionType::Dump) {
-            return $this->testDump($start);
+            return [...$this->testDump($start), null];
         }
 
         if ($connection->type === DatabaseConnectionType::Sqlite) {
-            return $this->testSqlite($connection, $start);
+            return [...$this->testSqlite($connection, $start), null];
         }
 
-        return $this->testNetwork($connection, $start, $connector);
+        return $this->testNetwork($connection, $start, $connector, $wantCipher);
     }
 
     /**
@@ -193,30 +220,31 @@ class TestCommand extends Command
     }
 
     /**
-     * On success the message carries the negotiated cipher (verbose only), or ''.
+     * On success, $cipher is the negotiated TLS cipher when $wantCipher is true and the driver
+     * reports one, otherwise null.
      *
-     * @return array{bool, string, int, ExitCode}
+     * @return array{bool, string, int, ExitCode, ?string}
      */
-    private function testNetwork(ConnectionData $connection, int $start, DatabaseConnectionService $connector): array
+    private function testNetwork(ConnectionData $connection, int $start, DatabaseConnectionService $connector, bool $wantCipher): array
     {
         try {
             $connector->resolvePassword($connection);
         } catch (RuntimeException) {
-            return [false, 'Could not decrypt password — check APP_KEY.', $this->elapsedMs($start), ExitCode::ConfigError];
+            return [false, 'Could not decrypt password — check APP_KEY.', $this->elapsedMs($start), ExitCode::ConfigError, null];
         }
 
         try {
             $dynamicName = $connector->open($connection);
         } catch (Throwable $throwable) {
-            return [false, $throwable->getMessage(), $this->elapsedMs($start), ExitCode::ConnectionError];
+            return [false, $throwable->getMessage(), $this->elapsedMs($start), ExitCode::ConnectionError, null];
         }
 
         $elapsed = $this->elapsedMs($start);
-        $cipher = $this->output->isVerbose() ? $connector->negotiatedCipher($dynamicName, $connection->type) : null;
+        $cipher = $wantCipher ? $connector->negotiatedCipher($dynamicName, $connection->type) : null;
 
         DB::purge($dynamicName);
 
-        return [true, $cipher !== null ? 'TLS cipher: '.$cipher : '', $elapsed, ExitCode::Success];
+        return [true, '', $elapsed, ExitCode::Success, $cipher];
     }
 
     private function elapsedMs(int $startNs): int
