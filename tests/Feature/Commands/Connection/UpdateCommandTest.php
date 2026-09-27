@@ -239,6 +239,49 @@ it('prompts the user to choose when multiple connections exist and no name is gi
         ->assertExitCode(0);
 });
 
+it('fails with config error when multiple connections exist, no name given, and non-interactive', function (): void {
+    $staging = makeUpdateConnection('staging');
+    $production = makeUpdateConnection('production');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'staging' => $staging,
+        'production' => $production,
+    ]);
+    $config->shouldNotReceive('setConnection');
+    $config->shouldNotReceive('renameConnection');
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update', ['--no-interaction' => true])
+        ->expectsOutputToContain('Multiple connections found; pass the connection name: clonio connection:update <name>.')
+        ->assertExitCode(2);
+});
+
+it('auto-selects the connection when only one exists and non-interactive', function (): void {
+    $connection = makeUpdateConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $connection]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $config->shouldReceive('hasConnection')->with('staging')->andReturn(true);
+    $config->shouldReceive('setConnection')->once();
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update', ['--no-interaction' => true])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
 it('uses default prompts when changing the driver type to another network database', function (): void {
     config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
 

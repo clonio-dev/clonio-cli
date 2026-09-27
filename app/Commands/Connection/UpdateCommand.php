@@ -98,6 +98,12 @@ class UpdateCommand extends Command
             return $names[0];
         }
 
+        if (! $this->input->isInteractive()) {
+            $this->error('Multiple connections found; pass the connection name: clonio connection:update <name>.');
+
+            return null;
+        }
+
         $selected = $this->choice('Which connection do you want to update?', $names);
 
         return is_string($selected) ? $selected : $names[0];

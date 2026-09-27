@@ -10,6 +10,8 @@ clonio connection:update [<name>]
 
 The `name` argument is optional. When omitted, Clonio selects the connection automatically if only one exists, or presents a choice prompt when multiple connections are configured.
 
+In non-interactive mode (`--no-interaction`), the choice prompt is unavailable: if multiple connections exist and no `name` is given, the command fails with exit code `2` instead of guessing. Pass the connection name explicitly when scripting against multiple connections.
+
 ## Interactive flow
 
 1. **Select connection** — If `name` is not provided and multiple connections exist, a choice prompt lists all connection names. If only one connection exists it is selected automatically.
