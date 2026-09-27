@@ -268,15 +268,24 @@ class DatabaseConnectionService
 
         if ($ssl->mode === SslMode::Verify) {
             // Without a CA, "system" makes libpq (>= 16) use the OS trust store instead of ~/.postgresql/root.crt.
-            $config['sslrootcert'] = $ssl->ca !== null ? $this->certificates->resolve($ssl->ca) : 'system';
+            $config['sslrootcert'] = $ssl->ca !== null ? $this->quoteLibpqPath($this->certificates->resolve($ssl->ca)) : 'system';
         }
 
         if ($ssl->mode !== SslMode::Disable && $ssl->cert !== null && $ssl->key !== null) {
-            $config['sslcert'] = $this->certificates->resolve($ssl->cert);
-            $config['sslkey'] = $this->certificates->resolve($ssl->key);
+            $config['sslcert'] = $this->quoteLibpqPath($this->certificates->resolve($ssl->cert));
+            $config['sslkey'] = $this->quoteLibpqPath($this->certificates->resolve($ssl->key));
         }
 
         return $config;
+    }
+
+    /**
+     * Quotes a value for libpq conninfo syntax so paths containing spaces or single quotes
+     * survive Laravel's unquoted `key=value` DSN interpolation (PostgresConnector::addSslOptions).
+     */
+    private function quoteLibpqPath(string $path): string
+    {
+        return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $path)."'";
     }
 
     /**

@@ -276,20 +276,22 @@ it('maps pgsql modes to sslmode', function (SslMode $mode, string $sslmode): voi
     [SslMode::Verify, 'verify-full'],
 ]);
 
-it('uses the resolved CA as sslrootcert for pgsql verify', function (): void {
+it('uses the resolved CA as a quoted sslrootcert for pgsql verify', function (): void {
     Storage::fake('local');
     Storage::disk('local')->put('certs/ca.pem', 'x');
 
     $config = (new DatabaseConnectionService(inDocker: false))
         ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem')), 'secret');
 
-    expect($config['sslrootcert'])->toBe(Storage::disk('local')->path('certs/ca.pem'));
+    $path = Storage::disk('local')->path('certs/ca.pem');
+    expect($config['sslrootcert'])->toBe("'".$path."'");
 });
 
 it('falls back to the system trust store for pgsql verify without a CA', function (): void {
     $config = (new DatabaseConnectionService(inDocker: false))
         ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify)), 'secret');
 
+    // "system" is not a path, so it is never quoted (PRD-connection-tls I2).
     expect($config['sslrootcert'])->toBe('system');
 });
 
@@ -298,6 +300,44 @@ it('never sets sslrootcert for pgsql require', function (): void {
         ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Require)), 'secret');
 
     expect($config)->not->toHaveKey('sslrootcert');
+});
+
+it('sets quoted sslcert and sslkey for pgsql mutual TLS', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    Storage::disk('local')->put('certs/client.pem', 'x');
+    Storage::disk('local')->put('certs/client.key', 'x');
+
+    $config = (new DatabaseConnectionService(inDocker: false))->buildConfig(
+        makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem', 'certs/client.pem', 'certs/client.key')),
+        'secret'
+    );
+
+    expect($config['sslcert'])->toBe("'".Storage::disk('local')->path('certs/client.pem')."'")
+        ->and($config['sslkey'])->toBe("'".Storage::disk('local')->path('certs/client.key')."'");
+});
+
+it('escapes a pgsql certificate path containing a space', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/my ca.pem', 'x');
+
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify, 'certs/my ca.pem')), 'secret');
+
+    $path = Storage::disk('local')->path('certs/my ca.pem');
+    expect($config['sslrootcert'])->toBe("'".$path."'")
+        ->and($config['sslrootcert'])->toContain(' ');
+});
+
+it('escapes a pgsql certificate path containing a single quote', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put("certs/o'brien-ca.pem", 'x');
+
+    $config = (new DatabaseConnectionService(inDocker: false))
+        ->buildConfig(makeConnection(DatabaseConnectionType::PostgreSQL, ssl: new SslConfig(SslMode::Verify, "certs/o'brien-ca.pem")), 'secret');
+
+    $path = Storage::disk('local')->path("certs/o'brien-ca.pem");
+    expect($config['sslrootcert'])->toBe("'".str_replace("'", "\\'", $path)."'");
 });
 
 it('maps sqlsrv modes to encrypt and trust_server_certificate strings', function (SslMode $mode, array $expected): void {
