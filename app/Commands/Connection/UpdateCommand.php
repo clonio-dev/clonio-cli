@@ -47,7 +47,11 @@ class UpdateCommand extends Command
 
         $updated = $this->promptForFields($current);
 
-        $sslErrors = $this->sslErrors($updated->type, $updated->ssl);
+        // Only re-check the certificate files on disk when the ssl block actually changed
+        // (M4): an unrelated field update (e.g. password) shouldn't fail because a
+        // previously-accepted certificate path is now missing.
+        $sslChanged = $current->ssl?->toArray() !== $updated->ssl?->toArray();
+        $sslErrors = $this->sslErrors($updated->type, $updated->ssl, checkFiles: $sslChanged);
 
         if ($sslErrors !== []) {
             foreach ($sslErrors as $sslError) {

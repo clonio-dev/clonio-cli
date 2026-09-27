@@ -446,6 +446,32 @@ it('keeps a stored CA on Enter', function (): void {
         ->assertExitCode(0);
 });
 
+it('updates the password of a connection whose cert file is missing, without checking it (M4)', function (): void {
+    Storage::fake('local');
+    // Deliberately not put on disk: the ssl block is unchanged, so its files must not be checked.
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig(
+        $current,
+        static fn (ConnectionData $d): bool => $d->password !== $current->password && $d->ssl?->ca === 'certs/ca.pem'
+    ));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', 'newsecret')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', '')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
 it('keeps a stored CA and verify mode under --no-interaction, asking nothing', function (): void {
     Storage::fake('local');
     Storage::disk('local')->put('certs/ca.pem', 'x');
