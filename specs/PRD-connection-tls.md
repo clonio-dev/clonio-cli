@@ -371,8 +371,8 @@ MySQL / MariaDB:
 
 | Case | plain | tls | tls-required | mtls-required |
 |---|---|---|---|---|
-| `absent` | OK−c | OK−c | F:req | F:req |
-| `disable` | OK−c | OK−c | F:req | F:req |
+| `absent` | OK−c | OK−c | F:req | MySQL F ‡ / MariaDB F:req |
+| `disable` | OK−c | OK−c | F:req | MySQL F ‡ / MariaDB F:req |
 | `require` | F:tls | OK+c | OK+c | F |
 | `verify` | F:tls | OK+c | OK+c | F |
 | `verify-wrong-ca` | F:tls | F:ver | F:ver | F:ver |
@@ -380,6 +380,8 @@ MySQL / MariaDB:
 | `require-mtls` | F:tls | OK+c | OK+c | OK+c |
 | `verify-mtls` | F:tls | OK+c | OK+c | OK+c |
 | `missing-file` | F:file | F:file | F:file | F:file |
+
+‡ MySQL 8.4 checks the account's `REQUIRE X509` before `require_secure_transport` and refuses a plaintext connection with `[1045] Access denied`, which cannot be told apart from a wrong password, so no hint is given (local rehearsal of the matrix). MariaDB 11 answers `[3159]` and gets the "server requires TLS" hint. The cases file encodes the difference as a per-driver override column (`mysql=F`).
 
 PostgreSQL (`absent` = libpq `prefer`):
 
@@ -409,7 +411,7 @@ SQL Server (no cipher query, §6.4, so `OK` only; ODBC Driver 18 defaults to `En
 
 † From Microsoft's ODBC 18 encryption table, not from the Docker spike. SQL Server forces encryption and ODBC encrypts regardless of `Encrypt=no`. The first CI run confirms this cell. If it deviates, the spec and docs are corrected; the assertion is never loosened to accept both outcomes.
 
-The matrix is data-driven. A single cases file per driver family lists `case | posture | expected` rows, and one script runs `connection:add` / `connection:test` and asserts the exit code, the required substring and the forbidden substring. Adding a posture or a case is then one row, not new workflow YAML. `F` cells without a hint assert only the exit code. The CI jobs are blocking, including SQL Server (unlike the existing optional `connection-test-mssql` job).
+The matrix is data-driven. A single cases file per driver family lists `case | posture | expected` rows, with an optional `<driver>=<expected>` column for a driver that deviates within its family (MySQL vs. MariaDB, ‡), and one script runs `connection:add` / `connection:test` and asserts the exit code, the required substring and the forbidden substring. Adding a posture or a case is then one row, not new workflow YAML. `F` cells without a hint assert only the exit code. The CI jobs are blocking, including SQL Server (unlike the existing optional `connection-test-mssql` job).
 
 ### 10.2 Documentation (clonio-docs)
 

@@ -103,8 +103,18 @@ mode_label() { # the "tls: …" value connection:test prints for a case
 total=0
 failures=0
 
-while read -r case expected; do
+while read -r case expected override; do
   total=$((total + 1))
+  # Optional 4th column "<driver>=<expected>": a per-driver deviation within a family file.
+  if [ -n "$override" ]; then
+    if [ "${override#*=}" = "$override" ]; then
+      echo "malformed override '$override' in $family.cases (want <driver>=<expected>)" >&2
+      exit 2
+    fi
+    if [ "${override%%=*}" = "$driver" ]; then
+      expected="${override#*=}"
+    fi
+  fi
   name="tls-$case"
   echo "::group::$driver / $posture / $case (expect $expected)"
 
@@ -164,7 +174,7 @@ while read -r case expected; do
     echo "::error::$driver/$posture/$case expected $expected"
     failures=$((failures + 1))
   fi
-done < <(awk -v p="$posture" '!/^#/ && NF && $1 == p { print $2, $3 }' "$here/cases/$family.cases")
+done < <(awk -v p="$posture" '!/^#/ && NF && $1 == p { print $2, $3, $4 }' "$here/cases/$family.cases")
 
 if [ "$total" -eq 0 ]; then
   echo "no cases for posture '$posture' in $family.cases" >&2

@@ -8,5 +8,7 @@
 /storage/framework/testing/*
 /storage/logs/*.log
 /clonio.json
+# TLS matrix rehearsal PKI (.github/tls/make-certs.sh certs)
+/certs
 .DS_Store
 /.worktrees

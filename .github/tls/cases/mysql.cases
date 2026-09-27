@@ -1,12 +1,15 @@
-# posture      case                  expected    (PRD-connection-tls §10.1 — keep in sync)
+# posture      case                  expected    [driver=expected]    (PRD-connection-tls §10.1 — keep in sync)
+# Shared by mysql and mariadb. The optional 4th column overrides the expectation for one driver only:
+# "mysql=F" means MySQL expects F while MariaDB keeps the base column. MySQL checks the account's
+# REQUIRE X509 before require_secure_transport and answers [1045] Access denied (§10.1 footnote ‡).
 plain          absent                OK-c
 tls            absent                OK-c
 tls-required   absent                F:req
-mtls-required  absent                F:req
+mtls-required  absent                F:req       mysql=F
 plain          disable               OK-c
 tls            disable               OK-c
 tls-required   disable               F:req
-mtls-required  disable               F:req
+mtls-required  disable               F:req       mysql=F
 plain          require               F:tls
 tls            require               OK+c
 tls-required   require               OK+c
