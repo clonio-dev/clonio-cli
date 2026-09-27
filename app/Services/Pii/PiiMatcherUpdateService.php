@@ -155,6 +155,6 @@ class PiiMatcherUpdateService
      */
     private function groupExistsInFile(array $fileGroups, string $groupKey): bool
     {
-        return array_any($fileGroups, fn ($group): bool => $group->key === $groupKey);
+        return array_any($fileGroups, fn (PiiMatcherGroupData $group): bool => $group->key === $groupKey);
     }
 }

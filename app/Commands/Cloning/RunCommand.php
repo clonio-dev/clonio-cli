@@ -128,9 +128,7 @@ class RunCommand extends Command
                 $config = $loader->load($filePath);
 
                 $content = Storage::disk('local')->get($filePath);
-                if ($content === null) {
-                    $content = (string) file_get_contents($filePath);
-                }
+                $content ??= (string) file_get_contents($filePath);
 
                 $rawData = Yaml::parse($content);
                 if (is_array($rawData)) {

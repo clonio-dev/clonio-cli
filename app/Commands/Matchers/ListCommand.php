@@ -53,9 +53,7 @@ class ListCommand extends Command
         $groupedMatchers = [];
 
         foreach ($matcherSet->matchers as $matcher) {
-            if (! isset($groupedMatchers[$matcher->group])) {
-                $groupedMatchers[$matcher->group] = [];
-            }
+            $groupedMatchers[$matcher->group] ??= [];
 
             $groupedMatchers[$matcher->group][] = $matcher;
         }

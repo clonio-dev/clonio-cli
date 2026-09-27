@@ -217,7 +217,7 @@ class DumpCommand extends Command
         if ($onlyPii) {
             $tableDumps = array_values(array_filter(
                 $tableDumps,
-                static fn (TableDumpData $t): bool => array_any($t->columns, fn ($col): bool => $col->strategy !== 'keep')
+                static fn (TableDumpData $t): bool => array_any($t->columns, fn (ColumnDumpData $col): bool => $col->strategy !== 'keep')
             ));
 
             // Also filter columns in remaining tables
