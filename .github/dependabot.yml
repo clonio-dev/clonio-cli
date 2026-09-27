@@ -1,12 +1,15 @@
 version: 2
 updates:
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    labels:
-      - "dependencies"
+    cooldown:
+      default-days: 5
+    groups:
+      github-actions:
+        patterns:
+          - '*'
 
   - package-ecosystem: "composer"
     directory: "/"
