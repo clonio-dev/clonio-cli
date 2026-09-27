@@ -30,9 +30,7 @@ final readonly class SslConfig
             return null;
         }
 
-        if (! is_array($data)) {
-            throw new InvalidArgumentException('ssl must be an object with a "mode" key.');
-        }
+        throw_unless(is_array($data), InvalidArgumentException::class, 'ssl must be an object with a "mode" key.');
 
         $rawMode = $data['mode'] ?? null;
         $mode = is_string($rawMode) ? SslMode::tryFrom($rawMode) : null;
