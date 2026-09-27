@@ -228,6 +228,7 @@ class AddCommand extends Command
         // --- Step 9: Transport security (network drivers only) ---
         $ssl = null;
         $sslModeValue = $this->stringOption('ssl-mode');
+        $sslModeGivenExplicitly = $sslModeValue !== null;
         $sslCa = $this->stringOption('ssl-ca');
         $sslCert = $this->stringOption('ssl-cert');
         $sslKey = $this->stringOption('ssl-key');
@@ -255,12 +256,13 @@ class AddCommand extends Command
 
                 $ssl = new SslConfig($mode, $sslCa, $sslCert, $sslKey);
             } else {
-                $mode = $this->askSslMode(SslMode::Require);
+                // sqlsrv verifies against the system trust store by default (ODBC Driver 18);
+                // require would weaken that, so it keeps its own default (PRD-connection-tls §6.1).
+                $defaultMode = $type === DatabaseConnectionType::SqlServer ? SslMode::Verify : SslMode::Require;
+                $mode = $this->askSslMode($defaultMode);
 
                 if ($mode instanceof SslMode) {
-                    $ssl = $hasSslFileOptions
-                        ? new SslConfig($mode, $sslCa, $sslCert, $sslKey)
-                        : $this->askSslFiles($type, $mode, null);
+                    $ssl = $this->askSslFilesForAdd($type, $mode, $sslCa, $sslCert, $sslKey);
                 } elseif ($hasSslFileOptions) {
                     $this->error('certificate files require mode require or verify');
 
@@ -268,7 +270,7 @@ class AddCommand extends Command
                 }
             }
 
-            $sslErrors = $this->sslErrors($type, $ssl);
+            $sslErrors = $this->sslErrors($type, $ssl, $sslModeGivenExplicitly);
 
             if ($sslErrors !== []) {
                 foreach ($sslErrors as $sslError) {

@@ -72,6 +72,34 @@ trait PromptsForSsl
     }
 
     /**
+     * connection:add variant of askSslFiles: prompts only for the files whose option wasn't
+     * already given on the command line (M2), instead of dropping them silently.
+     */
+    private function askSslFilesForAdd(DatabaseConnectionType $type, SslMode $mode, ?string $ca, ?string $cert, ?string $key): SslConfig
+    {
+        if ($mode === SslMode::Disable || $type === DatabaseConnectionType::SqlServer) {
+            return new SslConfig($mode, $ca, $cert, $key);
+        }
+
+        if ($mode === SslMode::Verify && $ca === null) {
+            $ca = $this->askCertificatePath('CA certificate path', null);
+        }
+
+        $wantsClientCert = $cert !== null || $key !== null;
+
+        if (! $wantsClientCert && $this->input->isInteractive()) {
+            $wantsClientCert = $this->confirm('Use a client certificate (mutual TLS)?', false);
+        }
+
+        if ($wantsClientCert) {
+            $cert ??= $this->askCertificatePath('Client certificate path', null);
+            $key ??= $this->askCertificatePath('Client key path', null);
+        }
+
+        return new SslConfig($mode, $ca, $cert, $key);
+    }
+
+    /**
      * Enter keeps $current, "none" removes it, anything else replaces it. No default is passed
      * to ask(), otherwise an empty answer could not be told apart from "keep".
      */
@@ -95,7 +123,7 @@ trait PromptsForSsl
     }
 
     /** @return list<string> */
-    private function sslErrors(DatabaseConnectionType $type, ?SslConfig $ssl): array
+    private function sslErrors(DatabaseConnectionType $type, ?SslConfig $ssl, bool $modeExplicit = true, bool $checkFiles = true): array
     {
         if (! $ssl instanceof SslConfig) {
             return [];
@@ -104,6 +132,19 @@ trait PromptsForSsl
         $errors = $ssl->violations($type);
 
         if ($errors !== []) {
+            if (! $modeExplicit) {
+                return array_map(
+                    static fn (string $error): string => $error === 'a CA certificate is only used with mode verify'
+                        ? $error.' (pass --ssl-mode=verify)'
+                        : $error,
+                    $errors
+                );
+            }
+
+            return $errors;
+        }
+
+        if (! $checkFiles) {
             return $errors;
         }
 

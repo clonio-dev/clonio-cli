@@ -22,7 +22,7 @@ When run without flags the command walks through each field in order:
 6. **Schema** — Schema name (default: `public`). PostgreSQL only.
 7. **Username** — Database user. Skipped for SQLite.
 8. **Password** — Entered via a masked prompt. Skipped for SQLite.
-9. **Transport security** — Network drivers only. `Require (encrypted, not verified)` (default), `Verify (encrypted + certificate check)`, `Disable (plaintext)` or `Driver default`. With `Verify`, a CA certificate path is asked (not for SQL Server). With `Require`/`Verify`, you can add a client certificate and key for mutual TLS.
+9. **Transport security** — Network drivers only. `Require (encrypted, not verified)`, `Verify (encrypted + certificate check)`, `Disable (plaintext)` or `Driver default`. Default is `Require`, except SQL Server which defaults to `Verify` (ODBC Driver 18 already verifies by default; `require` would weaken it). With `Verify`, a CA certificate path is asked (not for SQL Server). With `Require`/`Verify`, you can add a client certificate and key for mutual TLS.
 10. **Production** — Prompted only when `--production` is not passed. Defaults to `no`.
 
 A summary table is displayed before writing. The operation can be cancelled at the final confirmation prompt.
@@ -40,7 +40,7 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | `--schema=` | Schema name (PostgreSQL only, default: `public`) |
 | `--username=` | Database username |
 | `--password=` | Database password (stored encrypted) |
-| `--ssl-mode=` | Transport security: `disable`, `require`, `verify` (network drivers; default `require`) |
+| `--ssl-mode=` | Transport security: `disable`, `require`, `verify` (network drivers; default `require`, `verify` for `sqlsrv`) |
 | `--ssl-ca=` | CA certificate (PEM). Only with `--ssl-mode=verify`; required for MySQL/MariaDB verify |
 | `--ssl-cert=` | Client certificate (PEM) for mutual TLS; requires `--ssl-key` |
 | `--ssl-key=` | Client private key (PEM) for mutual TLS; requires `--ssl-cert` |
@@ -82,7 +82,7 @@ A `dump` connection is a virtual SQL-file output target, not a live database. Th
 
 ### Transport security (TLS)
 
-New network connections use `require` by default: the connection is encrypted, the server certificate is not verified. This is what servers with `require_secure_transport=ON` need.
+New network connections use `require` by default: the connection is encrypted, the server certificate is not verified. This is what servers with `require_secure_transport=ON` need. SQL Server (`sqlsrv`) defaults to `verify` instead, because ODBC Driver 18 already verifies the server certificate by default — `require` would weaken that.
 
 | Mode | Encrypted | Certificate verified |
 |---|---|---|

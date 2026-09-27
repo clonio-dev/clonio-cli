@@ -379,6 +379,17 @@ it('defaults new network connections to require without interaction', function (
         ->assertExitCode(0);
 });
 
+it('defaults sqlsrv connections to verify without interaction', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Verify && ! $d->ssl->hasCertificateFiles()
+    ));
+
+    $this->artisan('connection:add', [
+        'name' => 'mssql', '--type' => 'sqlsrv', '--host' => 'h', '--port' => '1433', '--database' => 'd',
+        '--username' => 'sa', '--password' => 'p', '--no-interaction' => true,
+    ])->assertExitCode(0);
+});
+
 it('offers the transport modes in order', function (): void {
     $this->app->instance(ConfigService::class, fakeConfigExpecting(
         static fn (ConnectionData $d): bool => $d->ssl?->mode === SslMode::Disable
@@ -456,6 +467,33 @@ it('asks for client certificate and key when mutual TLS is confirmed', function 
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
+});
+
+it('still asks for the CA when only a client certificate and key are given via flags', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    Storage::disk('local')->put('c.pem', 'x');
+    Storage::disk('local')->put('k.pem', 'x');
+    chmod(Storage::disk('local')->path('k.pem'), 0600);
+
+    $this->app->instance(ConfigService::class, fakeConfigExpecting(
+        static fn (ConnectionData $d): bool => $d->ssl?->ca === 'certs/ca.pem' && $d->ssl->cert === 'c.pem' && $d->ssl->key === 'k.pem'
+    ));
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-cert' => 'c.pem', '--ssl-key' => 'k.pem'])
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path (leave empty for none)', 'certs/ca.pem')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save this connection?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('hints at --ssl-mode=verify when --ssl-ca is given without --ssl-mode', function (): void {
+    $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+    $this->artisan('connection:add', [...mysqlFlags(), '--ssl-ca' => 'ca.pem', '--no-interaction' => true])
+        ->expectsOutputToContain('a CA certificate is only used with mode verify (pass --ssl-mode=verify)')
+        ->assertExitCode(4);
 });
 
 it('warns when the client key is readable by others', function (): void {

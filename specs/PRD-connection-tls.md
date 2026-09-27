@@ -231,11 +231,11 @@ New options (value options, declared **with `=`**):
 
 Interactive flow — inserted after **Password** and before **Is production?** (PRD-connection-add §5), network drivers only:
 
-1. **Transport security** — choice: `Require (encrypted, not verified)` / `Verify (encrypted + certificate check)` / `Disable` / `Driver default`. **Default `Require`.** Skipped if `--ssl-mode` is given. With `--no-interaction` and no `--ssl-mode`, the default `require` is used.
+1. **Transport security** — choice: `Require (encrypted, not verified)` / `Verify (encrypted + certificate check)` / `Disable` / `Driver default`. **Default `Require`, except `sqlsrv` which defaults to `Verify`** (ODBC Driver 18 already verifies by default — `require` would weaken it). Skipped if `--ssl-mode` is given. With `--no-interaction` and no `--ssl-mode`, the same per-driver default is used.
 2. **CA certificate path** — only for `verify`, and not for `sqlsrv`. Empty answer = none (then validation requires it on `mysql`/`mariadb`). Skipped if `--ssl-ca` is given.
 3. **Client certificate?** — only for `require` / `verify`, not `sqlsrv`; confirm, default `no`. If yes, prompt **Client certificate path** and **Client key path**. Skipped if `--ssl-cert`/`--ssl-key` are given.
 
-**Default `require` for new connections.** Encrypted transport is the default for every newly added network connection. Existing connections without `ssl` keep driver-default behaviour (§4) — the new default is never applied retroactively. Servers without TLS support (e.g. the stock `postgres` Docker image) need an explicit `Disable` / `--ssl-mode=disable`; the connect-time hint (§8) says so.
+**Default `require` for new connections.** Encrypted transport is the default for every newly added network connection. For `sqlsrv` the default is `verify`, because ODBC Driver 18 already verifies by default — `require` would weaken it. Existing connections without `ssl` keep driver-default behaviour (§4) — the new default is never applied retroactively. Servers without TLS support (e.g. the stock `postgres` Docker image) need an explicit `Disable` / `--ssl-mode=disable`; the connect-time hint (§8) says so.
 
 Non-interactive: passing `--ssl-mode` without further prompts must be enough to create a fully specified connection (the flags above never trigger a prompt when supplied). Options not applicable to the chosen driver (e.g. `--ssl-mode` with `--type=sqlite`, `--ssl-ca` with `--type=sqlsrv`) exit with `ValidationError` (4).
 
