@@ -1,0 +1,33 @@
+name: Update PR Description
+
+on:
+    pull_request:
+        types: [opened, reopened]
+
+jobs:
+    update-description:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: write
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  fetch-depth: 0
+
+            - name: Build PR body from commit log
+              id: log
+              run: |
+                  COMMITS=$(git log origin/${{ github.base_ref }}..HEAD --pretty=format:"- %s" --no-merges)
+                  {
+                    echo "commits<<EOF"
+                    echo "$COMMITS"
+                    echo "EOF"
+                  } >> $GITHUB_OUTPUT
+
+            - name: Update PR description
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  gh pr edit ${{ github.event.pull_request.number }} \
+                    --body "${{ steps.log.outputs.commits }}"
