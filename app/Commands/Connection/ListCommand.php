@@ -39,16 +39,21 @@ class ListCommand extends Command
                 ? $connection->host.($connection->port !== null ? ':'.$connection->port : '')
                 : '—';
 
+            $tls = $connection->type->requiresNetworkConfig()
+                ? ($connection->ssl?->mode->value ?? 'default')
+                : '—';
+
             $rows[] = [
                 $name,
                 $connection->type->value,
                 $host,
                 $connection->database ?? '—',
+                $tls,
                 $connection->isProduction ? 'Yes' : 'No',
             ];
         }
 
-        $this->table(['Name', 'Driver', 'Host', 'Database', 'Production'], $rows);
+        $this->table(['Name', 'Driver', 'Host', 'Database', 'TLS', 'Production'], $rows);
 
         return ExitCode::Success->value;
     }

@@ -62,8 +62,14 @@ class TestCommand extends Command
                         getcwd() ?: '.',
                         $connection->password !== '' ? 'AES-256' : 'none',
                     ));
-                } else {
+                } elseif ($connection->type === DatabaseConnectionType::Sqlite) {
                     $this->line(sprintf('%s: OK (%dms)', $name, $elapsed));
+                } else {
+                    $this->line(sprintf('%s: OK (%dms, tls: %s)', $name, $elapsed, $connection->ssl?->mode->value ?? 'default'));
+
+                    if ($message !== '') {
+                        $this->line('  '.$message);
+                    }
                 }
             }
 
@@ -187,31 +193,30 @@ class TestCommand extends Command
     }
 
     /**
+     * On success the message carries the negotiated cipher (verbose only), or ''.
+     *
      * @return array{bool, string, int, ExitCode}
      */
     private function testNetwork(ConnectionData $connection, int $start, DatabaseConnectionService $connector): array
     {
         try {
-            $password = $connector->resolvePassword($connection);
+            $connector->resolvePassword($connection);
         } catch (RuntimeException) {
             return [false, 'Could not decrypt password — check APP_KEY.', $this->elapsedMs($start), ExitCode::ConfigError];
         }
 
-        $dynamicName = 'clonio_test_'.uniqid();
-
-        config(['database.connections.'.$dynamicName => $connector->buildConfig($connection, $password)]);
-
         try {
-            DB::connection($dynamicName)->getPdo();
+            $dynamicName = $connector->open($connection);
         } catch (Throwable $throwable) {
-            DB::purge($dynamicName);
-
             return [false, $throwable->getMessage(), $this->elapsedMs($start), ExitCode::ConnectionError];
         }
 
+        $elapsed = $this->elapsedMs($start);
+        $cipher = $this->output->isVerbose() ? $connector->negotiatedCipher($dynamicName, $connection->type) : null;
+
         DB::purge($dynamicName);
 
-        return [true, '', $this->elapsedMs($start), ExitCode::Success];
+        return [true, $cipher !== null ? 'TLS cipher: '.$cipher : '', $elapsed, ExitCode::Success];
     }
 
     private function elapsedMs(int $startNs): int
