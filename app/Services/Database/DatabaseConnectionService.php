@@ -146,9 +146,7 @@ class DatabaseConnectionService
 
             $hint = ConnectionErrorHint::for($throwable, $connection, $this->resolvedHost($connection));
 
-            if ($hint === null) {
-                throw $throwable;
-            }
+            throw_if($hint === null, $throwable);
 
             throw new RuntimeException($throwable->getMessage().PHP_EOL.$hint, 0, $throwable);
         }
