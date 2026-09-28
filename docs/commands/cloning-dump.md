@@ -202,6 +202,7 @@ tables:
 | `full` | Copy all rows |
 | `first` | Copy the first N rows (requires `limit`) |
 | `last` | Copy the last N rows (requires `limit`) |
+| `skip`  | Skip this table entirely |
 
 ## PII detection
 
