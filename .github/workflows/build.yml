@@ -498,6 +498,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "${{ github.ref_name }}" --draft=false
 
+  # Releases created with GITHUB_TOKEN do not trigger update-changelog.yml's
+  # `release` event, so call it directly once the release is published.
+  changelog:
+    name: Update Changelog
+    needs: release
+    if: always() && needs.release.result == 'success'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/update-changelog.yml
+    with:
+      tag: ${{ github.ref_name }}
+
   notify-packagist:
     name: Notify Packagist
     needs: release

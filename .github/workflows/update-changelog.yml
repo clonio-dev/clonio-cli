@@ -1,16 +1,52 @@
 name: "Update Changelog"
 
+# Opens a pull request that adds the release notes of a published release to
+# CHANGELOG.md.
+#
+# Releases created by build.yml use GITHUB_TOKEN, and events caused by
+# GITHUB_TOKEN never trigger other workflows. build.yml therefore calls this
+# workflow directly (workflow_call). The `release` trigger only covers releases
+# published by hand; workflow_dispatch allows backfilling a single tag.
+#
+# main is protected (PR + signed commits), so the change is committed through
+# the contents API (GitHub signs those commits) on a `changelog/<tag>` branch
+# and proposed as a pull request.
+
 on:
   release:
-    types: [published, released]
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, e.g. v1.2.0
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v1.2.0
+        required: true
+        type: string
 
 permissions:
   contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-changelog-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
   update:
+    name: Open CHANGELOG pull request
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      BRANCH: changelog/${{ inputs.tag || github.event.release.tag_name }}
 
     steps:
       - name: Checkout code
@@ -18,28 +54,80 @@ jobs:
         with:
           ref: main
 
+      - name: Check whether CHANGELOG already has this release
+        id: guard
+        run: |
+          if grep -qE "^## ${TAG}( |$)" CHANGELOG.md; then
+            echo "CHANGELOG.md already contains ${TAG}, nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Prepare release notes for changelog
         id: notes
-        env:
-          RELEASE_BODY: ${{ github.event.release.body }}
+        if: steps.guard.outputs.skip == 'false'
         run: |
-          NOTES=$(printf '%s' "$RELEASE_BODY" \
-            | awk '/^## Changelog$/ { exit } /^---$/ { exit } /^## Installation$/ { exit } { print }')
+          gh release view "$TAG" --repo "$REPO" --json body,publishedAt > release.json
+
+          # Drop the installation block that build.yml appends to every release.
+          NOTES=$(jq -r .body release.json \
+            | awk '/^See the full \[CHANGELOG.md\]/ { exit } /^## Changelog$/ { exit } /^---$/ { exit } /^## Installation$/ { exit } { print }')
           {
             echo "body<<CHANGELOG_NOTES_EOF"
             printf '%s\n' "$NOTES"
             echo "CHANGELOG_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
+          echo "date=$(jq -r .publishedAt release.json | cut -c1-10)" >> "$GITHUB_OUTPUT"
+          rm release.json
 
       - name: Update Changelog
+        if: steps.guard.outputs.skip == 'false'
         uses: stefanzweifel/changelog-updater-action@a938690fad7edf25368f37e43a1ed1b34303eb36 # v1
         with:
-          latest-version: ${{ github.event.release.name }}
+          latest-version: ${{ env.TAG }}
           release-notes: ${{ steps.notes.outputs.body }}
+          release-date: ${{ steps.notes.outputs.date }}
 
-      - name: Commit updated CHANGELOG
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7
-        with:
-          branch: main
-          commit_message: Update CHANGELOG
-          file_pattern: CHANGELOG.md
+      - name: Commit CHANGELOG to branch and open pull request
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md unchanged, nothing to commit."
+            exit 0
+          fi
+
+          BASE_SHA=$(git rev-parse HEAD)
+
+          # (Re)create the branch at the current main.
+          if gh api "repos/${REPO}/git/ref/heads/${BRANCH}" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/${REPO}/git/refs/heads/${BRANCH}" -f sha="$BASE_SHA" -F force=true > /dev/null
+          else
+            gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${BRANCH}" -f sha="$BASE_SHA" > /dev/null
+          fi
+
+          # Commits made through the contents API are signed by GitHub.
+          FILE_SHA=$(gh api "repos/${REPO}/contents/CHANGELOG.md?ref=${BRANCH}" --jq .sha)
+          gh api -X PUT "repos/${REPO}/contents/CHANGELOG.md" \
+            -f message="docs(changelog): update CHANGELOG for ${TAG}" \
+            -f content="$(base64 -w0 CHANGELOG.md)" \
+            -f branch="$BRANCH" \
+            -f sha="$FILE_SHA" > /dev/null
+
+          if [ -n "$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            echo "Pull request for ${BRANCH} already open, branch updated."
+            exit 0
+          fi
+
+          BODY=$(printf '%s\n\n%s\n' \
+            "Adds the release notes of [${TAG}](https://github.com/${REPO}/releases/tag/${TAG}) to CHANGELOG.md." \
+            "Opened automatically by the \`Update Changelog\` workflow. Pull requests created with \`GITHUB_TOKEN\` do not trigger CI, so required checks will not report on this PR.")
+
+          if ! gh pr create --repo "$REPO" --base main --head "$BRANCH" \
+            --title "docs(changelog): update CHANGELOG for ${TAG}" \
+            --body "$BODY"; then
+            # Fails when "Allow GitHub Actions to create and approve pull requests" is disabled.
+            URL="https://github.com/${REPO}/compare/main...${BRANCH}?expand=1"
+            echo "::warning::Could not open the pull request. Branch ${BRANCH} is pushed, open it by hand: ${URL}"
+            echo "Branch \`${BRANCH}\` is pushed. Open the pull request by hand: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          fi
