@@ -1,0 +1,12 @@
+services:
+  php:
+    image: "wodby/php:8.5-dev-macos"
+    environment:
+      PHP_EXTENSIONS_DISABLE: 'xhprof,spx'
+    healthcheck:
+      test: ["CMD", "php", "-v"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - .:/var/www/html
