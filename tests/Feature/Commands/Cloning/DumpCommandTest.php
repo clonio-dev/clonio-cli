@@ -609,6 +609,37 @@ it('writes disable_foreign_key_checks: false when --no-disable-fk-checks flag is
     expect($yaml)->toContain('disable_foreign_key_checks: false');
 });
 
+it('writes remap_keys: false when --skip-remapping-keys flag is set', function (): void {
+    Storage::fake('local');
+
+    $connection = makeDumpMysqlConnection('production-db');
+    $schema = makeSimpleSchema();
+    $piiSet = makePiiMatcherSet();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($schema);
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn($piiSet);
+
+    $this->app->instance(ConfigService::class, $config);
+    $this->app->instance(SchemaInspector::class, $inspector);
+    $this->app->instance(PiiMatcherLoader::class, $piiLoader);
+
+    $this->artisan('cloning:dump', [
+        '--connection' => 'production-db',
+        '--skip-remapping-keys' => true,
+        '--ci' => true,
+    ])->assertExitCode(ExitCode::Success->value);
+
+    $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
+    expect($yaml)->toContain('remap_keys: false');
+});
+
 it('prompts for transfer options interactively and writes the chosen values', function (): void {
     Storage::fake('local');
 
@@ -635,13 +666,15 @@ it('prompts for transfer options interactively and writes the chosen values', fu
         ->expectsConfirmation('    Drop unknown tables on target?', 'no')
         ->expectsConfirmation('    Drop extra columns on target?', 'no')
         ->expectsConfirmation('    Disable foreign key checks?', 'yes')
+        ->expectsConfirmation('    Remap keys?', 'yes')
         ->assertExitCode(ExitCode::Success->value);
 
     $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
     expect($yaml)
         ->toContain('enforce_column_types: true')
         ->toContain('drop_unknown_tables: false')
-        ->toContain('disable_foreign_key_checks: true');
+        ->toContain('disable_foreign_key_checks: true')
+        ->toContain('remap_keys: true');
 });
 
 it('interactive: prompts to select a connection from the choice list', function (): void {
@@ -675,6 +708,7 @@ it('interactive: prompts to select a connection from the choice list', function 
         ->expectsConfirmation('    Drop unknown tables on target?', 'no')
         ->expectsConfirmation('    Drop extra columns on target?', 'no')
         ->expectsConfirmation('    Disable foreign key checks?', 'yes')
+        ->expectsConfirmation('    Remap keys?', 'yes')
         ->assertExitCode(ExitCode::Success->value);
 
     expect(Storage::disk('local')->exists('production-db.cloning.yaml'))->toBeTrue();
