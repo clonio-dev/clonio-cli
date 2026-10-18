@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.5'
           tools: composer:v2
@@ -168,14 +168,14 @@ jobs:
 
       - name: Upload SPC logs on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: spc-logs-${{ matrix.output }}
           path: log/
           if-no-files-found: ignore
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.5'
           tools: composer:v2
@@ -266,7 +266,7 @@ jobs:
         run: ./tests/smoke/run-smoke.sh phar "$PWD/builds/clonio"
 
       - name: Upload binary as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.output }}
           path: ${{ matrix.output }}
@@ -274,7 +274,7 @@ jobs:
       - name: Upload PHAR as artifact
         if: matrix.upload_phar
         run: cp builds/clonio builds/clonio.phar
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: matrix.upload_phar
         with:
           name: clonio.phar
@@ -392,7 +392,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download all binaries
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: ./artifacts
           # Explicit allowlist — excludes Docker Buildx summary artifacts and spc-logs-* from failed attempts.
