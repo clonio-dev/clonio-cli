@@ -71,6 +71,13 @@ class UpdateCommand extends Command
         $updated = $this->promptUpdatedFields($type, $current);
         $updated['type'] = $type->value;
 
+        // Delivery flags are not prompted; keep hand-edited values from clonio.json.
+        foreach (['delivers_audit', 'delivers_process_log'] as $key) {
+            if (array_key_exists($key, $current)) {
+                $updated[$key] = $current[$key];
+            }
+        }
+
         // ─── Diff ─────────────────────────────────────────────────────────────
         $this->showDiff($current, $updated);
 

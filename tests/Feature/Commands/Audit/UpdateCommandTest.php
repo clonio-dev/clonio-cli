@@ -309,3 +309,45 @@ it('updates a stack channel with new channel list', function (): void {
         ->expectsOutputToContain("Channel 'my-stack' updated successfully.")
         ->assertExitCode(0);
 });
+
+it('preserves hand-edited delivery flags on update', function (): void {
+    $channel = [
+        'type' => 'local',
+        'path' => './old-logs',
+        'delivers_audit' => false,
+        'delivers_process_log' => false,
+    ];
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
+    $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
+    $config->shouldReceive('setAuditChannel')
+        ->with('my-local', Mockery::on(fn (array $saved): bool => $saved['path'] === './new-logs'
+            && $saved['delivers_audit'] === false
+            && $saved['delivers_process_log'] === false))
+        ->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:update', ['name' => 'my-local'])
+        ->expectsQuestion('Log path', './new-logs')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('does not add delivery flags that were not set before', function (): void {
+    $channel = ['type' => 'local', 'path' => './old-logs'];
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getAuditChannels')->andReturn(['my-local' => $channel]);
+    $config->shouldReceive('getAuditChannel')->with('my-local')->andReturn($channel);
+    $config->shouldReceive('setAuditChannel')
+        ->with('my-local', Mockery::on(fn (array $saved): bool => ! array_key_exists('delivers_audit', $saved)
+            && ! array_key_exists('delivers_process_log', $saved)))
+        ->once();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('audit:update', ['name' => 'my-local'])
+        ->expectsQuestion('Log path', './new-logs')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
