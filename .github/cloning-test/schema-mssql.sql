@@ -61,3 +61,19 @@ INSERT INTO bookings (id, guest_name, starts_at, internal_note) VALUES
 (2, 'Bob Jones', '2026-02-20 14:30:00', 'pays cash'),
 (3, 'Charlie Brown', '2026-03-05 09:15:00', 'call before arrival');
 GO
+
+-- Issue #157: `sessions` uses the 'schema' row strategy. The table is created
+-- on the target, but none of its rows are copied.
+CREATE TABLE sessions (
+    id VARCHAR(64) NOT NULL,
+    user_email VARCHAR(255),
+    payload VARCHAR(255) NOT NULL,
+    last_activity INT NOT NULL,
+    PRIMARY KEY (id)
+);
+GO
+
+INSERT INTO sessions (id, user_email, payload, last_activity) VALUES
+('sess-1', 'alice@example.com', 'csrf=abc', 1760000000),
+('sess-2', 'bob@example.com', 'csrf=def', 1760000100);
+GO

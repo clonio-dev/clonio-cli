@@ -15,6 +15,7 @@ use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\ForeignKeyData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
@@ -139,6 +140,12 @@ class CloningRunOrchestrator
             Log::info('table_skipped_by_cascade', ['table' => $tableName, 'reason' => $reason]);
         }
 
+        // Tables with rows.strategy 'schema' are created on the target but get no rows.
+        $schemaOnlyTables = array_values(array_filter(
+            $sortedTables,
+            static fn (string $t): bool => $config->getTable($t)?->rows->strategy === 'schema',
+        ));
+
         // Transfer each remaining table
         foreach ($sortedTables as $tableName) {
             $tableConfig = $config->getTable($tableName);
@@ -180,12 +187,30 @@ class CloningRunOrchestrator
             $sourceTable = $sourceSchema->getTable($tableName);
             $targetTable = $targetSchema?->getTable($tableName);
 
-            [$omittedColumns, $notes] = $this->resolveOmittedColumns(
-                $tableConfig,
-                $sourceTable,
-                $targetTable,
-                $dumpSink instanceof SqlDumpService,
-            );
+            $schemaOnly = $tableConfig->rows->strategy === 'schema';
+
+            [$omittedColumns, $notes] = $schemaOnly
+                ? [[], []]
+                : $this->resolveOmittedColumns(
+                    $tableConfig,
+                    $sourceTable,
+                    $targetTable,
+                    $dumpSink instanceof SqlDumpService,
+                );
+
+            if (! $schemaOnly && $sourceTable instanceof TableSchemaData) {
+                $emptyParents = array_values(array_unique(array_filter(
+                    array_map(static fn (ForeignKeyData $fk): string => $fk->referencedTable, $sourceTable->foreignKeys),
+                    static fn (string $parent): bool => $parent !== $tableName && in_array($parent, $schemaOnlyTables, true),
+                )));
+
+                if ($emptyParents !== []) {
+                    $notes[] = sprintf(
+                        "References tables copied without data ('schema' strategy): %s. Foreign key values may point to missing rows, or inserts fail when foreign key checks are enabled.",
+                        implode(', ', $emptyParents),
+                    );
+                }
+            }
 
             foreach ($notes as $note) {
                 Log::warning('table_column_note', ['table' => $tableName, 'note' => $note]);
@@ -335,6 +360,10 @@ class CloningRunOrchestrator
                 $this->clearTable($targetConn, $tableConfig->tableName, $tableConfig->rows->clear, $target);
             }
 
+            if ($tableConfig->rows->strategy === 'schema') {
+                return [0, 0, false, null, []];
+            }
+
             do {
                 /** @var list<object> $chunk */
                 $chunk = DB::connection($sourceConn)->select(
@@ -426,6 +455,10 @@ class CloningRunOrchestrator
         ?KeyRemappingConfigData $keyRemappingConfig = null,
         ?array $selectColumns = null,
     ): array {
+        if ($tableConfig->rows->strategy === 'schema') {
+            return [0, 0, false, null, []];
+        }
+
         $sourceConn = $this->connector->open($source);
 
         $rows = 0;

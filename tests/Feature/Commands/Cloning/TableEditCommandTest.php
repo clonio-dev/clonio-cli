@@ -169,6 +169,24 @@ it('updates table to skip strategy', function (): void {
     expect($content)->toContain('strategy: skip');
 });
 
+it('updates table to schema strategy without limit or sort_by', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
+
+    $this->artisan('cloning:table:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'orders',
+        '--rows-strategy' => 'schema',
+        '--rows-clear' => 'delete',
+    ])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    $content = (string) Storage::disk('local')->get('test.cloning.yaml');
+    expect($content)->toContain('strategy: schema')
+        ->and($content)->toContain('clear: delete');
+});
+
 it('rejects non-numeric --rows-limit', function (): void {
     Storage::fake('local');
     Storage::disk('local')->put('test.cloning.yaml', makeTableEditYaml());
@@ -367,6 +385,7 @@ it('selects the row strategy interactively', function (): void {
             'Full — copy every row',
             'First N — copy the first N rows after sorting',
             'Last N — copy the last N rows after sorting',
+            'Schema — create the table, copy no rows',
             "Skip — don't transfer this table",
         ])
         ->expectsConfirmation('Apply this change?', 'yes')

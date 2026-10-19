@@ -16,6 +16,7 @@ use App\Services\Config\ConfigService;
 use App\Services\Pii\PiiMatcherLoader;
 use App\Services\Schema\SchemaInspector;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Yaml\Yaml;
 
 function makeDumpMysqlConnection(string $name = 'production-db'): ConnectionData
 {
@@ -819,3 +820,114 @@ it('skips foreign keys that reference a table without a single integer primary k
     expect($yaml)->toContain('strategy: remapping');
     expect($yaml)->not->toContain('column: account_uuid');
 });
+
+function makeFrameworkSchema(): DatabaseSchemaData
+{
+    $idColumn = new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true);
+
+    return new DatabaseSchemaData(
+        databaseName: 'mydb',
+        tables: [
+            new TableSchemaData(
+                name: 'users',
+                columns: [
+                    $idColumn,
+                    new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+                ],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(
+                name: 'cache',
+                columns: [new ColumnSchemaData(name: 'key', type: 'varchar', nullable: false, default: null, isPrimary: true)],
+                foreignKeys: [],
+            ),
+            new TableSchemaData(name: 'telescope_entries', columns: [$idColumn], foreignKeys: []),
+        ],
+    );
+}
+
+function bindFrameworkDumpMocks(): void
+{
+    $connection = makeDumpMysqlConnection('production-db');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('exists')->andReturn(true);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn($connection);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeFrameworkSchema());
+
+    $piiLoader = Mockery::mock(PiiMatcherLoader::class);
+    $piiLoader->shouldReceive('load')->andReturn(makePiiMatcherSet());
+
+    app()->instance(ConfigService::class, $config);
+    app()->instance(SchemaInspector::class, $inspector);
+    app()->instance(PiiMatcherLoader::class, $piiLoader);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function dumpedTables(): array
+{
+    $parsed = Yaml::parse((string) Storage::disk('local')->get('production-db.cloning.yaml'));
+    assert(is_array($parsed) && is_array($parsed['tables']));
+
+    return $parsed['tables'];
+}
+
+it('sets known framework tables to the schema strategy in --ci mode', function (): void {
+    Storage::fake('local');
+    bindFrameworkDumpMocks();
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    $tables = dumpedTables();
+    expect($tables['cache']['rows']['strategy'])->toBe('schema')
+        ->and($tables['telescope_entries']['rows']['strategy'])->toBe('schema')
+        ->and($tables['users']['rows']['strategy'])->toBe('full');
+});
+
+it('keeps framework tables on full with --no-framework-tables', function (): void {
+    Storage::fake('local');
+    bindFrameworkDumpMocks();
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true, '--no-framework-tables' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(dumpedTables()['cache']['rows']['strategy'])->toBe('full');
+});
+
+it('keeps schema-only framework tables with --only-pii', function (): void {
+    Storage::fake('local');
+    bindFrameworkDumpMocks();
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db', '--ci' => true, '--only-pii' => true])
+        ->assertExitCode(ExitCode::Success->value);
+
+    $tables = dumpedTables();
+    expect($tables)->toHaveKeys(['users', 'cache', 'telescope_entries'])
+        ->and($tables['cache']['rows']['strategy'])->toBe('schema');
+});
+
+it('asks before applying the schema strategy to framework tables', function (string $answer, string $expected): void {
+    Storage::fake('local');
+    bindFrameworkDumpMocks();
+
+    $this->artisan('cloning:dump', ['--connection' => 'production-db'])
+        ->expectsOutputToContain('Known framework tables')
+        ->expectsConfirmation('  Copy only the schema of these tables, without rows?', $answer)
+        ->expectsConfirmation('    Enforce column types on target?', 'no')
+        ->expectsConfirmation('    Drop unknown tables on target?', 'no')
+        ->expectsConfirmation('    Drop extra columns on target?', 'no')
+        ->expectsConfirmation('    Drop and re-create existing tables on target?', 'no')
+        ->expectsConfirmation('    Disable foreign key checks?', 'yes')
+        ->expectsConfirmation('    Remap keys?', 'no')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(dumpedTables()['cache']['rows']['strategy'])->toBe($expected);
+})->with([
+    'accepted' => ['yes', 'schema'],
+    'declined' => ['no', 'full'],
+]);

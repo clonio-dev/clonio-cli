@@ -17,6 +17,7 @@ use App\Data\Schema\DatabaseSchemaData;
 use App\Enums\ExitCode;
 use App\Enums\KeyRemappingStrategy;
 use App\Services\Cloning\CloningYamlWriter;
+use App\Services\Cloning\FrameworkTableCatalog;
 use App\Services\Config\ConfigService;
 use App\Services\Pii\PiiMatcherLoader;
 use App\Services\Schema\SchemaInspector;
@@ -43,6 +44,7 @@ class DumpCommand extends Command
         {--no-disable-fk-checks  : Set disable_foreign_key_checks: false in the generated YAML}
         {--no-remap-keys         : Set remap_keys: false in the generated YAML}
         {--skip-remapping-keys   : Alias of --no-remap-keys}
+        {--no-framework-tables   : Keep known framework tables (cache, sessions, jobs, ...) on the full row strategy}
         {--ci                    : CI mode — suppress non-error output}';
 
     /**
@@ -55,6 +57,7 @@ class DumpCommand extends Command
         SchemaInspector $schemaInspector,
         PiiMatcherLoader $piiMatcherLoader,
         CloningYamlWriter $yamlWriter,
+        FrameworkTableCatalog $frameworkTables,
     ): int {
         // 1. Check config exists
         if (! $config->exists()) {
@@ -216,11 +219,17 @@ class DumpCommand extends Command
             $tableDumps[] = $tableDump;
         }
 
+        // 8b. Suggest the 'schema' row strategy for known framework tables
+        if (! $this->option('no-framework-tables')) {
+            $tableDumps = $this->applyFrameworkTables($tableDumps, $frameworkTables, $ci);
+        }
+
         // 9. Apply --only-pii filter
         if ($onlyPii) {
             $tableDumps = array_values(array_filter(
                 $tableDumps,
-                static fn (TableDumpData $t): bool => array_any($t->columns, fn (ColumnDumpData $col): bool => $col->strategy !== 'keep')
+                static fn (TableDumpData $t): bool => $t->rowStrategy === 'schema'
+                    || array_any($t->columns, fn (ColumnDumpData $col): bool => $col->strategy !== 'keep')
             ));
 
             // Also filter columns in remaining tables
@@ -307,6 +316,53 @@ class DumpCommand extends Command
         }
 
         return ExitCode::Success->value;
+    }
+
+    /**
+     * Switch known framework tables (cache, sessions, queues, tokens, logs) to
+     * the 'schema' row strategy. Interactive runs ask first; CI runs apply it.
+     *
+     * @param  list<TableDumpData>  $tableDumps
+     * @return list<TableDumpData>
+     */
+    private function applyFrameworkTables(array $tableDumps, FrameworkTableCatalog $catalog, bool $ci): array
+    {
+        /** @var array<string, string> $matches */
+        $matches = [];
+
+        foreach ($tableDumps as $tableDump) {
+            $label = $catalog->match($tableDump->name);
+
+            if ($label !== null) {
+                $matches[$tableDump->name] = $label;
+            }
+        }
+
+        if ($matches === []) {
+            return $tableDumps;
+        }
+
+        if (! $ci) {
+            $this->line('  Known framework tables (cache, sessions, queues, tokens, logs):');
+
+            foreach ($matches as $name => $label) {
+                $this->line(sprintf('    %s <fg=gray>(%s)</>', $name, $label));
+            }
+
+            $apply = $this->confirm('  Copy only the schema of these tables, without rows?', true);
+            $this->line('');
+
+            if (! $apply) {
+                return $tableDumps;
+            }
+        }
+
+        return array_map(
+            static fn (TableDumpData $t): TableDumpData => array_key_exists($t->name, $matches)
+                ? new TableDumpData(name: $t->name, columns: $t->columns, rowStrategy: 'schema', rowLimit: null, sortBy: null)
+                : $t,
+            $tableDumps,
+        );
     }
 
     private function buildKeyRemapping(DatabaseSchemaData $schema): ?KeyRemappingConfigData

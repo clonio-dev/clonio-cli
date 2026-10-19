@@ -372,10 +372,11 @@ class RunCommand extends Command
             $keyRemappingService = (bool) $this->option('file-based')
                 ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
                 : resolve(KeyRemappingService::class);
-            $sortedForMapping = array_map(
+            // Schema-only tables copy no rows, so they need no key mappings.
+            $sortedForMapping = array_values(array_map(
                 static fn (TableCloningConfigData $t): string => $t->tableName,
-                $config->tables
-            );
+                array_filter($config->tables, static fn (TableCloningConfigData $t): bool => $t->rows->strategy !== 'schema'),
+            ));
 
             try {
                 $counts = $step->run(
@@ -768,6 +769,8 @@ class RunCommand extends Command
 
                     if (($strategy === 'first' || $strategy === 'last') && $limit !== null) {
                         $estimatedRows = min($estimatedRows, $limit);
+                    } elseif ($strategy === 'schema') {
+                        $estimatedRows = 0;
                     }
 
                     $totalEstimated += $estimatedRows;
@@ -913,7 +916,7 @@ class RunCommand extends Command
                 : 'NOT FOUND';
 
             $strategyLabel = $table->exists
-                ? ($table->rowStrategy === 'full' ? 'full' : $table->rowStrategy.' '.number_format((int) $table->rowLimit))
+                ? (in_array($table->rowStrategy, ['first', 'last'], true) ? $table->rowStrategy.' '.number_format((int) $table->rowLimit) : $table->rowStrategy)
                 : ('—');
 
             $transformLabel = $table->transformedColumns !== []

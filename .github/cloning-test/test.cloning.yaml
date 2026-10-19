@@ -68,6 +68,11 @@ tables:
         faker_arguments: []
       internal_note:
         strategy: exclude
+  # Schema only (issue #157): the table is created, no rows are copied.
+  sessions:
+    rows:
+      strategy: schema
+    columns: {}
 
 key_remapping:
   tables:

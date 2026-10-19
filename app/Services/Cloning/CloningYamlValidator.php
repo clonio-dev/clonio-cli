@@ -24,7 +24,7 @@ class CloningYamlValidator
         'ean13', 'ean8', 'isbn10', 'isbn13',
     ];
 
-    private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last', 'skip'];
+    private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last', 'schema', 'skip'];
 
     private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'template', 'remapping', 'exclude'];
 
@@ -211,7 +211,9 @@ class CloningYamlValidator
         if ($strategy === 'first' || $strategy === 'last') {
             $limit = $rows['limit'] ?? null;
 
-            if (! is_int($limit) || $limit < 1) {
+            if ($limit === 0) {
+                $errors[] = sprintf("%s: rows.limit must be an integer >= 1 when strategy is '%s'. To copy only the table structure, use strategy 'schema'", $prefix, $strategy);
+            } elseif (! is_int($limit) || $limit < 1) {
                 $errors[] = sprintf("%s: rows.limit must be an integer >= 1 when strategy is '%s'", $prefix, $strategy);
             }
         }

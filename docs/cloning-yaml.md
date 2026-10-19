@@ -114,7 +114,7 @@ Controls which rows are transferred and whether the target table is cleared firs
 
 | Field | Required | Values | Description |
 |-------|:--------:|--------|-------------|
-| `strategy` | yes | `full` \| `first` \| `last` | Row selection strategy. |
+| `strategy` | yes | `full` \| `first` \| `last` \| `schema` \| `skip` | Row selection strategy. |
 | `limit` | when `first`/`last` | integer ≥ 1 | Number of rows to transfer. |
 | `sort_by` | no | column name | Column to order by for `first`/`last`. Defaults to the primary key. |
 | `clear` | no | `false` \| `truncate` \| `delete` | Whether to empty the target table before inserting. Default: `false`. |
@@ -126,6 +126,20 @@ Controls which rows are transferred and whether the target table is cleared firs
 | `full` | Copy all rows from the source table. |
 | `first` | Copy the first `limit` rows (ordered by `sort_by` ascending). |
 | `last` | Copy the last `limit` rows (ordered by `sort_by` descending). |
+| `schema` | Create the table on the target (schema sync applies as usual) but copy no rows. `clear` is still honoured. |
+| `skip` | Leave the table out completely: no schema sync, no rows. Tables with a foreign key to a skipped table are skipped too. |
+
+Use `schema` for tables whose structure the application needs but whose rows are transient or sensitive: cache, sessions, queues, password reset and API tokens, debug logs. `cloning:dump` suggests it for known framework tables (see [cloning:dump](commands/cloning-dump.md#framework-tables)).
+
+```yaml
+tables:
+  sessions:
+    rows:
+      strategy: schema
+      clear: delete   # optional: empty existing target rows
+```
+
+Unlike `skip`, `schema` does not cascade: tables that reference a schema-only table are still copied. Their foreign key values then point to rows that do not exist on the target. `cloning:run` adds a note to the table result, and inserts fail when foreign key checks are enabled (`disable_foreign_key_checks: false`). `first`/`last` with `limit: 0` is rejected; use `schema` instead.
 
 #### `clear` values
 

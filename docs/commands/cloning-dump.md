@@ -25,6 +25,7 @@ clonio cloning:dump [options]
 | `--no-disable-fk-checks` | Set `disable_foreign_key_checks: false` in the generated YAML |
 | `--no-remap-keys` | Set `remap_keys: false` in the generated YAML (key remapping stays defined but disabled) |
 | `--skip-remapping-keys` | Alias of `--no-remap-keys` |
+| `--no-framework-tables` | Keep known framework tables (cache, sessions, jobs, ...) on the `full` row strategy |
 | `--ci` | CI mode — suppress non-error output and require `--connection` |
 
 ## Description
@@ -110,6 +111,41 @@ Use `--only-pii` to generate a minimal config that only lists tables and columns
 ```bash
 clonio cloning:dump --connection production-db --only-pii
 ```
+
+### Framework tables
+
+Many applications ship tables whose rows are transient, secret or personal: cache entries, sessions, queued jobs, password reset and API tokens, debug logs. The application needs these tables, but copying their rows to a dev or test environment is risky and rarely useful.
+
+`cloning:dump` recognizes known framework tables and suggests the `schema` row strategy for them: the table is created on the target, no rows are copied.
+
+```
+  Known framework tables (cache, sessions, queues, tokens, logs):
+    cache (Laravel cache)
+    sessions (Sessions)
+    personal_access_tokens (API tokens)
+
+  Copy only the schema of these tables, without rows? (yes/no) [yes]:
+```
+
+In `--ci` mode the suggestion is applied without asking. Use `--no-framework-tables` to keep these tables on `full`.
+
+| Group | Tables |
+|-------|--------|
+| Laravel cache | `cache`, `cache_locks` |
+| Sessions | `sessions`, `django_session` |
+| Laravel queue | `jobs`, `job_batches`, `failed_jobs` |
+| Password reset tokens | `password_reset_tokens`, `password_resets` |
+| API tokens | `personal_access_tokens` |
+| OAuth tokens (Passport) | `oauth_access_tokens`, `oauth_refresh_tokens`, `oauth_auth_codes`, `oauth_device_codes` |
+| Notifications | `notifications` |
+| Activity log | `activity_log` |
+| Webhook calls | `webhook_calls` |
+| Laravel Telescope | `telescope_*` |
+| Laravel Pulse | `pulse_*` |
+| Symfony Messenger | `messenger_messages` |
+| Rails Solid Queue / Cache / Cable | `solid_queue_*`, `solid_cache_entries`, `solid_cable_messages` |
+
+Names are matched case-insensitively. Schema-only tables stay in the YAML even with `--only-pii`.
 
 ### Setting transfer options at dump time
 
@@ -208,6 +244,7 @@ tables:
 | `full` | Copy all rows |
 | `first` | Copy the first N rows (requires `limit`) |
 | `last` | Copy the last N rows (requires `limit`) |
+| `schema` | Create the table, copy no rows (suggested for [framework tables](#framework-tables)) |
 
 ## PII detection
 

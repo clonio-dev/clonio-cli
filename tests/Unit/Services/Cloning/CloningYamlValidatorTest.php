@@ -144,6 +144,22 @@ it('returns error when last strategy has limit less than 1', function (): void {
     expect(implode(' ', $errors))->toContain('limit');
 });
 
+it('accepts the schema row strategy without a limit', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['rows'] = ['strategy' => 'schema', 'clear' => 'delete'];
+
+    expect($validator->validate($config))->toBe([]);
+});
+
+it('hints at the schema strategy when first or last has limit 0', function (): void {
+    $validator = new CloningYamlValidator;
+    $config = makeValidConfig();
+    $config['tables']['users']['rows'] = ['strategy' => 'first', 'limit' => 0];
+
+    expect(implode(' ', $validator->validate($config)))->toContain("use strategy 'schema'");
+});
+
 it('passes when first strategy has a valid limit', function (): void {
     $validator = new CloningYamlValidator;
     $config = makeValidConfig();

@@ -16,6 +16,7 @@
 //      either recomputed by the target from the anonymized guest_name or NULL
 //      when the generation expression was not replicated
 //  10. bookings.day is either NULL or the date part of starts_at
+//  11. sessions exists on the target but holds no rows ('schema' strategy)
 
 $driver   = $argv[1] ?? 'mysql';
 $host     = $argv[2] ?? '127.0.0.1';
@@ -181,6 +182,14 @@ try {
     }
     if ($daysOk) {
         pass('bookings.day is recomputed or NULL');
+    }
+
+    // 11. Schema-only table is created without rows
+    $sessionCount = (int) $pdo->query('SELECT COUNT(*) FROM sessions')->fetchColumn();
+    if ($sessionCount !== 0) {
+        fail("Expected 0 sessions ('schema' strategy), got $sessionCount");
+    } else {
+        pass("sessions exists without rows ('schema' strategy)");
     }
 
 } catch (Exception $e) {

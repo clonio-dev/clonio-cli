@@ -32,6 +32,7 @@ class TableEditCommand extends Command
         'full' => 'Full — copy every row',
         'first' => 'First N — copy the first N rows after sorting',
         'last' => 'Last N — copy the last N rows after sorting',
+        'schema' => 'Schema — create the table, copy no rows',
         'skip' => "Skip — don't transfer this table",
     ];
 

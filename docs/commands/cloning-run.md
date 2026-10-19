@@ -95,8 +95,9 @@ clonio cloning:run production-db.cloning.yaml --target staging --dry-run
   orders                   48 201       full        shipping_address
   audit_logs              NOT FOUND     —           —
   product_catalog             923       full        (none)
+  sessions                      0       schema      —
   ─────────────────────────────────────────────────────────────────
-  Total                    61 464 rows across 3 tables (1 not found, will be skipped)
+  Total                    61 464 rows across 4 tables (1 not found, will be skipped)
 
   No data will be transferred. Run without --dry-run to execute.
 ```
@@ -201,6 +202,18 @@ Note: bookings: Generated columns not copied and left empty: day. The generation
 ```
 
 The notes appear on the console, in the process log and in the **Notes** section of the audit log. See [Generated columns](../cloning-yaml.md#generated-columns) for details.
+
+### Schema-only tables
+
+Tables with `rows.strategy: schema` are created and synchronized like any other table, but no rows are copied. `rows.clear` still runs, so `clear: delete` empties an existing target table. The dry-run shows them with 0 estimated rows.
+
+When a copied table has a foreign key to a schema-only table, its foreign key values point to rows that do not exist on the target. The table result gets a note:
+
+```
+Note: members: References tables copied without data ('schema' strategy): teams. Foreign key values may point to missing rows, or inserts fail when foreign key checks are enabled.
+```
+
+Use `skip` instead when the referencing tables should be left out too. See [Row strategies](../cloning-yaml.md#row-strategies).
 
 ### Overriding options at run time
 
@@ -441,8 +454,9 @@ For each table (in resolved order):
 
 1. If `options.disable_foreign_key_checks` is `true`, foreign-key constraints are disabled on the target connection.
 2. If `rows.clear` is `truncate` or `delete`, the target table is emptied before any rows are inserted (see [Clearing Tables](#clearing-tables)).
-3. Rows are fetched from the source in chunks and the configured column transformations are applied before inserting into the target.
-4. On unique or FK constraint violations, falls back to row-by-row insert and records skipped rows.
+3. Tables with `rows.strategy: schema` stop here: no rows are copied.
+4. Rows are fetched from the source in chunks and the configured column transformations are applied before inserting into the target.
+5. On unique or FK constraint violations, falls back to row-by-row insert and records skipped rows.
 
 #### Clearing Tables
 

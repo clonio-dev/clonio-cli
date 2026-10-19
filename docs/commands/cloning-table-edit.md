@@ -27,6 +27,7 @@ If `file` is omitted, the command searches for `.cloning.yaml` files in the curr
 | `full` | Copy every row from the source. |
 | `first` | Copy the first N rows after sorting (`limit` required, `sort_by` optional). |
 | `last` | Copy the last N rows after sorting (`limit` required, `sort_by` optional). |
+| `schema` | Create the table on the target, copy no rows. `clear` still applies. |
 | `skip` | Skip this table — no data transferred. |
 
 ## Clear modes
@@ -43,7 +44,7 @@ If `file` is omitted, the command searches for `.cloning.yaml` files in the curr
 |--------|-------------|
 | `file` | Path to the `.cloning.yaml` file (argument, optional) |
 | `--table=` | Table name. If the table is not yet present in the YAML it will be added. |
-| `--rows-strategy=` | Row strategy: `full`, `first`, `last`, `skip` |
+| `--rows-strategy=` | Row strategy: `full`, `first`, `last`, `schema`, `skip` |
 | `--rows-limit=` | (`first`/`last`) Number of rows. Must be a positive integer. |
 | `--rows-sort-by=` | (`first`/`last`) Column name used for ordering. Optional. |
 | `--rows-clear=` | Clear mode: `none`, `truncate`, `delete` |
@@ -82,6 +83,10 @@ clonio cloning:table:edit production-db.cloning.yaml \
 clonio cloning:table:edit production-db.cloning.yaml \
   --table=orders --rows-strategy=last --rows-limit=100 --rows-sort-by=created_at \
   --rows-clear=delete
+
+# Non-interactive: keep the sessions table structure, copy no rows
+clonio cloning:table:edit production-db.cloning.yaml \
+  --table=sessions --rows-strategy=schema --rows-clear=delete
 
 # Non-interactive: skip a table entirely (no data transfer)
 clonio cloning:table:edit production-db.cloning.yaml \
