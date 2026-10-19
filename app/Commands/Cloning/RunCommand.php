@@ -74,7 +74,9 @@ class RunCommand extends Command
         {--skip-tables=        : Comma-separated list of table names to exclude}
         {--only-tables=        : Comma-separated list of table names to include}
         {--audit-channel=      : Comma-separated list of channel names}
-        {--skip-remapping-keys      : Skip key mapping generation and FK rewriting}
+        {--remap-keys               : Override: remap_keys true for this run}
+        {--no-remap-keys            : Override: remap_keys false for this run (skip key mapping generation and FK rewriting)}
+        {--skip-remapping-keys      : Alias of --no-remap-keys}
         {--no-memory-limit          : Remove PHP memory limit before generating key mappings (useful for very large databases when --file-based is not an option)}
         {--file-based               : Store key mappings in AES-256-CBC encrypted temp files instead of RAM; keeps memory usage bounded to the largest single table}
         {--enforce-column-types     : Override: enforce_column_types true for this run}
@@ -184,8 +186,9 @@ class RunCommand extends Command
         $dropUnkOverride = $this->option('drop-unknown-tables') ? true : ($this->option('no-drop-unknown-tables') ? false : null);
         $dropExtOverride = $this->option('drop-extra-columns') ? true : ($this->option('no-drop-extra-columns') ? false : null);
         $fkChecksOverride = $this->option('no-disable-fk-checks') ? false : ($this->option('disable-fk-checks') ? true : null);
+        $remapKeysOverride = ($this->option('no-remap-keys') || $this->option('skip-remapping-keys')) ? false : ($this->option('remap-keys') ? true : null);
 
-        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $fkChecksOverride !== null) {
+        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $fkChecksOverride !== null || $remapKeysOverride !== null) {
             $opts = $config->options;
             $config = new CloningConfigData(
                 version: $config->version,
@@ -197,7 +200,7 @@ class RunCommand extends Command
                     dropExtraColumns: $dropExtOverride ?? $opts->dropExtraColumns,
                     disableForeignKeyChecks: $fkChecksOverride ?? $opts->disableForeignKeyChecks,
                     fakerLocale: $opts->fakerLocale,
-                    remapKeys: $opts->remapKeys,
+                    remapKeys: $remapKeysOverride ?? $opts->remapKeys,
                 ),
                 tables: $config->tables,
                 keyRemapping: $config->keyRemapping,
@@ -340,8 +343,18 @@ class RunCommand extends Command
 
         // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
         $keyRemappingService = null;
-        $skipRemapping = (bool) $this->option('skip-remapping-keys') || ! $config->options->remapKeys;
         $keyRemappingConfig = $config->keyRemapping;
+        $remappingConfigured = $keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive();
+        $skipRemapping = ! $config->options->remapKeys;
+
+        if ($remappingConfigured && $skipRemapping && ! $ci) {
+            // Remapping is defined but disabled: say so, because primary/foreign
+            // key values will be copied from the source unchanged.
+            $this->line(sprintf(
+                '  <comment>Key remapping disabled (%s) — primary/foreign key values are copied unchanged.</comment>',
+                $remapKeysOverride === false ? '--no-remap-keys' : 'options.remap_keys: false',
+            ));
+        }
 
         if ($keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive() && ! $skipRemapping) {
             if ((bool) $this->option('no-memory-limit')) {
@@ -1020,6 +1033,8 @@ class RunCommand extends Command
             'skip-tables' => '--skip-tables',
             'only-tables' => '--only-tables',
             'audit-channel' => '--audit-channel',
+            'remap-keys' => '--remap-keys',
+            'no-remap-keys' => '--no-remap-keys',
             'skip-remapping-keys' => '--skip-remapping-keys',
             'file-based' => '--file-based',
             'enforce-column-types' => '--enforce-column-types',

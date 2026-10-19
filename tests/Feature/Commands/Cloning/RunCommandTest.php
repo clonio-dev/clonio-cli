@@ -2166,3 +2166,88 @@ it('generates key mappings when options.remap_keys is true (default)', function 
         '--ci' => true,
     ])->assertExitCode(ExitCode::Success->value);
 });
+
+function bindRemapKeysMocks(bool $expectMapping): void
+{
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    app()->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    app()->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    app()->instance(SchemaInspector::class, $inspector);
+
+    $remapping = Mockery::mock(KeyRemappingService::class);
+
+    if ($expectMapping) {
+        $remapping->shouldReceive('generateMappings')->once()->andReturn(['users' => 1]);
+        $remapping->shouldReceive('cleanup')->andReturnNull();
+    } else {
+        $remapping->shouldNotReceive('generateMappings');
+    }
+
+    app()->instance(KeyRemappingService::class, $remapping);
+
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')->andReturn(new RunResultData(
+        success: true,
+        tables: [new TableRunResultData('users', TableRunStatus::Transferred, 1, 0, 1.0, null)],
+        totalRows: 1,
+        skippedRows: 0,
+        durationSeconds: 1.0,
+        failureReason: null,
+    ));
+    app()->instance(CloningRunOrchestrator::class, $orchestrator);
+}
+
+function makeRemappingYamlWithRemapKeys(bool $remapKeys): string
+{
+    return str_replace(
+        '  disable_foreign_key_checks: true',
+        "  disable_foreign_key_checks: true\n  remap_keys: ".($remapKeys ? 'true' : 'false'),
+        makeRemappingYaml(),
+    );
+}
+
+it('resolves remap_keys from config and CLI flags', function (bool $configValue, array $flags, bool $expectMapping): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYamlWithRemapKeys($configValue));
+    bindRemapKeysMocks($expectMapping);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+        ...$flags,
+    ])->assertExitCode(ExitCode::Success->value);
+})->with([
+    'config true, --no-remap-keys' => [true, ['--no-remap-keys' => true], false],
+    'config true, --skip-remapping-keys (alias)' => [true, ['--skip-remapping-keys' => true], false],
+    'config false, --remap-keys re-enables' => [false, ['--remap-keys' => true], true],
+    'config false survives other overrides' => [false, ['--enforce-column-types' => true], false],
+    'config true, --remap-keys' => [true, ['--remap-keys' => true], true],
+    'config true, both flags: --no-remap-keys wins' => [true, ['--remap-keys' => true, '--no-remap-keys' => true], false],
+]);
+
+it('prints a notice when configured key remapping is disabled', function (array $flags, string $source): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYamlWithRemapKeys($flags !== []));
+    bindRemapKeysMocks(false);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        ...$flags,
+    ])
+        ->expectsOutputToContain(sprintf('Key remapping disabled (%s)', $source))
+        ->assertExitCode(ExitCode::Success->value);
+})->with([
+    'from config' => [[], 'options.remap_keys: false'],
+    'from flag' => [['--no-remap-keys' => true], '--no-remap-keys'],
+]);

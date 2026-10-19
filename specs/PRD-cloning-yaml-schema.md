@@ -72,8 +72,9 @@ options:
 `disable_foreign_key_checks`, `faker_locale`) are required when editing by hand;
 `remap_keys` is optional and defaults to `true`. Setting `remap_keys: false`
 skips key-mapping generation and PK/FK rewriting even when a remapping
-configuration is present — equivalent to `cloning:run --skip-remapping-keys`,
-and settable at dump time via `cloning:dump --skip-remapping-keys`.
+configuration is present. It can be overridden per run with
+`cloning:run --remap-keys` / `--no-remap-keys` (`--skip-remapping-keys` is an
+alias of `--no-remap-keys`) and set at dump time via `cloning:dump --no-remap-keys`.
 
 ### 4.3 `tables.<table_name>`
 

@@ -26,7 +26,9 @@ clonio cloning:run <file> [options]
 | `--skip-tables=<list>` | Comma-separated list of table names to exclude from this run |
 | `--only-tables=<list>` | Comma-separated list of table names to include; all others are skipped |
 | `--audit-channel=<list>` | Comma-separated list of channel names to use for this run (overrides `audit.default` in `clonio.json`) |
-| `--skip-remapping-keys` | Skip key mapping generation and FK rewriting. Can also be persisted in the config via `options.remap_keys: false` (see [`.cloning.yaml`](../cloning-yaml.md#options)); the run is skipped when either the flag is set or the option is `false`. |
+| `--remap-keys` | Override: set `remap_keys: true` for this run (re-enables key remapping disabled in the YAML) |
+| `--no-remap-keys` | Override: set `remap_keys: false` for this run — skip key mapping generation and FK rewriting. Persist it in the YAML via [`options.remap_keys`](../cloning-yaml.md#options). |
+| `--skip-remapping-keys` | Alias of `--no-remap-keys` |
 | `--no-memory-limit` | Remove PHP's memory limit before generating key mappings. Useful for very large databases when `--file-based` is not viable. |
 | `--file-based` | Store key mappings in AES-256-CBC encrypted temporary files instead of RAM. Keeps memory usage bounded to the size of the largest single table's mapping. |
 | `--enforce-column-types` | Override: set `enforce_column_types: true` for this run |
@@ -147,7 +149,7 @@ The DDL/DML respect `options.drop_unknown_tables`, `options.chunk_size`, and `op
 
 ## Schema Synchronization
 
-Before transferring data, Clonio synchronizes the target schema to match the source. Four options in the `options:` block of the YAML file control this behaviour. These values are set interactively by `cloning:dump` and can be overridden at run time via CLI flags.
+Before transferring data, Clonio synchronizes the target schema to match the source. Five options in the `options:` block of the YAML file control this behaviour and the data transfer. These values are set interactively by `cloning:dump` and can be overridden at run time via CLI flags.
 
 | YAML option | Default | CLI override (on / off) | Effect |
 |-------------|---------|------------------------|--------|
@@ -155,6 +157,7 @@ Before transferring data, Clonio synchronizes the target schema to match the sou
 | `drop_unknown_tables` | `false` | `--drop-unknown-tables` / `--no-drop-unknown-tables` | Drop tables from the target that do not exist in the source |
 | `drop_extra_columns` | `false` | `--drop-extra-columns` / `--no-drop-extra-columns` | Drop columns from existing target tables that are absent from the source |
 | `disable_foreign_key_checks` | `true` | `--disable-fk-checks` / `--no-disable-fk-checks` | Disable FK constraint checks during data transfer |
+| `remap_keys` | `true` | `--remap-keys` / `--no-remap-keys` | Generate key mappings and rewrite PK/FK values when remapping is configured |
 
 ```yaml
 options:
@@ -295,13 +298,22 @@ Each `foreign_keys` entry:
 | `column` | string | Name of the FK column |
 | `self_referential` | bool | `true` when the FK points to the same table (default: `false`) |
 
-### Skipping remapping for a single run
+### Disabling remapping
+
+Key remapping can be turned off without removing the remapping definition — either for a single run or persistently in the YAML:
 
 ```bash
-clonio cloning:run production-db.cloning.yaml --target staging --skip-remapping-keys
+clonio cloning:run production-db.cloning.yaml --target staging --no-remap-keys
 ```
 
-Bypasses all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined.
+```yaml
+options:
+  remap_keys: false
+```
+
+Both bypass all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined, so primary and foreign key values are copied from the source unchanged. Outside `--ci`, the run prints a notice when this happens. `--skip-remapping-keys` is kept as an alias of `--no-remap-keys`.
+
+When the YAML sets `remap_keys: false`, `--remap-keys` re-enables remapping for a single run. If both `--remap-keys` and `--no-remap-keys` are passed, `--no-remap-keys` wins.
 
 ### Memory management for large databases
 
@@ -312,7 +324,7 @@ By default, all PK mappings are held in RAM simultaneously (one entry per row pe
 | `--no-memory-limit` | Removes PHP's `memory_limit` constraint before generating mappings. Useful when the dataset fits on the server but exceeds the configured PHP limit. |
 | `--file-based` | Writes each table's mappings to an AES-256-CBC encrypted temporary file instead of RAM. Only one table's mappings are loaded at a time, keeping peak memory usage bounded to the largest single table. Files are deleted automatically on completion or crash. |
 
-Both flags can be used together if needed. When `--skip-remapping-keys` is set, both flags are silently ignored.
+Both flags can be used together if needed. When remapping is disabled (`--no-remap-keys` or `remap_keys: false`), both flags are silently ignored.
 
 ```bash
 # Remove memory cap (dataset fits in RAM, just over the PHP limit)
@@ -382,7 +394,7 @@ Synchronizes the target schema with the source. Controlled by four options in th
 - `drop_extra_columns: true` — drops columns from existing target tables that are absent in the source.
 - `drop_unknown_tables: true` — drops tables from the target that are not present in the source.
 
-Each option can be overridden for a single run via CLI flags (`--enforce-column-types`, `--drop-unknown-tables`, `--drop-extra-columns`, `--disable-fk-checks` and their `--no-*` counterparts) without modifying the YAML file.
+Each option can be overridden for a single run via CLI flags (`--enforce-column-types`, `--drop-unknown-tables`, `--drop-extra-columns`, `--disable-fk-checks`, `--remap-keys` and their `--no-*` counterparts) without modifying the YAML file.
 
 Skipped entirely when `--skip-schema` is set.
 

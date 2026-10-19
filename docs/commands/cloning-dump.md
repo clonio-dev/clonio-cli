@@ -22,7 +22,8 @@ clonio cloning:dump [options]
 | `--drop-unknown-tables` | Set `drop_unknown_tables: true` in the generated YAML |
 | `--drop-extra-columns` | Set `drop_extra_columns: true` in the generated YAML |
 | `--no-disable-fk-checks` | Set `disable_foreign_key_checks: false` in the generated YAML |
-| `--skip-remapping-keys` | Set `remap_keys: false` in the generated YAML (key remapping stays defined but disabled) |
+| `--no-remap-keys` | Set `remap_keys: false` in the generated YAML (key remapping stays defined but disabled) |
+| `--skip-remapping-keys` | Alias of `--no-remap-keys` |
 | `--ci` | CI mode — suppress non-error output and require `--connection` |
 
 ## Description
@@ -111,7 +112,7 @@ clonio cloning:dump --connection production-db --only-pii
 
 ### Setting transfer options at dump time
 
-After inspecting the schema, Clonio prompts for four schema-transfer options that control how `cloning:run` synchronizes the target schema. In interactive mode you answer yes/no at the prompt; defaults match the recommended safe settings:
+After inspecting the schema, Clonio prompts for five transfer options that control how `cloning:run` synchronizes the target schema and transfers data. In interactive mode you answer yes/no at the prompt; defaults match the recommended safe settings:
 
 | Prompt | Flag | Default | Effect on target |
 |--------|------|---------|-----------------|
@@ -119,6 +120,7 @@ After inspecting the schema, Clonio prompts for four schema-transfer options tha
 | Drop unknown tables on target? | `--drop-unknown-tables` | `false` | Drop tables from the target that do not exist in the source |
 | Drop extra columns on target? | `--drop-extra-columns` | `false` | Drop columns from existing target tables that are absent from the source |
 | Disable foreign key checks? | `--no-disable-fk-checks` to disable | `true` | Disable FK constraint checks during data transfer |
+| Remap keys? | `--no-remap-keys` to disable | `true` | Generate key mappings and rewrite PK/FK values when remapping is configured |
 
 In `--ci` mode the prompts are skipped and only the flags apply:
 
