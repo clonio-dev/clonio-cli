@@ -245,6 +245,13 @@ class CloningYamlValidator
 
             $strategy = $typedColumnConfig['strategy'] ?? null;
 
+            // Unquoted `strategy: null` is the YAML null literal, not the 'null' strategy.
+            if ($strategy === null && array_key_exists('strategy', $typedColumnConfig)) {
+                $errors[] = sprintf('%s: strategy is the YAML null literal — quote it as strategy: "null" to set the column to NULL', $prefix);
+
+                continue;
+            }
+
             if (! is_string($strategy) || ! in_array($strategy, self::VALID_COLUMN_STRATEGIES, true)) {
                 $errors[] = sprintf('%s: strategy must be one of: %s', $prefix, implode(', ', self::VALID_COLUMN_STRATEGIES));
 

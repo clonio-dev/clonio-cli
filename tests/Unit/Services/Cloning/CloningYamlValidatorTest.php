@@ -847,3 +847,24 @@ it('flags options.remap_keys when not a boolean', function (): void {
     expect((new CloningYamlValidator)->validate($config))
         ->toContain("Field 'options.remap_keys' must be a boolean");
 });
+
+it('explains that an unquoted null strategy must be quoted', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['gender'] = ['strategy' => null];
+
+    $errors = (new CloningYamlValidator)->validate($config);
+
+    expect($errors)->toHaveCount(1)
+        ->and($errors[0])->toContain('gender')
+        ->toContain('strategy: "null"');
+});
+
+it('keeps the generic error when the column strategy is missing', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['gender'] = ['faker_method' => 'x'];
+
+    $errors = (new CloningYamlValidator)->validate($config);
+
+    expect($errors)->toHaveCount(1)
+        ->and($errors[0])->toContain('strategy must be one of');
+});
