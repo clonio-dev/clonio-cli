@@ -240,6 +240,7 @@ A table where every column in `primary_key` is also listed as a FK entry in anot
 | Flag | Description |
 | --- | --- |
 | `--no-remap-keys` | Bypass phases 5b and 7 entirely (key mapping generation and cleanup), even when the YAML contains a `key_remapping` section with entries. No PK or FK rewriting is performed during data transfer. `--remap-keys` forces remapping on; persistent setting: `options.remap_keys`. |
+| `--skip-remapping-keys` | Alias of `--no-remap-keys` (available since v0.3.0). |
 
 Example:
 

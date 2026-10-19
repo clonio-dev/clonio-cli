@@ -2228,6 +2228,7 @@ it('resolves remap_keys from config and CLI flags', function (bool $configValue,
     ])->assertExitCode(ExitCode::Success->value);
 })->with([
     'config true, --no-remap-keys' => [true, ['--no-remap-keys' => true], false],
+    'config true, --skip-remapping-keys (alias)' => [true, ['--skip-remapping-keys' => true], false],
     'config false, --remap-keys re-enables' => [false, ['--remap-keys' => true], true],
     'config false survives other overrides' => [false, ['--enforce-column-types' => true], false],
     'config true, --remap-keys' => [true, ['--remap-keys' => true], true],
@@ -2249,4 +2250,5 @@ it('prints a notice when configured key remapping is disabled', function (array 
 })->with([
     'from config' => [[], 'options.remap_keys: false'],
     'from flag' => [['--no-remap-keys' => true], '--no-remap-keys'],
+    'from alias flag' => [['--skip-remapping-keys' => true], '--skip-remapping-keys'],
 ]);

@@ -609,7 +609,7 @@ it('writes disable_foreign_key_checks: false when --no-disable-fk-checks flag is
     expect($yaml)->toContain('disable_foreign_key_checks: false');
 });
 
-it('writes remap_keys: false when --no-remap-keys is set', function (): void {
+it('writes remap_keys: false when {flag} is set', function (string $flag): void {
     Storage::fake('local');
 
     $connection = makeDumpMysqlConnection('production-db');
@@ -632,13 +632,13 @@ it('writes remap_keys: false when --no-remap-keys is set', function (): void {
 
     $this->artisan('cloning:dump', [
         '--connection' => 'production-db',
-        '--no-remap-keys' => true,
+        $flag => true,
         '--ci' => true,
     ])->assertExitCode(ExitCode::Success->value);
 
     $yaml = Storage::disk('local')->get('production-db.cloning.yaml');
     expect($yaml)->toContain('remap_keys: false');
-});
+})->with(['--no-remap-keys', '--skip-remapping-keys']);
 
 it('prompts for transfer options interactively and writes the chosen values', function (): void {
     Storage::fake('local');
