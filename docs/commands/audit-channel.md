@@ -368,7 +368,7 @@ Each channel has independent control over whether it delivers the audit artefact
 }
 ```
 
-Note: `audit:update` rewrites the channel from the prompted fields and currently drops these two keys. Re-add them to `clonio.json` after running `audit:update` on such a channel.
+`audit:update` does not prompt for these keys; it keeps whatever values are set in `clonio.json`.
 
 ### clonio.json location
 
