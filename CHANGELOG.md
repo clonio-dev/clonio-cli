@@ -2,6 +2,21 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.3.0 - 2026-10-19
+
+### What's Changed
+
+* ci: tag the commit the preflight verified instead of HEAD by @rokde in https://github.com/clonio-dev/clonio-cli/pull/202
+* chore(deps): upgrade to Laravel Zero 13 and bump all dependencies by @rokde in https://github.com/clonio-dev/clonio-cli/pull/201
+* chore: ignore local .claude directory by @rokde in https://github.com/clonio-dev/clonio-cli/pull/203
+* feat(cloning): add recreate_tables option to rebuild drifted target tables by @rokde in https://github.com/clonio-dev/clonio-cli/pull/204
+* docs: align audit, matchers and column-edit command docs with the CLI by @rokde in https://github.com/clonio-dev/clonio-cli/pull/205
+* fix(audit): keep delivery flags when updating a channel by @rokde in https://github.com/clonio-dev/clonio-cli/pull/206
+* feat(cloning): skip generated columns and add exclude column strategy by @rokde in https://github.com/clonio-dev/clonio-cli/pull/207
+* feat(cloning): add schema row strategy for structure-only tables by @rokde in https://github.com/clonio-dev/clonio-cli/pull/208
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.2.0...v1.3.0
+
 ## v1.1.1 - 2026-09-27
 
 ### What's Changed
@@ -59,6 +74,7 @@ The release build for this tag failed on Linux (libjpeg-turbo 3.2.0), so no GitH
 ## v0.9.0 - 2026-06-17
 
 ## What's Changed
+
 * chore(deps-dev): bump driftingly/rector-laravel from 2.3.0 to 2.4.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/126
 * chore(deps): bump symfony/polyfill-intl-idn from 1.37.0 to 1.38.1 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/127
 * chore(deps): bump symfony/yaml from 8.0.12 to 8.1.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/128
@@ -67,7 +83,6 @@ The release build for this tag failed on Linux (libjpeg-turbo 3.2.0), so no GitH
 * chore(deps-dev): bump laravel/pao from 1.0.6 to 1.1.1 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/134
 * feat: Add PRD for dump connection type (issue #124) by @rokde in https://github.com/clonio-dev/clonio-cli/pull/136
 * Support dump by @rokde in https://github.com/clonio-dev/clonio-cli/pull/137
-
 
 **Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v0.8.0...v0.9.0
 
