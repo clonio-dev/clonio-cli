@@ -24,6 +24,8 @@ make major   # v0.2.0 → v1.0.0
 
 Run `make` with no arguments to see the current version and a preview of what each command would produce.
 
+Before tagging, `patch`, `minor` and `major` run `make preflight` (see [Preflight](#preflight)). The tag is only created once the dry-run build has passed on every target.
+
 Each `make` target creates a git tag on the current commit and pushes it to `origin`. It does **not** modify any files — the version is resolved at runtime from the tag (see [Version resolution](#version-resolution) below).
 
 Or tag manually if needed:
@@ -63,6 +65,22 @@ It will contain four files:
 | `clonio.phar` | Any platform | PHP 8.5 |
 
 The version embedded in each binary matches the tag name (see below).
+
+## Preflight
+
+`make preflight` makes sure a release will build on all targets **before** the tag exists:
+
+1. Checks that `HEAD` is `origin/main`.
+2. Dispatches the `build` workflow on `main` as a dry-run: tests, all three SPC binaries with smoke tests, the PHAR and the Docker image. Nothing is published.
+3. Waits for the run and aborts (no tag) if any job fails.
+
+It is skipped automatically when a green dry-run for the current `origin/main` commit exists and the SPC build caches on `main` are still present. Force-skip with `SKIP_PREFLIGHT=1 make minor`.
+
+**Why this works:** the dry-run saves the SPC download and build caches on `main`. Tag runs can restore caches from the default branch, so the release then reuses the exact sources and compiled PHP that were just verified, instead of downloading fresh upstream releases. Caches saved by a tag run are only visible to that tag, and GitHub evicts caches unused for 7 days — which is why releases used to start cold and break on new upstream library versions.
+
+A weekly scheduled dry-run (Mondays, 04:17 UTC) keeps these caches warm and reports upstream breakage before release day.
+
+Remaining risks are transient (runner outages, network flakes during `composer install`). If a tag run fails anyway, re-run the failed jobs from the Actions tab — the release job only runs once all builds have succeeded.
 
 ## Version resolution
 

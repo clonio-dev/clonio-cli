@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help current patch minor major alpha docker-build docker-build-multiarch docker-test docker-shell
+.PHONY: help current preflight patch minor major alpha docker-build docker-build-multiarch docker-test docker-shell
 
 DOCKER_IMAGE ?= clonio:local
 
@@ -23,6 +23,7 @@ help:
 	echo ""; \
 	echo "  Commands:"; \
 	printf "    %-12s %s\n" "make current" "Show current stable version on main"; \
+	printf "    %-12s %s\n" "make preflight" "Dry-run the release build on main for all targets (patch/minor/major run this first)"; \
 	printf "    %-12s %s\n" "make alpha" "Tag a pre-release ($$CURRENT → $$NEXT_PATCH-alpha.N) — CI builds a GitHub pre-release, no Packagist ping"; \
 	printf "    %-12s %s\n" "make patch" "Bump patch version  ($$CURRENT → $$NEXT_PATCH)"; \
 	printf "    %-12s %s\n" "make minor" "Bump minor version  ($$CURRENT → v$$MAJOR.$$((MINOR+1)).0)"; \
@@ -39,8 +40,43 @@ current:
 	@git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1 || echo "v0.0.0"
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Preflight: before tagging, run the build workflow as a dry-run on origin/main
+# and wait for it to pass on all targets. The dry-run also stores the SPC caches
+# on main, which the tag run restores — so the release builds from exactly what
+# was just verified instead of downloading fresh upstream sources.
+# Skipped when a green dry-run for origin/main exists and the SPC build caches
+# are still present. Bypass with SKIP_PREFLIGHT=1.
+# ──────────────────────────────────────────────────────────────────────────────
 
-patch:
+preflight:
+	@set -e; \
+	if [ -n "$(SKIP_PREFLIGHT)" ]; then echo "Preflight skipped (SKIP_PREFLIGHT set)."; exit 0; fi; \
+	command -v gh >/dev/null || { echo "gh CLI is required for the preflight."; exit 1; }; \
+	git fetch -q origin main --tags; \
+	MAIN=$$(git rev-parse origin/main); SHORT=$$(git rev-parse --short origin/main); \
+	if [ "$$(git rev-parse HEAD)" != "$$MAIN" ]; then echo "HEAD is not origin/main ($$SHORT). Run: git checkout main && git pull"; exit 1; fi; \
+	GREEN=$$(gh run list --workflow build.yml --branch main -L 30 --json headSha,conclusion,event \
+	  --jq "[.[] | select(.headSha == \"$$MAIN\" and .conclusion == \"success\" and .event != \"push\")] | length"); \
+	CACHES=$$(gh cache list --ref refs/heads/main --key spc-build- -L 20 --json key --jq 'length'); \
+	if [ "$$GREEN" -gt 0 ] && [ "$$CACHES" -ge 3 ]; then echo "Preflight: dry-run for $$SHORT already green and SPC caches are warm."; exit 0; fi; \
+	echo "Preflight: starting dry-run build for $$SHORT (all targets, ~15–40 min)..."; \
+	gh workflow run build.yml --ref main; \
+	RUN=""; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do \
+	  sleep 5; \
+	  RUN=$$(gh run list --workflow build.yml --branch main --event workflow_dispatch -L 5 --json databaseId,headSha,status \
+	    --jq "[.[] | select(.headSha == \"$$MAIN\" and .status != \"completed\")][0].databaseId // empty"); \
+	  [ -n "$$RUN" ] && break; \
+	done; \
+	if [ -z "$$RUN" ]; then echo "Preflight: could not find the dispatched run."; exit 1; fi; \
+	echo "Preflight: watching https://github.com/clonio-dev/clonio-cli/actions/runs/$$RUN"; \
+	if ! gh run watch "$$RUN" --exit-status --interval 30 >/dev/null; then \
+	  echo "Preflight FAILED — not tagging. Inspect: gh run view $$RUN --log-failed"; exit 1; \
+	fi; \
+	echo "Preflight: all targets built and smoke-tested for $$SHORT."
+
+# ──────────────────────────────────────────────────────────────────────────────
+
+patch: preflight
 	@set -e; \
 	CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \
@@ -54,7 +90,7 @@ patch:
 	git push origin "$$NEW" || { git tag -d "$$NEW" >/dev/null; exit 1; }; \
 	echo "Done — $$NEW pushed. CI will build the release automatically."
 
-minor:
+minor: preflight
 	@set -e; \
 	CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \
@@ -67,7 +103,7 @@ minor:
 	git push origin "$$NEW" || { git tag -d "$$NEW" >/dev/null; exit 1; }; \
 	echo "Done — $$NEW pushed. CI will build the release automatically."
 
-major:
+major: preflight
 	@set -e; \
 	CURRENT=$$(git tag --sort=-version:refname --merged origin/main 2>/dev/null | grep -v -- '-' | head -1); \
 	CURRENT=$${CURRENT:-v0.0.0}; \

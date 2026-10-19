@@ -6,7 +6,15 @@ on:
       - 'v*'
   # Manual dry-run: runs test + build, uploads binaries as artifacts, skips release + packagist.
   # Use from the Actions tab to verify CI changes on a branch before tagging.
+  # `make patch|minor|major` dispatches this on main first (see `make preflight`).
   workflow_dispatch:
+  # Weekly dry-run on main. GitHub evicts caches unused for 7 days, and caches
+  # saved by a tag run are only visible to that tag — so without this, every
+  # release would download fresh upstream sources and recompile PHP from
+  # scratch. Keeps the main-scoped SPC caches warm and surfaces upstream
+  # breakage (e.g. a new library release) before release day.
+  schedule:
+    - cron: '17 4 * * 1'
 
 permissions:
   contents: write
@@ -200,7 +208,7 @@ jobs:
 
       - name: Stamp version from tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" != "push" ]; then
             echo "dev-${GITHUB_SHA::7}" > VERSION
           else
             echo "${{ github.ref_name }}" > VERSION
@@ -348,7 +356,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             # Dry-run dispatches aren't tag pushes, so the semver patterns above produce nothing —
             # this gives the build a deterministic dev tag and silences metadata-action warnings.
-            type=sha,prefix=dev-,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=sha,prefix=dev-,enable=${{ github.event_name != 'push' }}
           labels: |
             org.opencontainers.image.source=https://github.com/clonio-dev/clonio-cli
             org.opencontainers.image.description=Clonio CLI — safe production-to-dev database transfers
@@ -370,7 +378,7 @@ jobs:
     name: Publish Release
     needs: [test, build, docker]
     runs-on: ubuntu-latest
-    # Skip on workflow_dispatch — manual runs are dry-runs (artifacts only, no release).
+    # Skip on workflow_dispatch and schedule — those are dry-runs (artifacts only, no release).
     if: always() && needs.test.result == 'success' && needs.build.result == 'success' && needs.docker.result == 'success' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
 
     steps:
