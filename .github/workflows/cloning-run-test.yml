@@ -209,7 +209,7 @@ jobs:
 
       - name: Seed source database (SQL Server)
         if: matrix.pair.source == 'sqlsrv'
-        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d ${{ matrix.pair.source_db }} -i .github/cloning-test/schema-mssql.sql -No
+        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d ${{ matrix.pair.source_db }} -i .github/cloning-test/schema-mssql.sql -b -No
 
       # ── Register connections ──────────────────────────────────────────────────
 

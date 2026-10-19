@@ -1,6 +1,11 @@
 -- Demo schema for cloning:run CI tests (SQL Server)
 -- users.id and orders.user_id are VARCHAR(36) to accommodate UUID key remapping.
 
+-- sqlcmd defaults to QUOTED_IDENTIFIER OFF, but tables with PERSISTED
+-- computed columns (bookings.guest_label) require it ON.
+SET QUOTED_IDENTIFIER ON;
+GO
+
 CREATE TABLE users (
     id VARCHAR(36) NOT NULL,
     email VARCHAR(255) NOT NULL,
