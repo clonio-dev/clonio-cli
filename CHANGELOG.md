@@ -2,6 +2,24 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.2.0 - 2026-10-19
+
+### What's Changed
+
+* Update CHANGELOG for v1.1.1 release. by @rokde in https://github.com/clonio-dev/clonio-cli/pull/187
+* ci(release): update CHANGELOG via pull request after each release by @rokde in https://github.com/clonio-dev/clonio-cli/pull/188
+* chore(deps): bump the github-actions group with 2 updates by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/192
+* chore(deps): bump symfony/yaml from 8.1.6 to 8.1.8 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/191
+* chore(deps): bump the github-actions group with 4 updates by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/195
+* chore(deps): bump symfony/yaml from 8.1.8 to 8.1.9 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/194
+* feat(cloning): remap_keys config option with --remap-keys/--no-remap-keys overrides by @rokde in https://github.com/clonio-dev/clonio-cli/pull/197
+* ci: fix Composer cache path so dependency downloads are cached by @rokde in https://github.com/clonio-dev/clonio-cli/pull/198
+* fix(cloning): quote and escape generated YAML scalars correctly by @rokde in https://github.com/clonio-dev/clonio-cli/pull/199
+* chore(deps-dev): bump larastan/larastan from 3.12.2 to 3.13.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/193
+* ci: verify the release build on all targets before tagging by @rokde in https://github.com/clonio-dev/clonio-cli/pull/200
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.1.1...v1.2.0
+
 ## v1.1.1 - 2026-09-27
 
 ### What's Changed
@@ -59,6 +77,7 @@ The release build for this tag failed on Linux (libjpeg-turbo 3.2.0), so no GitH
 ## v0.9.0 - 2026-06-17
 
 ## What's Changed
+
 * chore(deps-dev): bump driftingly/rector-laravel from 2.3.0 to 2.4.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/126
 * chore(deps): bump symfony/polyfill-intl-idn from 1.37.0 to 1.38.1 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/127
 * chore(deps): bump symfony/yaml from 8.0.12 to 8.1.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/128
@@ -67,7 +86,6 @@ The release build for this tag failed on Linux (libjpeg-turbo 3.2.0), so no GitH
 * chore(deps-dev): bump laravel/pao from 1.0.6 to 1.1.1 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/134
 * feat: Add PRD for dump connection type (issue #124) by @rokde in https://github.com/clonio-dev/clonio-cli/pull/136
 * Support dump by @rokde in https://github.com/clonio-dev/clonio-cli/pull/137
-
 
 **Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v0.8.0...v0.9.0
 
