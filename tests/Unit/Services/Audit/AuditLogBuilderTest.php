@@ -190,3 +190,27 @@ it('records transformed (non-keep) columns and counts kept columns', function ()
         ->and($record->tables[0]->transformedColumns[0]->strategy)->toBe('fake')
         ->and($record->tables[0]->keptColumnCount)->toBe(1);
 });
+
+it('carries table notes from the run result into the audit record', function (): void {
+    $result = new RunResultData(
+        success: true,
+        tables: [
+            new TableRunResultData('users', TableRunStatus::Transferred, 100, 0, 0.5, null, ['Generated columns not copied, computed by the target: full_name']),
+        ],
+        totalRows: 100,
+        skippedRows: 0,
+        durationSeconds: 0.6,
+        failureReason: null,
+    );
+
+    $record = (new AuditLogBuilder(new AuditLogSigner))->build(
+        config: makeBuilderCloningConfig(),
+        result: $result,
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+    );
+
+    expect($record->tables[0]->notes)->toBe(['Generated columns not copied, computed by the target: full_name']);
+});

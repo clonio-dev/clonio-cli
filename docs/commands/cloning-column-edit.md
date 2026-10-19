@@ -33,6 +33,7 @@ When run without flags, the command walks through each step interactively:
 | `static` | Replace every value with a fixed string. |
 | `template` | Build a string by mixing literal text with `{fakerMethod}` placeholders, e.g. `{userName}@acme.test`. |
 | `remapping` | Replace primary-key values; foreign keys auto-detected from the live source schema. |
+| `exclude` | Leave the column out of the transfer. The target column must be nullable or have a default. No parameters. |
 
 ### `fake` Parameters
 

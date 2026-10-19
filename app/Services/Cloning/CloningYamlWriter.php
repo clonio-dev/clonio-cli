@@ -135,6 +135,7 @@ class CloningYamlWriter
                             break;
 
                         case 'keep':
+                        case 'exclude':
                             // no extra fields needed
                             break;
                     }

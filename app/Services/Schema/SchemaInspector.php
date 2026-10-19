@@ -59,7 +59,7 @@ class SchemaInspector
 
             /** @var list<stdClass> $columnRows */
             $columnRows = DB::connection($connName)->select(
-                'SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
+                'SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
                 [$tableName]
             );
 
@@ -78,6 +78,7 @@ class SchemaInspector
                 $colDefault = is_scalar($rawDefault) ? (string) $rawDefault : null;
                 /** @var string $colKey */
                 $colKey = $col->COLUMN_KEY;
+                $extra = is_string($col->EXTRA ?? null) ? $col->EXTRA : '';
 
                 $mods = ColumnTypeParser::parse($columnType);
 
@@ -91,6 +92,7 @@ class SchemaInspector
                     length: $mods['length'],
                     precision: $mods['precision'],
                     scale: $mods['scale'],
+                    generated: $this->isMysqlGenerated($extra),
                 );
             }
 
@@ -145,7 +147,7 @@ class SchemaInspector
             /** @var list<stdClass> $columnRows */
             $columnRows = DB::connection($connName)->select(
                 "SELECT column_name, data_type, is_nullable, column_default,
-                    character_maximum_length, numeric_precision, numeric_scale,
+                    character_maximum_length, numeric_precision, numeric_scale, is_generated,
                     (SELECT COUNT(*) FROM information_schema.table_constraints tc
                      JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
                      WHERE tc.table_name = c.table_name AND kcu.column_name = c.column_name
@@ -178,6 +180,7 @@ class SchemaInspector
                     length: $this->intOrNull($col->character_maximum_length ?? null),
                     precision: $this->intOrNull($col->numeric_precision ?? null),
                     scale: $this->intOrNull($col->numeric_scale ?? null),
+                    generated: ($col->is_generated ?? null) === 'ALWAYS',
                 );
             }
 
@@ -236,7 +239,8 @@ class SchemaInspector
             /** @var string $tableName */
             $tableName = $tableRow->name;
 
-            $colRows = $pdo->query('PRAGMA table_info('.$tableName.')');
+            // table_xinfo (not table_info) also lists generated columns.
+            $colRows = $pdo->query('PRAGMA table_xinfo('.$tableName.')');
 
             if ($colRows === false) {
                 throw new RuntimeException(sprintf('Failed to get column info for table %s', $tableName));
@@ -248,6 +252,14 @@ class SchemaInspector
             $columns = [];
 
             foreach ($colData as $col) {
+                // hidden: 0 = normal, 1 = hidden column of a virtual table,
+                // 2 = virtual generated, 3 = stored generated.
+                $hidden = is_numeric($col->hidden ?? null) ? (int) $col->hidden : 0;
+
+                if ($hidden === 1) {
+                    continue;
+                }
+
                 /** @var string $colName */
                 $colName = $col->name;
                 /** @var string $colType */
@@ -268,6 +280,7 @@ class SchemaInspector
                     length: $mods['length'],
                     precision: $mods['precision'],
                     scale: $mods['scale'],
+                    generated: $hidden === 2 || $hidden === 3,
                 );
             }
 
@@ -307,6 +320,16 @@ class SchemaInspector
         return new DatabaseSchemaData(databaseName: $dbName, tables: $tables);
     }
 
+    /**
+     * MySQL/MariaDB report generated columns in EXTRA as "VIRTUAL GENERATED",
+     * "STORED GENERATED" or (MariaDB) "PERSISTENT GENERATED". "DEFAULT_GENERATED"
+     * marks an expression default (e.g. CURRENT_TIMESTAMP) and is a normal column.
+     */
+    private function isMysqlGenerated(string $extra): bool
+    {
+        return preg_match('/\b(VIRTUAL|STORED|PERSISTENT) GENERATED\b/i', $extra) === 1;
+    }
+
     private function intOrNull(mixed $value): ?int
     {
         return is_numeric($value) ? (int) $value : null;
@@ -331,7 +354,8 @@ class SchemaInspector
             $columnRows = DB::connection($connName)->select(
                 "SELECT c.COLUMN_NAME, c.DATA_TYPE, c.IS_NULLABLE, c.COLUMN_DEFAULT,
                     c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE,
-                    CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END as is_primary
+                    CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END as is_primary,
+                    COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)), c.COLUMN_NAME, 'IsComputed') as is_computed
                 FROM INFORMATION_SCHEMA.COLUMNS c
                 LEFT JOIN (
                     SELECT ku.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
@@ -368,6 +392,7 @@ class SchemaInspector
                     length: $charLen !== null && $charLen < 0 ? null : $charLen,
                     precision: $this->intOrNull($col->NUMERIC_PRECISION ?? null),
                     scale: $this->intOrNull($col->NUMERIC_SCALE ?? null),
+                    generated: $this->intOrNull($col->is_computed ?? null) === 1,
                 );
             }
 

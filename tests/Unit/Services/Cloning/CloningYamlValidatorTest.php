@@ -896,3 +896,10 @@ it('validates recreate_tables as optional boolean', function (mixed $value, bool
     'false' => [false, true],
     'string' => ['yes', false],
 ]);
+
+it('accepts the exclude column strategy without extra fields', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['internal_note'] = ['strategy' => 'exclude'];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([]);
+});

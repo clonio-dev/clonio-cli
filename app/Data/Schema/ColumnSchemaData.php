@@ -19,5 +19,9 @@ final readonly class ColumnSchemaData
         public ?int $length = null,
         public ?int $precision = null,
         public ?int $scale = null,
+        // True for generated/computed columns (MySQL/MariaDB VIRTUAL/STORED,
+        // PostgreSQL GENERATED ALWAYS AS, SQLite generated, SQL Server computed).
+        // The database computes these values, so Clonio never copies them.
+        public bool $generated = false,
     ) {}
 }

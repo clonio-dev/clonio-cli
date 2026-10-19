@@ -68,6 +68,7 @@ class AuditLogBuilder
                 durationSeconds: $tableResult->durationSeconds,
                 transformedColumns: $transformedColumns,
                 keptColumnCount: $keptColumnCount,
+                notes: $tableResult->notes,
             );
         }
 

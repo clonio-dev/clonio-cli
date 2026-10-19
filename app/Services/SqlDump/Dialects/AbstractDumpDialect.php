@@ -60,7 +60,8 @@ abstract class AbstractDumpDialect implements SqlDumpDialect
                 '  %s %s%s',
                 $this->quoteIdentifier($column->name),
                 $this->mapColumnType($column),
-                $column->nullable ? '' : ' NOT NULL',
+                // Generated columns are dumped as plain nullable columns without values.
+                $column->nullable || $column->generated ? '' : ' NOT NULL',
             );
         }
 

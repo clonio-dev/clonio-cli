@@ -55,6 +55,20 @@ tables:
         faker_method: streetAddress
         faker_arguments: []
 
+  # Generated columns `day` and `guest_label` are detected and left out
+  # automatically (issue #189); `internal_note` is excluded explicitly.
+  bookings:
+    rows:
+      strategy: full
+    columns:
+      # PII: Full Name
+      guest_name:
+        strategy: fake
+        faker_method: name
+        faker_arguments: []
+      internal_note:
+        strategy: exclude
+
 key_remapping:
   tables:
     - table: users

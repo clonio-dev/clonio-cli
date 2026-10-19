@@ -19,6 +19,7 @@ use App\Data\Schema\TableSchemaData;
 use App\Enums\ClearMode;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
+use App\Services\Schema\SchemaInspector;
 use App\Services\SqlDump\SqlDumpService;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,7 @@ class CloningRunOrchestrator
         private readonly DatabaseConnectionService $connector,
         private readonly SchemaReplicator $replicator,
         private readonly DependencyResolver $resolver,
+        private readonly SchemaInspector $inspector,
     ) {}
 
     /**
@@ -109,6 +111,10 @@ class CloningRunOrchestrator
             }
         }
 
+        // Inspect the target after replication so generated columns that exist
+        // only there (e.g. created by the app's own migrations) are known too.
+        $targetSchema = $dumpSink instanceof SqlDumpService ? null : $this->inspectTarget($target);
+
         // Single engine per run: shared per-run random salt across all tables
         // preserves intra-run hash joinability while defeating cross-run linkability.
         $engine = new AnonymizationEngine($config->options->fakerLocale);
@@ -172,6 +178,25 @@ class CloningRunOrchestrator
 
             $tableStart = microtime(true);
             $sourceTable = $sourceSchema->getTable($tableName);
+            $targetTable = $targetSchema?->getTable($tableName);
+
+            [$omittedColumns, $notes] = $this->resolveOmittedColumns(
+                $tableConfig,
+                $sourceTable,
+                $targetTable,
+                $dumpSink instanceof SqlDumpService,
+            );
+
+            foreach ($notes as $note) {
+                Log::warning('table_column_note', ['table' => $tableName, 'note' => $note]);
+            }
+
+            $selectColumns = $omittedColumns !== [] && $sourceTable instanceof TableSchemaData
+                ? array_values(array_filter(
+                    array_map(static fn (ColumnSchemaData $c): string => $c->name, $sourceTable->columns),
+                    static fn (string $c): bool => ! in_array($c, $omittedColumns, true),
+                ))
+                : null;
             $pkColumns = $sourceTable instanceof TableSchemaData
                 ? array_values(array_map(
                     static fn (ColumnSchemaData $c): string => $c->name,
@@ -188,6 +213,7 @@ class CloningRunOrchestrator
                     $dumpSink,
                     $keyRemapping,
                     $config->keyRemapping,
+                    $selectColumns,
                 )
                 : $this->transferTable(
                     $config->options,
@@ -198,6 +224,7 @@ class CloningRunOrchestrator
                     $engine,
                     $keyRemapping,
                     $config->keyRemapping,
+                    $selectColumns,
                 );
 
             $tableDuration = microtime(true) - $tableStart;
@@ -211,7 +238,7 @@ class CloningRunOrchestrator
                 Log::info('table_transferred', ['table' => $tableName, 'rows' => $rows, 'skipped' => $skipped]);
             }
 
-            $tableResults[] = new TableRunResultData($tableName, $status, $rows, $skipped, $tableDuration, $reason);
+            $tableResults[] = new TableRunResultData($tableName, $status, $rows, $skipped, $tableDuration, $reason, $notes);
             $totalRows += $rows;
             $totalSkipped += $skipped;
             ($onProgress)($tableName, $status, $rows, $skipped, $skippedRows);
@@ -273,6 +300,7 @@ class CloningRunOrchestrator
      * Transfer a single table. Returns [rowsTransferred, rowsSkipped, hasFailed, failureReason, skippedRows].
      *
      * @param  list<string>  $pkColumns
+     * @param  list<string>|null  $selectColumns  Explicit source columns to copy; null copies all
      * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
     private function transferTable(
@@ -284,6 +312,7 @@ class CloningRunOrchestrator
         AnonymizationEngine $engine,
         ?KeyRemappingService $keyRemapping = null,
         ?KeyRemappingConfigData $keyRemappingConfig = null,
+        ?array $selectColumns = null,
     ): array {
         $sourceConn = $this->connector->open($source);
         $targetConn = $this->connector->open($target);
@@ -309,7 +338,7 @@ class CloningRunOrchestrator
             do {
                 /** @var list<object> $chunk */
                 $chunk = DB::connection($sourceConn)->select(
-                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize)
+                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $selectColumns)
                 );
 
                 if ($chunk === []) {
@@ -384,6 +413,7 @@ class CloningRunOrchestrator
      * INSERT batches into the dump file. Mirrors transferTable() minus the live
      * target connection. Returns [rowsWritten, 0, hasFailed, failureReason, []].
      *
+     * @param  list<string>|null  $selectColumns  Explicit source columns to copy; null copies all
      * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
     private function dumpTable(
@@ -394,6 +424,7 @@ class CloningRunOrchestrator
         SqlDumpService $dumpSink,
         ?KeyRemappingService $keyRemapping = null,
         ?KeyRemappingConfigData $keyRemappingConfig = null,
+        ?array $selectColumns = null,
     ): array {
         $sourceConn = $this->connector->open($source);
 
@@ -405,7 +436,7 @@ class CloningRunOrchestrator
             do {
                 /** @var list<object> $chunk */
                 $chunk = DB::connection($sourceConn)->select(
-                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize)
+                    $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $selectColumns)
                 );
 
                 if ($chunk === []) {
@@ -452,6 +483,11 @@ class CloningRunOrchestrator
                 }
 
                 $colConfig = $tableConfig->getColumn($col);
+
+                if ($colConfig instanceof ColumnCloningConfigData && $colConfig->strategy === 'exclude') {
+                    continue;
+                }
+
                 $transformedRow[$col] = $colConfig instanceof ColumnCloningConfigData ? $engine->transform($val, $colConfig) : $val;
             }
 
@@ -486,19 +522,25 @@ class CloningRunOrchestrator
         return $snapshot === [] ? null : $snapshot;
     }
 
-    private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit): string
+    /**
+     * @param  list<string>|null  $columns  Explicit column list; null selects all columns
+     */
+    private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit, ?array $columns = null): string
     {
         $table = $config->tableName;
         $rows = $config->rows;
         $driver = $source->type->value;
 
         $quotedTable = $this->quoteTable($table, $source->type);
+        $select = $columns === null
+            ? '*'
+            : implode(', ', array_map(fn (string $c): string => $this->quoteTable($c, $source->type), $columns));
 
         if ($rows->strategy === 'full') {
             return match ($driver) {
-                'sqlsrv' => sprintf('SELECT * FROM [%s] ORDER BY (SELECT NULL) OFFSET %d ROWS FETCH NEXT %d ROWS ONLY', $table, $offset, $limit),
-                'pgsql', 'sqlite' => sprintf('SELECT * FROM "%s" LIMIT %d OFFSET %d', $table, $limit, $offset),
-                default => sprintf('SELECT * FROM `%s` LIMIT %d OFFSET %d', $table, $limit, $offset),
+                'sqlsrv' => sprintf('SELECT %s FROM [%s] ORDER BY (SELECT NULL) OFFSET %d ROWS FETCH NEXT %d ROWS ONLY', $select, $table, $offset, $limit),
+                'pgsql', 'sqlite' => sprintf('SELECT %s FROM "%s" LIMIT %d OFFSET %d', $select, $table, $limit, $offset),
+                default => sprintf('SELECT %s FROM `%s` LIMIT %d OFFSET %d', $select, $table, $limit, $offset),
             };
         }
 
@@ -506,17 +548,120 @@ class CloningRunOrchestrator
         $actualLimit = min($limit, max(0, $totalLimit - $offset));
 
         if ($actualLimit <= 0) {
-            return sprintf('SELECT * FROM %s WHERE 1=0', $quotedTable);
+            return sprintf('SELECT %s FROM %s WHERE 1=0', $select, $quotedTable);
         }
 
         $sortCol = $rows->sortBy ?? 'id';
         $direction = $rows->strategy === 'last' ? 'DESC' : 'ASC';
 
         return match ($driver) {
-            'pgsql', 'sqlite' => sprintf('SELECT * FROM "%s" ORDER BY "%s" %s LIMIT %d OFFSET %d', $table, $sortCol, $direction, $actualLimit, $offset),
-            'sqlsrv' => sprintf('SELECT * FROM [%s] ORDER BY [%s] %s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY', $table, $sortCol, $direction, $offset, $actualLimit),
-            default => sprintf('SELECT * FROM `%s` ORDER BY `%s` %s LIMIT %d OFFSET %d', $table, $sortCol, $direction, $actualLimit, $offset),
+            'pgsql', 'sqlite' => sprintf('SELECT %s FROM "%s" ORDER BY "%s" %s LIMIT %d OFFSET %d', $select, $table, $sortCol, $direction, $actualLimit, $offset),
+            'sqlsrv' => sprintf('SELECT %s FROM [%s] ORDER BY [%s] %s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY', $select, $table, $sortCol, $direction, $offset, $actualLimit),
+            default => sprintf('SELECT %s FROM `%s` ORDER BY `%s` %s LIMIT %d OFFSET %d', $select, $table, $sortCol, $direction, $actualLimit, $offset),
         };
+    }
+
+    /**
+     * Inspect the live target. Returns null when inspection fails; the run then
+     * relies on source metadata and the YAML config alone.
+     */
+    private function inspectTarget(ConnectionData $target): ?DatabaseSchemaData
+    {
+        try {
+            return $this->inspector->inspect($target);
+        } catch (Throwable $throwable) {
+            Log::warning('target_inspection_failed', ['error' => $throwable->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Decide which columns are left out of the transfer and why.
+     *
+     * A column is left out when it is generated in the source or in the target,
+     * or when its strategy is 'exclude'. Generated source values are never
+     * copied, even into a regular target column: they may be derived from PII
+     * (e.g. full_name = CONCAT(first_name, last_name)) and would bypass the
+     * anonymization of the columns they are computed from.
+     *
+     * @return array{list<string>, list<string>} [omittedColumns, notes]
+     */
+    private function resolveOmittedColumns(
+        TableCloningConfigData $tableConfig,
+        ?TableSchemaData $sourceTable,
+        ?TableSchemaData $targetTable,
+        bool $toDump,
+    ): array {
+        /** @var array<string, ColumnSchemaData> $targetColumns */
+        $targetColumns = [];
+
+        foreach ($targetTable->columns ?? [] as $col) {
+            $targetColumns[$col->name] = $col;
+        }
+
+        $computedByTarget = [];
+        $withoutExpression = [];
+        $unknownTarget = [];
+        $excluded = [];
+        $notNullExcluded = [];
+
+        foreach ($sourceTable->columns ?? [] as $col) {
+            $targetCol = $targetColumns[$col->name] ?? null;
+            $colConfig = $tableConfig->getColumn($col->name);
+
+            if ($col->generated || $targetCol?->generated === true) {
+                // Dumps never carry the expression; live targets lose it when the
+                // column exists there as a regular column.
+                if ($targetCol?->generated === true) {
+                    $computedByTarget[] = $col->name;
+                } elseif ($toDump || $targetCol instanceof ColumnSchemaData) {
+                    $withoutExpression[] = $col->name;
+                } else {
+                    $unknownTarget[] = $col->name;
+                }
+
+                continue;
+            }
+
+            if ($colConfig instanceof ColumnCloningConfigData && $colConfig->strategy === 'exclude') {
+                $excluded[] = $col->name;
+
+                if ($targetCol instanceof ColumnSchemaData && ! $targetCol->nullable && $targetCol->default === null && ! $targetCol->isPrimary) {
+                    $notNullExcluded[] = $col->name;
+                }
+            }
+        }
+
+        $notes = [];
+
+        if ($computedByTarget !== []) {
+            $notes[] = sprintf('Generated columns not copied, computed by the target: %s', implode(', ', $computedByTarget));
+        }
+
+        if ($withoutExpression !== []) {
+            $notes[] = sprintf(
+                'Generated columns not copied and left empty: %s. The generation expression was not replicated to the target.',
+                implode(', ', $withoutExpression),
+            );
+        }
+
+        if ($unknownTarget !== []) {
+            $notes[] = sprintf('Generated columns not copied: %s', implode(', ', $unknownTarget));
+        }
+
+        if ($excluded !== []) {
+            $notes[] = sprintf("Columns excluded by 'exclude' strategy: %s", implode(', ', $excluded));
+        }
+
+        if ($notNullExcluded !== []) {
+            $notes[] = sprintf(
+                'Excluded columns are NOT NULL without a default on the target, inserts may fail: %s',
+                implode(', ', $notNullExcluded),
+            );
+        }
+
+        return [array_merge($computedByTarget, $withoutExpression, $unknownTarget, $excluded), $notes];
     }
 
     private function quoteTable(string $name, DatabaseConnectionType $driver): string

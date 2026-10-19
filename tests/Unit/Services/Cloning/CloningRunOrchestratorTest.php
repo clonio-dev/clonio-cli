@@ -20,7 +20,17 @@ use App\Services\Cloning\DependencyResolver;
 use App\Services\Cloning\SchemaReplicator;
 use App\Services\Cloning\SkippedRow;
 use App\Services\Database\DatabaseConnectionService;
+use App\Services\Schema\SchemaInspector;
 use Illuminate\Support\Facades\DB;
+
+/** Target inspector stub: reports an empty target so no generated columns are found there. */
+function fakeTargetInspector(): SchemaInspector
+{
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData('target', []));
+
+    return $inspector;
+}
 
 beforeEach(function (): void {
     app(AuditBuffer::class)->clear();
@@ -92,7 +102,7 @@ function makeOrchestrator(): CloningRunOrchestrator
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
 
-    return new CloningRunOrchestrator($connector, $replicator, $resolver);
+    return new CloningRunOrchestrator($connector, $replicator, $resolver, fakeTargetInspector());
 }
 
 it('calls TRUNCATE TABLE for mysql when clear is truncate', function (): void {
@@ -368,7 +378,7 @@ function makeOrchestratorWithSchemaFailures(array $schemaFailures): CloningRunOr
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
 
-    return new CloningRunOrchestrator($connector, $replicator, $resolver);
+    return new CloningRunOrchestrator($connector, $replicator, $resolver, fakeTargetInspector());
 }
 
 it('marks table as skipped_by_schema_failure when schema could not be created', function (): void {
@@ -565,6 +575,7 @@ it('captures per-row skip details when bulk insert fails and row-by-row fallback
             ->shouldReceive('sort')
             ->andReturnUsing(static fn ($s, array $tables): array => $tables)
             ->getMock(),
+        fakeTargetInspector(),
     );
 
     $orchestratorWithLog->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
@@ -631,6 +642,7 @@ it('falls back to null pk snapshot when source schema has no primary key column'
             ->shouldReceive('sort')
             ->andReturnUsing(static fn ($s, array $tables): array => $tables)
             ->getMock(),
+        fakeTargetInspector(),
     );
 
     $orchestrator->run($config, $source, $target, $schema, true, [], [], static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
@@ -763,6 +775,7 @@ it('does not fire onTableStart for tables excluded by cascade dependency', funct
         $connector,
         $replicator,
         $resolver,
+        fakeTargetInspector(),
     );
 
     $orchestrator->run(

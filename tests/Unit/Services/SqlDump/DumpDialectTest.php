@@ -347,3 +347,16 @@ it('maps every source type for SQLite by storage affinity', function (string $so
     ['blob', 'BLOB'],
     ['geometry', 'TEXT'],
 ]);
+
+it('dumps generated columns as nullable plain columns', function (): void {
+    $dialect = (new DumpDialectFactory)->make(DatabaseConnectionType::Mysql);
+    $table = new TableSchemaData('bookings', [
+        new ColumnSchemaData('id', 'int', false, null, true),
+        new ColumnSchemaData('day', 'date', false, null, false, generated: true),
+    ], []);
+
+    $ddl = $dialect->createTable($table, true);
+
+    expect($ddl)->toContain('`id` INT NOT NULL')
+        ->and($ddl)->not->toMatch('/`day` [^,\n]*NOT NULL/');
+});

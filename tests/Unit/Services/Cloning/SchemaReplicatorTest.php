@@ -1006,3 +1006,34 @@ it('reports a table as failed when dropping it for recreate fails', function ():
 
     expect($failed)->toBe(['users' => 'permission denied']);
 });
+
+it('creates generated source columns as plain nullable columns in the fallback DDL', function (): void {
+    $source = makeReplicatorConn('source', DatabaseConnectionType::PostgreSQL);
+    $target = makeReplicatorConn('target', DatabaseConnectionType::Sqlite);
+    $schema = new DatabaseSchemaData('sourcedb', [
+        new TableSchemaData('bookings', [
+            new ColumnSchemaData('id', 'int', false, null, true),
+            new ColumnSchemaData('day', 'date', false, null, false, generated: true),
+        ], []),
+    ]);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: []));
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $captured = '';
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->with(Mockery::on(static function ($sql) use (&$captured): bool {
+        $captured = (string) $sql;
+
+        return true;
+    }))->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    (new SchemaReplicator($inspector, $connector))->replicate($source, $target, $schema, ['bookings'], false, false);
+
+    expect($captured)->toContain('"id" INT NOT NULL')
+        ->and($captured)->toMatch('/"day" \w+ NULL/')
+        ->and($captured)->not->toMatch('/"day" \w+ NOT NULL/');
+});

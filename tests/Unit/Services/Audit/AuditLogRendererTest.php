@@ -214,3 +214,47 @@ it('renders a failed run with transformed columns, a skipped table and sparse co
         ->toContain('Schema')
         ->toContain('reporting');
 });
+
+it('renders a Notes section only when tables carry notes', function (): void {
+    $renderer = new AuditLogRenderer;
+    $plain = makeFullAuditRecord();
+
+    expect($renderer->render($plain, '{}'))->not->toContain('<h2>Notes');
+
+    $table = $plain->tables[0];
+    $withNotes = new AuditRecordData(
+        clonioVersion: $plain->clonioVersion,
+        sourceConnection: $plain->sourceConnection,
+        targetConnection: $plain->targetConnection,
+        yamlFileName: $plain->yamlFileName,
+        startedAt: $plain->startedAt,
+        finishedAt: $plain->finishedAt,
+        success: $plain->success,
+        options: $plain->options,
+        tables: [new AuditTableRecordData(
+            tableName: $table->tableName,
+            existed: true,
+            skippedByFlag: false,
+            rowStrategy: 'full',
+            rowLimit: null,
+            rowsTransferred: 100,
+            rowsSkipped: 0,
+            durationSeconds: 0.5,
+            transformedColumns: [],
+            keptColumnCount: 3,
+            notes: ['Generated columns not copied and left empty: day. The generation expression was not replicated to the target.'],
+        )],
+        totalRowsTransferred: $plain->totalRowsTransferred,
+        totalRowsSkipped: $plain->totalRowsSkipped,
+        channels: [],
+        contentHash: $plain->contentHash,
+        hmacSignature: $plain->hmacSignature,
+        sourceConnectionDetails: $plain->sourceConnectionDetails,
+        targetConnectionDetails: $plain->targetConnectionDetails,
+    );
+
+    $html = $renderer->render($withNotes, '{}');
+
+    expect($html)->toContain('<h2>Notes <span class="h2-count">· 1</span></h2>')
+        ->and($html)->toContain('The generation expression was not replicated to the target.');
+});

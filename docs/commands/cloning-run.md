@@ -188,6 +188,20 @@ The following options control what happens to columns and tables that diverge fr
 | Missing | Exists | Table dropped when `drop_unknown_tables: true` |
 | Exists | Exists (any shape) | Table dropped and re-created from source when `recreate_tables: true` |
 
+### Generated columns
+
+Generated (computed) columns are never copied. Clonio leaves a column out of the transfer when it is generated on the source or on the target, or when it uses the `exclude` strategy.
+
+Clonio does not recreate generation expressions. Only a MySQL/MariaDB source copied to a target of the same type keeps them, through the native table definition. Cross-DBMS transfers, columns added later and SQL dumps get a plain, nullable column that stays empty.
+
+Each affected table gets a note, for example:
+
+```
+Note: bookings: Generated columns not copied and left empty: day. The generation expression was not replicated to the target.
+```
+
+The notes appear on the console, in the process log and in the **Notes** section of the audit log. See [Generated columns](../cloning-yaml.md#generated-columns) for details.
+
 ### Overriding options at run time
 
 CLI flags override the YAML `options:` values for a single run without modifying the file:

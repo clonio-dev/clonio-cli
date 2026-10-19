@@ -142,3 +142,93 @@ it('maps SQL Server information_schema rows, treating MAX length as null', funct
         ->and($docs->foreignKeys)->toHaveCount(1)
         ->and($docs->foreignKeys[0]->referencedTable)->toBe('authors');
 });
+
+// ── Generated columns ───────────────────────────────────────────────────────
+
+it('detects virtual and stored generated columns in SQLite', function (): void {
+    $dbPath = tempnam(sys_get_temp_dir(), 'clonio_insp_').'.sqlite';
+    $pdo = new PDO('sqlite:'.$dbPath);
+    $pdo->exec('CREATE TABLE people (id INTEGER PRIMARY KEY, first TEXT, last TEXT,
+        full_name TEXT GENERATED ALWAYS AS (first || \' \' || last) VIRTUAL,
+        name_len INTEGER GENERATED ALWAYS AS (length(first)) STORED)');
+    $pdo = null;
+
+    $conn = new ConnectionData('src', DatabaseConnectionType::Sqlite, null, null, $dbPath, null, null, '', false);
+    $schema = (new SchemaInspector(new DatabaseConnectionService))->inspect($conn);
+    @unlink($dbPath);
+
+    $people = $schema->getTable('people');
+    expect(findCol($people, 'first')->generated)->toBeFalse()
+        ->and(findCol($people, 'full_name')->generated)->toBeTrue()
+        ->and(findCol($people, 'name_len')->generated)->toBeTrue();
+});
+
+it('flags MySQL generated columns from EXTRA but not DEFAULT_GENERATED', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('c');
+
+    DB::shouldReceive('connection')->with('c')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(
+        [(object) ['TABLE_NAME' => 'bookings']],
+        [
+            (object) ['COLUMN_NAME' => 'starts_at', 'DATA_TYPE' => 'datetime', 'COLUMN_TYPE' => 'datetime', 'IS_NULLABLE' => 'NO', 'COLUMN_DEFAULT' => 'CURRENT_TIMESTAMP', 'COLUMN_KEY' => '', 'EXTRA' => 'DEFAULT_GENERATED'],
+            (object) ['COLUMN_NAME' => 'date', 'DATA_TYPE' => 'date', 'COLUMN_TYPE' => 'date', 'IS_NULLABLE' => 'YES', 'COLUMN_DEFAULT' => null, 'COLUMN_KEY' => '', 'EXTRA' => 'VIRTUAL GENERATED'],
+            (object) ['COLUMN_NAME' => 'total', 'DATA_TYPE' => 'int', 'COLUMN_TYPE' => 'int', 'IS_NULLABLE' => 'YES', 'COLUMN_DEFAULT' => null, 'COLUMN_KEY' => '', 'EXTRA' => 'STORED GENERATED'],
+            (object) ['COLUMN_NAME' => 'maria', 'DATA_TYPE' => 'int', 'COLUMN_TYPE' => 'int', 'IS_NULLABLE' => 'YES', 'COLUMN_DEFAULT' => null, 'COLUMN_KEY' => '', 'EXTRA' => 'PERSISTENT GENERATED'],
+        ],
+        [],
+    );
+    DB::shouldReceive('purge')->with('c');
+
+    $conn = new ConnectionData('m', DatabaseConnectionType::Mysql, 'h', 3306, 'shop', null, 'root', '', false);
+    $bookings = (new SchemaInspector($connector))->inspect($conn)->getTable('bookings');
+
+    expect(findCol($bookings, 'starts_at')->generated)->toBeFalse()
+        ->and(findCol($bookings, 'date')->generated)->toBeTrue()
+        ->and(findCol($bookings, 'total')->generated)->toBeTrue()
+        ->and(findCol($bookings, 'maria')->generated)->toBeTrue();
+});
+
+it('flags PostgreSQL generated columns from is_generated', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('c');
+
+    DB::shouldReceive('connection')->with('c')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(
+        [(object) ['tablename' => 'items']],
+        [
+            (object) ['column_name' => 'price', 'data_type' => 'integer', 'is_nullable' => 'YES', 'column_default' => null, 'character_maximum_length' => null, 'numeric_precision' => 32, 'numeric_scale' => 0, 'is_primary' => false, 'is_generated' => 'NEVER'],
+            (object) ['column_name' => 'gross', 'data_type' => 'integer', 'is_nullable' => 'YES', 'column_default' => null, 'character_maximum_length' => null, 'numeric_precision' => 32, 'numeric_scale' => 0, 'is_primary' => false, 'is_generated' => 'ALWAYS'],
+        ],
+        [],
+    );
+    DB::shouldReceive('purge')->with('c');
+
+    $conn = new ConnectionData('p', DatabaseConnectionType::PostgreSQL, 'h', 5432, 'cat', 'public', 'postgres', '', false);
+    $items = (new SchemaInspector($connector))->inspect($conn)->getTable('items');
+
+    expect(findCol($items, 'price')->generated)->toBeFalse()
+        ->and(findCol($items, 'gross')->generated)->toBeTrue();
+});
+
+it('flags SQL Server computed columns', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('c');
+
+    DB::shouldReceive('connection')->with('c')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(
+        [(object) ['TABLE_NAME' => 'docs']],
+        [
+            (object) ['COLUMN_NAME' => 'title', 'DATA_TYPE' => 'nvarchar', 'IS_NULLABLE' => 'YES', 'COLUMN_DEFAULT' => null, 'CHARACTER_MAXIMUM_LENGTH' => 200, 'NUMERIC_PRECISION' => null, 'NUMERIC_SCALE' => null, 'is_primary' => 0, 'is_computed' => 0],
+            (object) ['COLUMN_NAME' => 'title_len', 'DATA_TYPE' => 'int', 'IS_NULLABLE' => 'YES', 'COLUMN_DEFAULT' => null, 'CHARACTER_MAXIMUM_LENGTH' => null, 'NUMERIC_PRECISION' => 10, 'NUMERIC_SCALE' => 0, 'is_primary' => 0, 'is_computed' => 1],
+        ],
+        [],
+    );
+    DB::shouldReceive('purge')->with('c');
+
+    $conn = new ConnectionData('s', DatabaseConnectionType::SqlServer, 'h', 1433, 'cms', 'dbo', 'sa', '', false);
+    $docs = (new SchemaInspector($connector))->inspect($conn)->getTable('docs');
+
+    expect(findCol($docs, 'title')->generated)->toBeFalse()
+        ->and(findCol($docs, 'title_len')->generated)->toBeTrue();
+});

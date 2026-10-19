@@ -254,6 +254,46 @@ No additional fields. Quote `"null"` to avoid YAML interpreting it as a null sca
 
 ---
 
+### `exclude`
+
+Leave the column out of the transfer entirely. Clonio does not read it from the source and does not write it to the target. The target column gets its default value, or `NULL`.
+
+```yaml
+internal_note:
+  strategy: exclude
+```
+
+No additional fields. Use it for columns whose data must never leave the source, or for columns the target computes itself (for example a generated column Clonio does not detect).
+
+The target column must be nullable or have a default. Otherwise the insert fails. Clonio checks this before the transfer and prints a note when an excluded column is `NOT NULL` without a default on the target.
+
+---
+
+### Generated columns
+
+Generated (computed) columns are detected automatically. You don't need to configure them.
+
+| DBMS | Detected as generated |
+|---|---|
+| MySQL / MariaDB | `VIRTUAL`, `STORED` or `PERSISTENT` generated columns |
+| PostgreSQL | `GENERATED ALWAYS AS (...) STORED` |
+| SQLite | `GENERATED ALWAYS AS (...)`, virtual or stored |
+| SQL Server | Computed columns (`AS ...`, with or without `PERSISTED`) |
+
+A column is left out of the transfer when it is generated on the source **or** on the target. Source values of generated columns are never copied, because they may be derived from personal data (for example `UPPER(name)`). When the target column is generated, the target database computes it from the already anonymized values.
+
+**Clonio does not recreate the generation expression.** The expression only survives when Clonio copies the native table definition: MySQL/MariaDB source to a target of the same type, when the table is created. In every other case the column is created as a plain, nullable column and stays empty:
+
+- Cross-DBMS transfers (e.g. MySQL → PostgreSQL)
+- Columns added later with `enforce_column_types`
+- SQL dumps (`--target` of type `dump`)
+
+To keep generated columns on the target, create them there yourself (for example with your migrations) and run with `--skip-schema`, or add the expression after the run.
+
+Each case is reported as a note per table: on the console, in the process log (`table_column_note`), and in the **Notes** section of the audit log.
+
+---
+
 ### `static`
 
 Replace every value with a fixed string. Useful for environment markers, redacted placeholders, or test sentinels.

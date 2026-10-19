@@ -28,7 +28,7 @@ class ColumnEditCommand extends Command
         {file?              : Path to the .cloning.yaml file}
         {--table=           : Table name}
         {--column=          : Column name}
-        {--strategy=        : Strategy to apply (keep, fake, hash, mask, static, template, remapping)}
+        {--strategy=        : Strategy to apply (keep, fake, hash, mask, static, template, remapping, exclude)}
         {--faker-method=    : (fake) Faker method name}
         {--faker-arguments= : (fake) Comma-separated faker arguments}
         {--algorithm=       : (hash) Hash algorithm}
@@ -103,6 +103,11 @@ class ColumnEditCommand extends Command
                 'parameters' => [
                     ['name' => 'remapping_use', 'label' => 'Remapping mode', 'type' => 'choice', 'default' => 'random_integer'],
                 ],
+            ],
+            'exclude' => [
+                'label' => 'Exclude',
+                'description' => 'Leave the column out of the transfer. The target column must be nullable or have a default.',
+                'parameters' => [],
             ],
         ];
     }

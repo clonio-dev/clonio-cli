@@ -6,7 +6,10 @@ namespace App\Data\Audit;
 
 final readonly class AuditTableRecordData
 {
-    /** @param list<AuditColumnRecordData> $transformedColumns */
+    /**
+     * @param  list<AuditColumnRecordData>  $transformedColumns
+     * @param  list<string>  $notes  Remarks such as columns left out of the transfer
+     */
     public function __construct(
         public string $tableName,
         public bool $existed,
@@ -18,5 +21,6 @@ final readonly class AuditTableRecordData
         public float $durationSeconds,
         public array $transformedColumns,
         public int $keptColumnCount,
+        public array $notes = [],
     ) {}
 }

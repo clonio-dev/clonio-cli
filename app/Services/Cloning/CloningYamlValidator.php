@@ -26,7 +26,7 @@ class CloningYamlValidator
 
     private const array VALID_ROW_STRATEGIES = ['full', 'first', 'last', 'skip'];
 
-    private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'template', 'remapping'];
+    private const array VALID_COLUMN_STRATEGIES = ['keep', 'fake', 'hash', 'mask', 'null', 'static', 'template', 'remapping', 'exclude'];
 
     private const array VALID_HASH_ALGORITHMS = ['sha256', 'sha512', 'md5', 'sha1'];
 

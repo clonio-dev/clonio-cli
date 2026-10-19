@@ -45,7 +45,8 @@ class AnonymizationEngine
     public function transform(mixed $value, ColumnCloningConfigData $config): mixed
     {
         return match ($config->strategy) {
-            'null' => null,
+            // 'exclude' columns are dropped before transform; null is a safe fallback.
+            'null', 'exclude' => null,
             'keep' => $value,
             'static' => $config->staticValue,
             'fake' => $this->applyFake($config),

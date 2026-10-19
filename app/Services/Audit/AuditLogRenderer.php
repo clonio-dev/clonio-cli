@@ -53,6 +53,30 @@ class AuditLogRenderer
             }
         }
 
+        $noteRows = '';
+        $noteCount = 0;
+
+        foreach ($record->tables as $table) {
+            foreach ($table->notes as $note) {
+                $alt = $noteCount % 2 === 1 ? ' class="alt"' : '';
+                $noteRows .= sprintf(
+                    '<tr%s><td><strong>%s</strong></td><td>%s</td></tr>',
+                    $alt,
+                    htmlspecialchars($table->tableName),
+                    htmlspecialchars($note),
+                );
+                $noteCount++;
+            }
+        }
+
+        $notesSection = $noteRows === '' ? '' : <<<HTML
+<h2>Notes <span class="h2-count">· {$noteCount}</span></h2>
+<table class="data">
+  <thead><tr><th>Table</th><th>Note</th></tr></thead>
+  <tbody>{$noteRows}</tbody>
+</table>
+HTML;
+
         $logoSrc = $this->logoDataUri();
         $sourceConnection = htmlspecialchars($record->sourceConnection);
         $targetConnection = htmlspecialchars($record->targetConnection);
@@ -199,6 +223,8 @@ class AuditLogRenderer
   <thead><tr><th>Table</th><th>State</th><th>Strategy</th><th class="num">Transferred</th><th class="num">Skipped</th><th class="num">Duration</th></tr></thead>
   <tbody>{$tableRows}</tbody>
 </table>
+
+{$notesSection}
 
 <h2 class="page-break">PII transformations <span class="h2-count">· {$piiColumnCount}</span></h2>
 <table class="data">

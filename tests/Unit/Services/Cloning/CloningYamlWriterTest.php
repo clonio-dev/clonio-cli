@@ -577,3 +577,25 @@ it('leaves plain names unquoted', function (): void {
         ->toContain('      gender:')
         ->toContain('sort_by: created_at');
 });
+
+it('writes the exclude strategy without extra fields', function (): void {
+    $column = new ColumnDumpData(
+        name: 'internal_note',
+        strategy: 'exclude',
+        fakerMethod: null,
+        fakerArguments: [],
+        maskChar: null,
+        visibleChars: null,
+        preserveFormat: null,
+        hashAlgorithm: null,
+        hashSalt: null,
+        staticValue: null,
+        piiDetected: false,
+        piiCategory: null,
+    );
+    $table = new TableDumpData(name: 'bookings', columns: [$column], rowStrategy: 'full', rowLimit: null, sortBy: null);
+
+    $yaml = (new CloningYamlWriter)->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain("internal_note:\n        strategy: exclude\n");
+});

@@ -278,3 +278,7 @@ it('produces real first and last names in a multi-token template, not just liter
     expect($first)->not->toBe('');
     expect($lastAndDomain)->not->toStartWith('@');
 });
+
+it('returns null for the exclude strategy (column is dropped before transform)', function (): void {
+    expect((new AnonymizationEngine)->transform('secret', makeColumn('exclude')))->toBeNull();
+});

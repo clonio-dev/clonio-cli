@@ -150,7 +150,9 @@ class SchemaReplicator
 
         foreach ($columns as $col) {
             $mappedType = $this->mapType($col->type, $driver);
-            $nullable = $col->nullable ? 'NULL' : 'NOT NULL';
+            // Generated columns become plain nullable columns here: the
+            // expression is not replicated and their values are never copied.
+            $nullable = $col->nullable || $col->generated ? 'NULL' : 'NOT NULL';
             $quotedName = $this->quoteIdentifier($col->name, $driver);
             $colDefs[] = sprintf('  %s %s %s', $quotedName, $mappedType, $nullable);
 
@@ -176,7 +178,7 @@ class SchemaReplicator
     private function buildAddColumnSql(string $tableName, ColumnSchemaData $col, DatabaseConnectionType $driver): string
     {
         $mappedType = $this->mapType($col->type, $driver);
-        $nullable = $col->nullable ? 'NULL' : 'NOT NULL';
+        $nullable = $col->nullable || $col->generated ? 'NULL' : 'NOT NULL';
         $quotedTable = $this->quoteIdentifier($tableName, $driver);
         $quotedCol = $this->quoteIdentifier($col->name, $driver);
 

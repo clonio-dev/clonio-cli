@@ -685,6 +685,12 @@ class RunCommand extends Command
             ));
         }
 
+        foreach ($result->tables as $tableResult) {
+            foreach ($tableResult->notes as $note) {
+                $this->line(sprintf('  <comment>Note: %s: %s</comment>', $tableResult->tableName, $note));
+            }
+        }
+
         $transferredCount = count(array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::Transferred));
         $totalCount = count($result->tables);
         $duration = $this->formatDuration($result->durationSeconds);

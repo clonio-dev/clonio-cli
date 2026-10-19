@@ -663,6 +663,7 @@ it('selects a strategy interactively when no --strategy option given', function 
                 'Static — Replace every value with a fixed string.',
                 'Template — Build a string by mixing literal text with {fakerMethod} placeholders. Example: {userName}@acme.test',
                 'Remapping — Replace primary key values; foreign keys auto-detected from the source schema.',
+                'Exclude — Leave the column out of the transfer. The target column must be nullable or have a default.',
             ],
         )
         ->expectsConfirmation('Apply this change?', 'yes')
@@ -921,4 +922,20 @@ it('ignores foreign keys that reference a different table or column during detec
         ->assertExitCode(ExitCode::Success->value);
 
     expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('foreign_keys: []');
+});
+
+it('sets the exclude strategy without extra parameters', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeTestCloningYaml());
+
+    $this->artisan('cloning:column:edit', [
+        'file' => 'test.cloning.yaml',
+        '--table' => 'users',
+        '--column' => 'email',
+        '--strategy' => 'exclude',
+    ])
+        ->expectsConfirmation('Apply this change?', 'yes')
+        ->assertExitCode(ExitCode::Success->value);
+
+    expect(Storage::disk('local')->get('test.cloning.yaml'))->toContain('strategy: exclude');
 });

@@ -10,6 +10,12 @@
 //   4. Target DB has 3 orders
 //   5. users.id values are valid UUIDs (key remapping applied)
 //   6. orders.user_id values all reference a valid users.id (referential integrity)
+//   7. Target DB has 3 bookings (generated columns did not break the insert)
+//   8. bookings.internal_note is NULL everywhere ('exclude' strategy)
+//   9. bookings.guest_label never holds the original (PII-derived) value: it is
+//      either recomputed by the target from the anonymized guest_name or NULL
+//      when the generation expression was not replicated
+//  10. bookings.day is either NULL or the date part of starts_at
 
 $driver   = $argv[1] ?? 'mysql';
 $host     = $argv[2] ?? '127.0.0.1';
@@ -124,6 +130,57 @@ try {
     }
     if ($allReferenced) {
         pass('All orders.user_id values reference a valid remapped users.id (referential integrity)');
+    }
+
+    // 7. Booking count
+    $bookings = $pdo->query('SELECT id, guest_name, starts_at, day, guest_label, internal_note FROM bookings')->fetchAll(PDO::FETCH_ASSOC);
+    if (count($bookings) !== 3) {
+        fail('Expected 3 bookings, got ' . count($bookings));
+    } else {
+        pass('Booking count is 3 (generated columns did not break the insert)');
+    }
+
+    // 8. Excluded column stays empty
+    $notes = array_filter($bookings, static fn (array $b): bool => $b['internal_note'] !== null);
+    if ($notes !== []) {
+        fail('bookings.internal_note was copied despite the exclude strategy');
+    } else {
+        pass('bookings.internal_note is NULL everywhere (exclude strategy)');
+    }
+
+    // 9. PII-derived generated column never leaks the original value
+    $originalLabels = ['ALICE SMITH', 'BOB JONES', 'CHARLIE BROWN'];
+    $labelsOk = true;
+    foreach ($bookings as $b) {
+        $label = $b['guest_label'];
+        if ($label === null) {
+            continue;
+        }
+        if (in_array((string) $label, $originalLabels, true)) {
+            fail("bookings.guest_label '$label' leaks the original guest name");
+            $labelsOk = false;
+        } elseif ((string) $label !== strtoupper((string) $b['guest_name'])) {
+            fail("bookings.guest_label '$label' does not match the anonymized guest_name");
+            $labelsOk = false;
+        }
+    }
+    if ($labelsOk) {
+        pass('bookings.guest_label is recomputed or NULL, never the original value');
+    }
+
+    // 10. Generated date column is computed or empty
+    $daysOk = true;
+    foreach ($bookings as $b) {
+        if ($b['day'] === null) {
+            continue;
+        }
+        if (substr((string) $b['day'], 0, 10) !== substr((string) $b['starts_at'], 0, 10)) {
+            fail("bookings.day '{$b['day']}' does not match starts_at '{$b['starts_at']}'");
+            $daysOk = false;
+        }
+    }
+    if ($daysOk) {
+        pass('bookings.day is recomputed or NULL');
     }
 
 } catch (Exception $e) {
