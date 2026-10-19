@@ -70,9 +70,10 @@ The version embedded in each binary matches the tag name (see below).
 
 `make preflight` makes sure a release will build on all targets **before** the tag exists:
 
-1. Checks that `HEAD` is `origin/main`.
+1. Fetches `origin/main`.
 2. Dispatches the `build` workflow on `main` as a dry-run: tests, all three SPC binaries with smoke tests, the PHAR and the Docker image. Nothing is published.
 3. Waits for the run and aborts (no tag) if any job fails.
+4. Records the verified commit. `patch`/`minor`/`major` tag exactly that commit, not your local `HEAD` — so you can keep switching branches or committing in the same checkout while the preflight runs.
 
 It is skipped automatically when a green dry-run for the current `origin/main` commit exists and the SPC build caches on `main` are still present. Force-skip with `SKIP_PREFLIGHT=1 make minor`.
 
