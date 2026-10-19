@@ -8,13 +8,15 @@ on:
 
 jobs:
   cloning-run-test:
-    name: ${{ matrix.source }} → ${{ matrix.target }}
+    name: ${{ matrix.pair.source }} → ${{ matrix.pair.target }}${{ matrix.php != '8.5' && format(' (PHP {0}, experimental)', matrix.php) || '' }}
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.php != '8.5' }}
 
     strategy:
       fail-fast: false
       matrix:
-        include:
+        php: ["8.5", "8.6"]
+        pair:
           - source: mysql
             target: mysql
             source_db: clonio_source
@@ -120,7 +122,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
-          php-version: "8.5"
+          php-version: ${{ matrix.php }}
           tools: composer:v2
           extensions: pdo_mysql, pdo_pgsql, pdo_sqlite, pdo_sqlsrv, zip
 
@@ -136,13 +138,13 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader ${{ matrix.php != '8.5' && '--ignore-platform-req=php+' || '' }}
 
       - name: Generate APP_KEY
         run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
 
       - name: Install sqlcmd (SQL Server only)
-        if: matrix.source == 'sqlsrv' || matrix.target == 'sqlsrv'
+        if: matrix.pair.source == 'sqlsrv' || matrix.pair.target == 'sqlsrv'
         run: |
           sudo ACCEPT_EULA=Y apt-get install -y -qq mssql-tools18
           echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
@@ -150,7 +152,7 @@ jobs:
       # ── SQLite ────────────────────────────────────────────────────────────────
 
       - name: Prepare SQLite databases
-        if: matrix.source == 'sqlite' || matrix.target == 'sqlite'
+        if: matrix.pair.source == 'sqlite' || matrix.pair.target == 'sqlite'
         run: |
           touch /tmp/clonio_source.sqlite
           touch /tmp/clonio_target.sqlite
@@ -158,112 +160,112 @@ jobs:
       # ── Source database creation ──────────────────────────────────────────────
 
       - name: Ensure MariaDB source database exists
-        if: matrix.source == 'mariadb'
+        if: matrix.pair.source == 'mariadb'
         run: mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_source;" || true
 
       - name: Ensure PostgreSQL source database exists
-        if: matrix.source == 'pgsql'
+        if: matrix.pair.source == 'pgsql'
         run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_source;" || true
 
       - name: Create SQL Server source database
-        if: matrix.source == 'sqlsrv'
+        if: matrix.pair.source == 'sqlsrv'
         run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "CREATE DATABASE clonio_source" -No
 
       # ── Target database creation ──────────────────────────────────────────────
 
       - name: Create MySQL target database
-        if: matrix.target == 'mysql'
+        if: matrix.pair.target == 'mysql'
         run: mysql -h 127.0.0.1 -P 3306 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_target;"
 
       - name: Create MariaDB target database
-        if: matrix.target == 'mariadb'
+        if: matrix.pair.target == 'mariadb'
         run: mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "CREATE DATABASE IF NOT EXISTS clonio_target;"
 
       - name: Create PostgreSQL target database
-        if: matrix.target == 'pgsql'
+        if: matrix.pair.target == 'pgsql'
         run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_target;" || true
 
       - name: Create SQL Server target database
-        if: matrix.target == 'sqlsrv'
+        if: matrix.pair.target == 'sqlsrv'
         run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "CREATE DATABASE clonio_target" -No
 
       # ── Seed source database ──────────────────────────────────────────────────
 
       - name: Seed source database (MySQL)
-        if: matrix.source == 'mysql'
-        run: mysql -h 127.0.0.1 -P 3306 -u root -psecret ${{ matrix.source_db }} < .github/cloning-test/schema-mysql.sql
+        if: matrix.pair.source == 'mysql'
+        run: mysql -h 127.0.0.1 -P 3306 -u root -psecret ${{ matrix.pair.source_db }} < .github/cloning-test/schema-mysql.sql
 
       - name: Seed source database (MariaDB)
-        if: matrix.source == 'mariadb'
-        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret ${{ matrix.source_db }} < .github/cloning-test/schema-mysql.sql
+        if: matrix.pair.source == 'mariadb'
+        run: mysql -h 127.0.0.1 -P 3307 -u root -psecret ${{ matrix.pair.source_db }} < .github/cloning-test/schema-mysql.sql
 
       - name: Seed source database (PostgreSQL)
-        if: matrix.source == 'pgsql'
-        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -d ${{ matrix.source_db }} -f .github/cloning-test/schema-pgsql.sql
+        if: matrix.pair.source == 'pgsql'
+        run: PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -d ${{ matrix.pair.source_db }} -f .github/cloning-test/schema-pgsql.sql
 
       - name: Seed source database (SQLite)
-        if: matrix.source == 'sqlite'
-        run: sqlite3 ${{ matrix.source_db }} < .github/cloning-test/schema-sqlite.sql
+        if: matrix.pair.source == 'sqlite'
+        run: sqlite3 ${{ matrix.pair.source_db }} < .github/cloning-test/schema-sqlite.sql
 
       - name: Seed source database (SQL Server)
-        if: matrix.source == 'sqlsrv'
-        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d ${{ matrix.source_db }} -i .github/cloning-test/schema-mssql.sql -No
+        if: matrix.pair.source == 'sqlsrv'
+        run: sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d ${{ matrix.pair.source_db }} -i .github/cloning-test/schema-mssql.sql -No
 
       # ── Register connections ──────────────────────────────────────────────────
 
       - name: Register source connection
         run: |
-          if [ "${{ matrix.source }}" = "mysql" ]; then
+          if [ "${{ matrix.pair.source }}" = "mysql" ]; then
             php clonio connection:add source \
               --type=mysql --host=127.0.0.1 --port=3306 \
-              --database=${{ matrix.source_db }} --username=root --password=secret \
+              --database=${{ matrix.pair.source_db }} --username=root --password=secret \
               --no-interaction
-          elif [ "${{ matrix.source }}" = "mariadb" ]; then
+          elif [ "${{ matrix.pair.source }}" = "mariadb" ]; then
             php clonio connection:add source \
               --type=mariadb --host=127.0.0.1 --port=3307 \
-              --database=${{ matrix.source_db }} --username=root --password=secret \
+              --database=${{ matrix.pair.source_db }} --username=root --password=secret \
               --no-interaction
-          elif [ "${{ matrix.source }}" = "pgsql" ]; then
+          elif [ "${{ matrix.pair.source }}" = "pgsql" ]; then
             php clonio connection:add source \
               --type=pgsql --host=127.0.0.1 --port=5432 \
-              --database=${{ matrix.source_db }} --username=postgres --password=secret \
+              --database=${{ matrix.pair.source_db }} --username=postgres --password=secret \
               --schema=public --ssl-mode=disable --no-interaction
-          elif [ "${{ matrix.source }}" = "sqlite" ]; then
+          elif [ "${{ matrix.pair.source }}" = "sqlite" ]; then
             php clonio connection:add source \
-              --type=sqlite --database=${{ matrix.source_db }} \
+              --type=sqlite --database=${{ matrix.pair.source_db }} \
               --no-interaction
-          elif [ "${{ matrix.source }}" = "sqlsrv" ]; then
+          elif [ "${{ matrix.pair.source }}" = "sqlsrv" ]; then
             php clonio connection:add source \
               --type=sqlsrv --host=127.0.0.1 --port=1433 \
-              --database=${{ matrix.source_db }} --username=SA --password='Clonio123!' \
+              --database=${{ matrix.pair.source_db }} --username=SA --password='Clonio123!' \
               --trust-server-certificate --no-interaction
           fi
 
       - name: Register target connection
         run: |
-          if [ "${{ matrix.target }}" = "mysql" ]; then
+          if [ "${{ matrix.pair.target }}" = "mysql" ]; then
             php clonio connection:add target \
               --type=mysql --host=127.0.0.1 --port=3306 \
-              --database=${{ matrix.target_db }} --username=root --password=secret \
+              --database=${{ matrix.pair.target_db }} --username=root --password=secret \
               --no-interaction
-          elif [ "${{ matrix.target }}" = "mariadb" ]; then
+          elif [ "${{ matrix.pair.target }}" = "mariadb" ]; then
             php clonio connection:add target \
               --type=mariadb --host=127.0.0.1 --port=3307 \
-              --database=${{ matrix.target_db }} --username=root --password=secret \
+              --database=${{ matrix.pair.target_db }} --username=root --password=secret \
               --no-interaction
-          elif [ "${{ matrix.target }}" = "pgsql" ]; then
+          elif [ "${{ matrix.pair.target }}" = "pgsql" ]; then
             php clonio connection:add target \
               --type=pgsql --host=127.0.0.1 --port=5432 \
-              --database=${{ matrix.target_db }} --username=postgres --password=secret \
+              --database=${{ matrix.pair.target_db }} --username=postgres --password=secret \
               --schema=public --ssl-mode=disable --no-interaction
-          elif [ "${{ matrix.target }}" = "sqlite" ]; then
+          elif [ "${{ matrix.pair.target }}" = "sqlite" ]; then
             php clonio connection:add target \
-              --type=sqlite --database=${{ matrix.target_db }} \
+              --type=sqlite --database=${{ matrix.pair.target_db }} \
               --no-interaction
-          elif [ "${{ matrix.target }}" = "sqlsrv" ]; then
+          elif [ "${{ matrix.pair.target }}" = "sqlsrv" ]; then
             php clonio connection:add target \
               --type=sqlsrv --host=127.0.0.1 --port=1433 \
-              --database=${{ matrix.target_db }} --username=SA --password='Clonio123!' \
+              --database=${{ matrix.pair.target_db }} --username=SA --password='Clonio123!' \
               --trust-server-certificate --no-interaction
           fi
 
@@ -294,24 +296,24 @@ jobs:
       # ── Verify transfer results ───────────────────────────────────────────────
 
       - name: Verify transfer (MySQL target)
-        if: matrix.target == 'mysql'
-        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3306 ${{ matrix.target_db }} root secret
+        if: matrix.pair.target == 'mysql'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3306 ${{ matrix.pair.target_db }} root secret
 
       - name: Verify transfer (MariaDB target)
-        if: matrix.target == 'mariadb'
-        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3307 ${{ matrix.target_db }} root secret
+        if: matrix.pair.target == 'mariadb'
+        run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3307 ${{ matrix.pair.target_db }} root secret
 
       - name: Verify transfer (PostgreSQL target)
-        if: matrix.target == 'pgsql'
-        run: php .github/cloning-test/verify-transfer.php pgsql 127.0.0.1 5432 ${{ matrix.target_db }} postgres secret
+        if: matrix.pair.target == 'pgsql'
+        run: php .github/cloning-test/verify-transfer.php pgsql 127.0.0.1 5432 ${{ matrix.pair.target_db }} postgres secret
 
       - name: Verify transfer (SQLite target)
-        if: matrix.target == 'sqlite'
-        run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 ${{ matrix.target_db }} '' ''
+        if: matrix.pair.target == 'sqlite'
+        run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 ${{ matrix.pair.target_db }} '' ''
 
       - name: Verify transfer (SQL Server target)
-        if: matrix.target == 'sqlsrv'
-        run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 ${{ matrix.target_db }} SA 'Clonio123!'
+        if: matrix.pair.target == 'sqlsrv'
+        run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 ${{ matrix.pair.target_db }} SA 'Clonio123!'
 
       # ── Dump-target equivalence ───────────────────────────────────────────────
       # Run the same source + config to a `dump` target of the same dialect as the
@@ -322,7 +324,7 @@ jobs:
       - name: Register dump target connection
         run: |
           php clonio connection:add dumptarget \
-            --type=dump --dialect=${{ matrix.target }} \
+            --type=dump --dialect=${{ matrix.pair.target }} \
             --no-interaction
 
       - name: Test dump target connection
@@ -342,54 +344,54 @@ jobs:
           head -40 "$SQL"
 
       - name: Import dump (MySQL)
-        if: matrix.target == 'mysql'
+        if: matrix.pair.target == 'mysql'
         run: |
           mysql -h 127.0.0.1 -P 3306 -u root -psecret -e "DROP DATABASE IF EXISTS clonio_dump_target; CREATE DATABASE clonio_dump_target;"
           mysql -h 127.0.0.1 -P 3306 -u root -psecret clonio_dump_target < "$DUMP_SQL"
 
       - name: Import dump (MariaDB)
-        if: matrix.target == 'mariadb'
+        if: matrix.pair.target == 'mariadb'
         run: |
           mysql -h 127.0.0.1 -P 3307 -u root -psecret -e "DROP DATABASE IF EXISTS clonio_dump_target; CREATE DATABASE clonio_dump_target;"
           mysql -h 127.0.0.1 -P 3307 -u root -psecret clonio_dump_target < "$DUMP_SQL"
 
       - name: Import dump (PostgreSQL)
-        if: matrix.target == 'pgsql'
+        if: matrix.pair.target == 'pgsql'
         run: |
           PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "DROP DATABASE IF EXISTS clonio_dump_target;"
           PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE clonio_dump_target;"
           PGPASSWORD=secret psql -h 127.0.0.1 -U postgres -d clonio_dump_target -v ON_ERROR_STOP=1 -f "$DUMP_SQL"
 
       - name: Import dump (SQL Server)
-        if: matrix.target == 'sqlsrv'
+        if: matrix.pair.target == 'sqlsrv'
         run: |
           sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -Q "IF DB_ID('clonio_dump_target') IS NOT NULL DROP DATABASE clonio_dump_target; CREATE DATABASE clonio_dump_target" -No
           sqlcmd -S 127.0.0.1,1433 -U SA -P 'Clonio123!' -d clonio_dump_target -i "$DUMP_SQL" -b -No
 
       - name: Import dump (SQLite)
-        if: matrix.target == 'sqlite'
+        if: matrix.pair.target == 'sqlite'
         run: |
           rm -f /tmp/clonio_dump_target.sqlite
           sqlite3 /tmp/clonio_dump_target.sqlite < "$DUMP_SQL"
 
       - name: Verify dump import (MySQL)
-        if: matrix.target == 'mysql'
+        if: matrix.pair.target == 'mysql'
         run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3306 clonio_dump_target root secret
 
       - name: Verify dump import (MariaDB)
-        if: matrix.target == 'mariadb'
+        if: matrix.pair.target == 'mariadb'
         run: php .github/cloning-test/verify-transfer.php mysql 127.0.0.1 3307 clonio_dump_target root secret
 
       - name: Verify dump import (PostgreSQL)
-        if: matrix.target == 'pgsql'
+        if: matrix.pair.target == 'pgsql'
         run: php .github/cloning-test/verify-transfer.php pgsql 127.0.0.1 5432 clonio_dump_target postgres secret
 
       - name: Verify dump import (SQL Server)
-        if: matrix.target == 'sqlsrv'
+        if: matrix.pair.target == 'sqlsrv'
         run: php .github/cloning-test/verify-transfer.php sqlsrv 127.0.0.1 1433 clonio_dump_target SA 'Clonio123!'
 
       - name: Verify dump import (SQLite)
-        if: matrix.target == 'sqlite'
+        if: matrix.pair.target == 'sqlite'
         run: php .github/cloning-test/verify-transfer.php sqlite 127.0.0.1 0 /tmp/clonio_dump_target.sqlite '' ''
 
       # ── Diagnostics on failure ────────────────────────────────────────────────

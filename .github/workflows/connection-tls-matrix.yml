@@ -9,14 +9,16 @@ on:
 jobs:
   # PRD-connection-tls §10.1: every driver × server posture × client configuration against a real server.
   tls-matrix:
-    name: TLS ${{ matrix.driver }} / ${{ matrix.posture }}
+    name: TLS ${{ matrix.combo.driver }} / ${{ matrix.combo.posture }}${{ matrix.php != '8.5' && format(' (PHP {0}, experimental)', matrix.php) || '' }}
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.php != '8.5' }}
     timeout-minutes: 20
 
     strategy:
       fail-fast: false
       matrix:
-        include:
+        php: ["8.5", "8.6"]
+        combo:
           - { driver: mysql, posture: plain, extensions: pdo_mysql }
           - { driver: mysql, posture: tls, extensions: pdo_mysql }
           - { driver: mysql, posture: tls-required, extensions: pdo_mysql }
@@ -38,7 +40,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Microsoft ODBC Driver 18
-        if: matrix.driver == 'sqlsrv'
+        if: matrix.combo.driver == 'sqlsrv'
         run: |
           curl -sSL -O "https://packages.microsoft.com/config/ubuntu/$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)/packages-microsoft-prod.deb"
           sudo dpkg -i packages-microsoft-prod.deb
@@ -49,9 +51,9 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
-          php-version: "8.5"
+          php-version: ${{ matrix.php }}
           tools: composer:v2
-          extensions: ${{ matrix.extensions }}
+          extensions: ${{ matrix.combo.extensions }}
 
       - name: Get Composer cache directory
         id: composer-cache
@@ -65,7 +67,7 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader ${{ matrix.php != '8.5' && '--ignore-platform-req=php+' || '' }}
 
       - name: Generate APP_KEY
         run: echo "APP_KEY=base64:$(php -r 'echo base64_encode(random_bytes(32));')" >> "$GITHUB_ENV"
@@ -73,11 +75,11 @@ jobs:
       - name: Generate test PKI
         run: bash .github/tls/make-certs.sh certs
 
-      - name: Start ${{ matrix.driver }} (${{ matrix.posture }})
-        run: bash .github/tls/start-server.sh ${{ matrix.driver }} ${{ matrix.posture }} certs
+      - name: Start ${{ matrix.combo.driver }} (${{ matrix.combo.posture }})
+        run: bash .github/tls/start-server.sh ${{ matrix.combo.driver }} ${{ matrix.combo.posture }} certs
 
       - name: Run cases
-        run: bash .github/tls/run-matrix.sh ${{ matrix.driver }} ${{ matrix.posture }} certs
+        run: bash .github/tls/run-matrix.sh ${{ matrix.combo.driver }} ${{ matrix.combo.posture }} certs
 
       - name: Show clonio.json and server log on failure
         if: failure()
