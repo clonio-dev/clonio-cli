@@ -126,6 +126,11 @@ class CloningYamlValidator
             $errors[] = "Field 'options.drop_extra_columns' must be a boolean";
         }
 
+        // recreate_tables is optional (defaults to false); validate type only when present
+        if (array_key_exists('recreate_tables', $options) && ! is_bool($options['recreate_tables'])) {
+            $errors[] = "Field 'options.recreate_tables' must be a boolean";
+        }
+
         // remap_keys is optional (defaults to true); validate type only when present
         if (array_key_exists('remap_keys', $options) && ! is_bool($options['remap_keys'])) {
             $errors[] = "Field 'options.remap_keys' must be a boolean";

@@ -2252,3 +2252,64 @@ it('prints a notice when configured key remapping is disabled', function (array 
     'from flag' => [['--no-remap-keys' => true], '--no-remap-keys'],
     'from alias flag' => [['--skip-remapping-keys' => true], '--skip-remapping-keys'],
 ]);
+
+it('resolves recreate_tables from config and CLI flags', function (bool $configValue, array $flags, bool $expected): void {
+    Storage::fake('local');
+    $recreate = $configValue ? 'true' : 'false';
+    $yaml = <<<YAML
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  recreate_tables: {$recreate}
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  users:
+    rows:
+      strategy: full
+YAML;
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('production-db')->andReturn(makeRunMysqlConnection());
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeRunTargetConnection());
+    $config->shouldReceive('load')->andReturn(['connections' => []]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('test_conn');
+    $this->app->instance(DatabaseConnectionService::class, $connector);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(makeRunSimpleSchema());
+    $this->app->instance(SchemaInspector::class, $inspector);
+
+    $capturedConfig = null;
+    $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
+    $orchestrator->shouldReceive('run')
+        ->withArgs(function (CloningConfigData $cfg) use (&$capturedConfig): bool {
+            $capturedConfig = $cfg;
+
+            return true;
+        })
+        ->andReturn(makeRunResult());
+    $this->app->instance(CloningRunOrchestrator::class, $orchestrator);
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+        ...$flags,
+    ])->assertExitCode(ExitCode::Success->value);
+
+    expect($capturedConfig?->options->recreateTables)->toBe($expected);
+})->with([
+    'config false, no flag' => [false, [], false],
+    'config true, no flag' => [true, [], true],
+    'config false, --recreate-tables' => [false, ['--recreate-tables' => true], true],
+    'config true, --no-recreate-tables' => [true, ['--no-recreate-tables' => true], false],
+    'config true survives other overrides' => [true, ['--enforce-column-types' => true], true],
+]);

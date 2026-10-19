@@ -240,3 +240,20 @@ it('falls back to "dump" when the source has no database name', function (): voi
 
     expect($service->sqlFileName())->toBe('dump_20260524_123456.sql');
 });
+
+it('emits DROP TABLE before CREATE when recreate_tables is true', function (): void {
+    Storage::fake('local');
+    $service = makeService();
+    $options = new CloningOptionsData(
+        chunkSize: 100, enforceColumnTypes: false, dropUnknownTables: false,
+        dropExtraColumns: false, disableForeignKeyChecks: true, fakerLocale: 'en_US',
+        recreateTables: true,
+    );
+
+    $service->begin(dumpConn(), dumpSource(), dumpSchema(), ['users'], $options, new DateTimeImmutable('2026-05-24 12:34:56'));
+
+    $sql = Storage::disk('local')->get($service->sqlFileName());
+    expect($sql)->toContain('DROP TABLE IF EXISTS `users`;')
+        ->and(strpos($sql, 'DROP TABLE'))->toBeLessThan(strpos($sql, 'CREATE TABLE `users`'))
+        ->and($sql)->not->toContain('CREATE TABLE IF NOT EXISTS');
+});

@@ -138,6 +138,7 @@ it('writes options block with all required fields', function (): void {
     expect($yaml)->toContain('drop_unknown_tables: false');
     expect($yaml)->toContain('disable_foreign_key_checks: true');
     expect($yaml)->toContain('remap_keys: true');
+    expect($yaml)->toContain('recreate_tables: false');
     expect($yaml)->toContain('faker_locale: en_US');
 });
 
@@ -154,11 +155,13 @@ it('writes non-default options when overridden in DumpResultData', function (): 
         dropExtraColumns: true,
         disableForeignKeyChecks: false,
         remapKeys: false,
+        recreateTables: true,
     );
 
     $yaml = $writer->write($result);
 
     expect($yaml)
+        ->toContain('recreate_tables: true')
         ->toContain('enforce_column_types: true')
         ->toContain('drop_unknown_tables: true')
         ->toContain('drop_extra_columns: true')

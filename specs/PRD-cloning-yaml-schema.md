@@ -420,6 +420,10 @@ A YAML language server hint can be placed at the top of every generated file:
           "type": "boolean",
           "description": "Optional (default false). Drop columns on the target that are absent in the source."
         },
+        "recreate_tables": {
+          "type": "boolean",
+          "description": "Optional (default false). Drop selected tables that exist on the target and re-create them from the source schema before import."
+        },
         "remap_keys": {
           "type": "boolean",
           "description": "Optional (default true). Generate key mappings and rewrite PK/FK values; false skips remapping even when configured."

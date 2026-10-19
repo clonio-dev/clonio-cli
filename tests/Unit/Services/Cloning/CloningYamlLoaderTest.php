@@ -928,3 +928,16 @@ YAML;
 
     expect((new CloningYamlLoader)->load('c.yaml')->keyRemapping)->toBeNull();
 });
+
+it('parses recreate_tables option and defaults it to false', function (bool $present): void {
+    Storage::fake('local');
+
+    $optionLine = $present ? "  recreate_tables: true\n" : '';
+    $yaml = "version: \"1\"\nconnection: production-db\noptions:\n  chunk_size: 1000\n  enforce_column_types: false\n  drop_unknown_tables: false\n{$optionLine}  disable_foreign_key_checks: true\n  faker_locale: en_US\ntables:\n  users:\n    rows:\n      strategy: full\n";
+
+    Storage::disk('local')->put('test.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
+
+    expect($config->options->recreateTables)->toBe($present);
+})->with(['present' => [true], 'absent' => [false]]);

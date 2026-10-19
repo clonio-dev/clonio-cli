@@ -904,3 +904,105 @@ it('does not connect to target for non-mysql AUTO_INCREMENT correction', functio
 
     expect(true)->toBeTrue(); // no exception, no connection opened
 });
+
+/**
+ * Run replicate() with recreate_tables against a target that already has 'users'
+ * and return every SQL statement sent to the target, in order.
+ *
+ * @return list<string>
+ */
+function captureRecreateStatements(DatabaseConnectionType $targetType, bool $recreate = true): array
+{
+    $source = makeReplicatorConn('source', DatabaseConnectionType::PostgreSQL);
+    $target = makeReplicatorConn('target', $targetType);
+
+    $targetSchema = new DatabaseSchemaData(databaseName: 'targetdb', tables: [
+        new TableSchemaData(name: 'users', columns: [
+            new ColumnSchemaData(name: 'id', type: 'int', nullable: false, default: null, isPrimary: true),
+            new ColumnSchemaData(name: 'email', type: 'varchar', nullable: false, default: null, isPrimary: false),
+        ], foreignKeys: []),
+    ]);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn($targetSchema);
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    $statements = [];
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->andReturnUsing(static function (string $sql) use (&$statements): bool {
+        $statements[] = $sql;
+
+        return true;
+    });
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failed = $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['users'], false, false, false, $recreate);
+
+    expect($failed)->toBe([]);
+
+    return $statements;
+}
+
+it('drops and re-creates an existing table on MySQL with FK checks disabled', function (): void {
+    $statements = captureRecreateStatements(DatabaseConnectionType::Mysql);
+
+    expect($statements)->toHaveCount(3)
+        ->and($statements[0])->toBe('SET FOREIGN_KEY_CHECKS=0')
+        ->and($statements[1])->toBe('DROP TABLE IF EXISTS `users`')
+        ->and($statements[2])->toContain('CREATE TABLE')->toContain('`users`');
+});
+
+it('drops and re-creates an existing table on SQLite with foreign keys off', function (): void {
+    $statements = captureRecreateStatements(DatabaseConnectionType::Sqlite);
+
+    expect($statements)->toHaveCount(3)
+        ->and($statements[0])->toBe('PRAGMA foreign_keys = OFF')
+        ->and($statements[1])->toBe('DROP TABLE IF EXISTS "users"')
+        ->and($statements[2])->toContain('CREATE TABLE');
+});
+
+it('drops an existing table with CASCADE on PostgreSQL before re-creating it', function (): void {
+    $statements = captureRecreateStatements(DatabaseConnectionType::PostgreSQL);
+
+    expect($statements)->toHaveCount(2)
+        ->and($statements[0])->toBe('DROP TABLE IF EXISTS "users" CASCADE')
+        ->and($statements[1])->toContain('CREATE TABLE');
+});
+
+it('removes referencing foreign keys before dropping a table on SQL Server', function (): void {
+    $statements = captureRecreateStatements(DatabaseConnectionType::SqlServer);
+
+    expect($statements)->toHaveCount(3)
+        ->and($statements[0])->toContain('sys.foreign_keys')->toContain("OBJECT_ID(N'users')")->toContain('DROP CONSTRAINT')
+        ->and($statements[1])->toContain("IF OBJECT_ID('users', 'U') IS NOT NULL DROP TABLE [users]")
+        ->and($statements[2])->toContain('CREATE TABLE [users]');
+});
+
+it('leaves existing tables untouched when recreate_tables is false', function (): void {
+    expect(captureRecreateStatements(DatabaseConnectionType::Mysql, false))->toBe([]);
+});
+
+it('reports a table as failed when dropping it for recreate fails', function (): void {
+    $source = makeReplicatorConn('source', DatabaseConnectionType::PostgreSQL);
+    $target = makeReplicatorConn('target', DatabaseConnectionType::PostgreSQL);
+
+    $inspector = Mockery::mock(SchemaInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new DatabaseSchemaData(databaseName: 'targetdb', tables: [
+        new TableSchemaData(name: 'users', columns: [], foreignKeys: []),
+    ]));
+
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('target_conn');
+
+    DB::shouldReceive('connection')->with('target_conn')->andReturnSelf();
+    DB::shouldReceive('statement')->once()->andThrow(new RuntimeException('permission denied'));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $replicator = new SchemaReplicator($inspector, $connector);
+    $failed = $replicator->replicate($source, $target, makeSimpleSourceSchema(), ['users'], false, false, false, true);
+
+    expect($failed)->toBe(['users' => 'permission denied']);
+});

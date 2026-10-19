@@ -97,9 +97,9 @@ Run summary excerpt:
 
 ### DDL strategy
 
-The `options.drop_unknown_tables` field in the cloning YAML drives the DDL:
+The `options.recreate_tables` and `options.drop_unknown_tables` fields in the cloning YAML drive the DDL:
 
-| `drop_unknown_tables` | DDL emitted |
+| `recreate_tables` or `drop_unknown_tables` | DDL emitted |
 |:---:|---|
 | `true` | `DROP TABLE IF EXISTS` + `CREATE TABLE` (target treated as disposable) |
 | `false` | `CREATE TABLE IF NOT EXISTS` (only add missing structures) |

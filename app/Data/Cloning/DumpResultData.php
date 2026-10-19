@@ -21,5 +21,6 @@ final readonly class DumpResultData
         public bool $dropExtraColumns = false,
         public bool $disableForeignKeyChecks = true,
         public bool $remapKeys = true,
+        public bool $recreateTables = false,
     ) {}
 }

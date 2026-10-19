@@ -38,7 +38,7 @@ The file name has no functional effect. The convention `<connection-name>.clonin
 
 ## Options
 
-All fields in `options` must be present. `cloning:dump` writes all of them automatically.
+`cloning:dump` writes all of these fields automatically. `drop_extra_columns`, `recreate_tables` and `remap_keys` are optional and fall back to their defaults when omitted.
 
 ```yaml
 options:
@@ -46,6 +46,7 @@ options:
   enforce_column_types: false
   drop_unknown_tables: false
   drop_extra_columns: false
+  recreate_tables: false
   disable_foreign_key_checks: true
   remap_keys: true
   faker_locale: en_US
@@ -57,13 +58,14 @@ options:
 | `enforce_column_types` | boolean | `false` | Add columns to existing target tables that are present in the source but missing from the target. |
 | `drop_unknown_tables` | boolean | `false` | Drop tables from the target that do not exist in the source. |
 | `drop_extra_columns` | boolean | `false` | Drop columns from existing target tables that exist in the target but not in the source. ⚠ Irreversible — see note below. |
+| `recreate_tables` | boolean | `false` | Drop every selected table that already exists on the target and re-create it from the source schema before data is transferred. Use this when the target schema has drifted (e.g. a column is too narrow). ⚠ Irreversible — see note below. |
 | `disable_foreign_key_checks` | boolean | `true` | Disable foreign-key constraint checks on the target during data transfer. Recommended when truncating or inserting out of dependency order. |
 | `remap_keys` | boolean | `true` | Generate key mappings and rewrite primary/foreign key values when remapping is configured (inline `strategy: remapping` columns or a `key_remapping:` section). Set to `false` to skip that (often expensive) step without removing the remapping definition — override per run with `cloning:run --remap-keys` / `--no-remap-keys`. |
 | `faker_locale` | string | `en_US` | [FakerPHP locale](https://fakerphp.github.io/localization/) applied to all `fake` column strategies. Examples: `de_DE`, `fr_FR`, `ja_JP`. |
 
 ### Schema synchronization
 
-The three schema-control options together determine how closely the target schema is kept in sync with the source before data is transferred:
+The schema-control options together determine how closely the target schema is kept in sync with the source before data is transferred:
 
 | Option | Effect during Phase 4 (Schema Replication) |
 |--------|---------------------------------------------|
@@ -71,10 +73,15 @@ The three schema-control options together determine how closely the target schem
 | `enforce_column_types: true` | Adds missing columns to existing target tables |
 | `drop_extra_columns: true` | Drops columns from target tables that are absent in source |
 | `drop_unknown_tables: true` | Drops tables from target that are absent in source |
+| `recreate_tables: true` | Drops selected tables that exist on the target and re-creates them from the source schema |
 
 > **⚠ Caution — `drop_extra_columns: true`**
 >
 > Dropping columns is irreversible and destroys any data stored in those columns on the target. Enable this only on ephemeral environments (e.g. a fresh CI database) or when you have confirmed those columns are safe to remove.
+
+> **⚠ Caution — `recreate_tables: true`**
+>
+> Every selected table is dropped on the target, including indexes, triggers and any target-only columns, and re-created from the source schema. Foreign keys from source tables are not re-created. On PostgreSQL the drop uses `CASCADE`, and on SQL Server referencing foreign keys are removed first, so foreign-key constraints on *other* target tables that point at a recreated table are removed too. Tables not selected for transfer stay untouched. The option has no effect with `cloning:run --skip-schema`. For `connection:dump` targets, the dump contains `DROP TABLE IF EXISTS` before each `CREATE TABLE`.
 
 ---
 

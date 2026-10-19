@@ -97,6 +97,7 @@ class CloningRunOrchestrator
                 $config->options->enforceColumnTypes,
                 $config->options->dropUnknownTables,
                 $config->options->dropExtraColumns,
+                $config->options->recreateTables,
             );
 
             if ($schemaFailures === []) {

@@ -21,6 +21,7 @@ clonio cloning:dump [options]
 | `--enforce-column-types` | Set `enforce_column_types: true` in the generated YAML |
 | `--drop-unknown-tables` | Set `drop_unknown_tables: true` in the generated YAML |
 | `--drop-extra-columns` | Set `drop_extra_columns: true` in the generated YAML |
+| `--recreate-tables` | Set `recreate_tables: true` in the generated YAML |
 | `--no-disable-fk-checks` | Set `disable_foreign_key_checks: false` in the generated YAML |
 | `--no-remap-keys` | Set `remap_keys: false` in the generated YAML (key remapping stays defined but disabled) |
 | `--skip-remapping-keys` | Alias of `--no-remap-keys` |
@@ -119,6 +120,7 @@ After inspecting the schema, Clonio prompts for five transfer options that contr
 | Enforce column types on target? | `--enforce-column-types` | `false` | Add columns to existing tables that are present in the source but missing from the target |
 | Drop unknown tables on target? | `--drop-unknown-tables` | `false` | Drop tables from the target that do not exist in the source |
 | Drop extra columns on target? | `--drop-extra-columns` | `false` | Drop columns from existing target tables that are absent from the source |
+| Drop and re-create existing tables on target? | `--recreate-tables` | `false` | Drop selected tables that already exist on the target and re-create them from the source schema |
 | Disable foreign key checks? | `--no-disable-fk-checks` to disable | `true` | Disable FK constraint checks during data transfer |
 | Remap keys? | `--no-remap-keys` to disable | `true` | Generate key mappings and rewrite PK/FK values when remapping is configured |
 
@@ -162,6 +164,7 @@ options:
   enforce_column_types: false
   drop_unknown_tables: false
   drop_extra_columns: false
+  recreate_tables: false
   disable_foreign_key_checks: true
   faker_locale: en_US
 

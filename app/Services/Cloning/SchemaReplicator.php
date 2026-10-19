@@ -36,6 +36,7 @@ class SchemaReplicator
         bool $enforceColumnTypes,
         bool $dropUnknownTables,
         bool $dropExtraColumns = false,
+        bool $recreateTables = false,
     ): array {
         $targetConnName = $this->connector->open($target);
         $sameDbType = $source->type === $target->type;
@@ -46,6 +47,10 @@ class SchemaReplicator
         try {
             $targetSchema = $this->inspector->inspect($target);
 
+            if ($recreateTables) {
+                $this->allowDroppingReferencedTables($targetConnName, $target->type);
+            }
+
             foreach ($tables as $tableName) {
                 $sourceTable = $sourceSchema->getTable($tableName);
 
@@ -54,6 +59,19 @@ class SchemaReplicator
                 }
 
                 $targetTable = $targetSchema->getTable($tableName);
+
+                if ($recreateTables && $targetTable instanceof TableSchemaData) {
+                    try {
+                        $this->dropTableForRecreate($targetConnName, $tableName, $target->type);
+                    } catch (Throwable $e) {
+                        $failedTables[$tableName] = $e->getMessage();
+
+                        continue;
+                    }
+
+                    // Dropped — fall through to the create path below.
+                    $targetTable = null;
+                }
 
                 if (! $targetTable instanceof TableSchemaData) {
                     $created = false;
@@ -182,6 +200,52 @@ class SchemaReplicator
         }
 
         return 'DROP TABLE IF EXISTS '.$quotedTable;
+    }
+
+    /**
+     * Let the session drop tables that other tables still reference.
+     * MySQL/MariaDB and SQLite only enforce this per connection, and the
+     * connection is purged after replication, so the setting is not restored.
+     * PostgreSQL and SQL Server are handled per table in dropTableForRecreate().
+     */
+    private function allowDroppingReferencedTables(string $connName, DatabaseConnectionType $driver): void
+    {
+        match ($driver) {
+            DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => DB::connection($connName)->statement('SET FOREIGN_KEY_CHECKS=0'),
+            DatabaseConnectionType::Sqlite => DB::connection($connName)->statement('PRAGMA foreign_keys = OFF'),
+            default => null,
+        };
+    }
+
+    /**
+     * Drop an existing target table so it can be re-created from the source schema.
+     * Foreign keys on other tables that point at it are removed on PostgreSQL
+     * (CASCADE) and SQL Server (explicit DROP CONSTRAINT), since neither can
+     * drop a referenced table otherwise.
+     */
+    private function dropTableForRecreate(string $connName, string $tableName, DatabaseConnectionType $driver): void
+    {
+        $quotedTable = $this->quoteIdentifier($tableName, $driver);
+
+        match ($driver) {
+            DatabaseConnectionType::PostgreSQL => DB::connection($connName)->statement('DROP TABLE IF EXISTS '.$quotedTable.' CASCADE'),
+            DatabaseConnectionType::SqlServer => $this->dropSqlServerTableWithReferences($connName, $tableName),
+            default => DB::connection($connName)->statement($this->buildDropTableSql($tableName, $driver)),
+        };
+    }
+
+    private function dropSqlServerTableWithReferences(string $connName, string $tableName): void
+    {
+        $literal = str_replace("'", "''", $tableName);
+
+        DB::connection($connName)->statement(
+            "DECLARE @sql NVARCHAR(MAX) = N''; "
+            ."SELECT @sql += N'ALTER TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + N'.' + QUOTENAME(OBJECT_NAME(parent_object_id)) "
+            ."+ N' DROP CONSTRAINT ' + QUOTENAME(name) + N'; ' "
+            ."FROM sys.foreign_keys WHERE referenced_object_id = OBJECT_ID(N'{$literal}'); "
+            .'EXEC sp_executesql @sql;'
+        );
+        DB::connection($connName)->statement($this->buildDropTableSql($tableName, DatabaseConnectionType::SqlServer));
     }
 
     private function mapType(string $sourceType, DatabaseConnectionType $driver): string

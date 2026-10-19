@@ -85,6 +85,8 @@ class RunCommand extends Command
         {--no-drop-unknown-tables   : Override: drop_unknown_tables false for this run}
         {--drop-extra-columns       : Override: drop_extra_columns true for this run}
         {--no-drop-extra-columns    : Override: drop_extra_columns false for this run}
+        {--recreate-tables          : Override: recreate_tables true for this run}
+        {--no-recreate-tables       : Override: recreate_tables false for this run}
         {--disable-fk-checks        : Override: disable_foreign_key_checks true for this run}
         {--no-disable-fk-checks     : Override: disable_foreign_key_checks false for this run}
         {--break-on-failure         : Abort the run immediately on the first table failure (schema or data)}';
@@ -185,10 +187,11 @@ class RunCommand extends Command
         $enforceOverride = $this->option('enforce-column-types') ? true : ($this->option('no-enforce-column-types') ? false : null);
         $dropUnkOverride = $this->option('drop-unknown-tables') ? true : ($this->option('no-drop-unknown-tables') ? false : null);
         $dropExtOverride = $this->option('drop-extra-columns') ? true : ($this->option('no-drop-extra-columns') ? false : null);
+        $recreateOverride = $this->option('recreate-tables') ? true : ($this->option('no-recreate-tables') ? false : null);
         $fkChecksOverride = $this->option('no-disable-fk-checks') ? false : ($this->option('disable-fk-checks') ? true : null);
         $remapKeysOverride = ($this->option('no-remap-keys') || $this->option('skip-remapping-keys')) ? false : ($this->option('remap-keys') ? true : null);
 
-        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $fkChecksOverride !== null || $remapKeysOverride !== null) {
+        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $recreateOverride !== null || $fkChecksOverride !== null || $remapKeysOverride !== null) {
             $opts = $config->options;
             $config = new CloningConfigData(
                 version: $config->version,
@@ -201,6 +204,7 @@ class RunCommand extends Command
                     disableForeignKeyChecks: $fkChecksOverride ?? $opts->disableForeignKeyChecks,
                     fakerLocale: $opts->fakerLocale,
                     remapKeys: $remapKeysOverride ?? $opts->remapKeys,
+                    recreateTables: $recreateOverride ?? $opts->recreateTables,
                 ),
                 tables: $config->tables,
                 keyRemapping: $config->keyRemapping,
@@ -1047,6 +1051,8 @@ class RunCommand extends Command
             'no-drop-unknown-tables' => '--no-drop-unknown-tables',
             'drop-extra-columns' => '--drop-extra-columns',
             'no-drop-extra-columns' => '--no-drop-extra-columns',
+            'recreate-tables' => '--recreate-tables',
+            'no-recreate-tables' => '--no-recreate-tables',
             'disable-fk-checks' => '--disable-fk-checks',
             'no-disable-fk-checks' => '--no-disable-fk-checks',
             'break-on-failure' => '--break-on-failure',

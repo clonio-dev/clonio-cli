@@ -81,14 +81,17 @@ class SqlDumpService
             }
         }
 
-        $ifNotExists = ! $options->dropUnknownTables;
+        // Drop-and-create when the user asked to recreate tables. drop_unknown_tables keeps
+        // its historical meaning here: a dump target is treated as disposable.
+        $recreate = $options->recreateTables || $options->dropUnknownTables;
+        $ifNotExists = ! $recreate;
 
         $sql = $this->dialect->fileHeader($sourceDb, $at);
         $sql .= $this->dialect->preamble($this->disableFkChecks);
 
         if ($emitSchema) {
             foreach ($this->orderedTables as $table) {
-                if ($options->dropUnknownTables) {
+                if ($recreate) {
                     $sql .= $this->dialect->dropTable($table->name);
                 }
 

@@ -69,6 +69,7 @@ class CloningYamlLoader
             disableForeignKeyChecks: (bool) ($optionsRaw['disable_foreign_key_checks'] ?? true),
             fakerLocale: is_string($optionsRaw['faker_locale'] ?? null) ? $optionsRaw['faker_locale'] : 'en_US',
             remapKeys: (bool) ($optionsRaw['remap_keys'] ?? true),
+            recreateTables: (bool) ($optionsRaw['recreate_tables'] ?? false),
         );
 
         /** @var array<string, mixed> $tablesRaw */

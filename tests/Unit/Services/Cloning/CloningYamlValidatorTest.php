@@ -868,3 +868,31 @@ it('keeps the generic error when the column strategy is missing', function (): v
     expect($errors)->toHaveCount(1)
         ->and($errors[0])->toContain('strategy must be one of');
 });
+
+it('validates recreate_tables as optional boolean', function (mixed $value, bool $valid): void {
+    $data = [
+        'version' => '1',
+        'connection' => 'production-db',
+        'options' => [
+            'chunk_size' => 1000,
+            'enforce_column_types' => false,
+            'drop_unknown_tables' => false,
+            'recreate_tables' => $value,
+            'disable_foreign_key_checks' => true,
+            'faker_locale' => 'en_US',
+        ],
+        'tables' => ['users' => ['rows' => ['strategy' => 'full']]],
+    ];
+
+    $errors = (new CloningYamlValidator)->validate($data);
+
+    if ($valid) {
+        expect($errors)->toBe([]);
+    } else {
+        expect($errors)->toContain("Field 'options.recreate_tables' must be a boolean");
+    }
+})->with([
+    'true' => [true, true],
+    'false' => [false, true],
+    'string' => ['yes', false],
+]);

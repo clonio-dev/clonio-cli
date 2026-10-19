@@ -37,6 +37,8 @@ clonio cloning:run <file> [options]
 | `--no-drop-unknown-tables` | Override: set `drop_unknown_tables: false` for this run |
 | `--drop-extra-columns` | Override: set `drop_extra_columns: true` for this run |
 | `--no-drop-extra-columns` | Override: set `drop_extra_columns: false` for this run |
+| `--recreate-tables` | Override: set `recreate_tables: true` for this run |
+| `--no-recreate-tables` | Override: set `recreate_tables: false` for this run |
 | `--disable-fk-checks` | Override: set `disable_foreign_key_checks: true` for this run |
 | `--no-disable-fk-checks` | Override: set `disable_foreign_key_checks: false` for this run |
 | `--break-on-failure` | Abort the run immediately on the first table failure (schema or data) |
@@ -149,13 +151,14 @@ The DDL/DML respect `options.drop_unknown_tables`, `options.chunk_size`, and `op
 
 ## Schema Synchronization
 
-Before transferring data, Clonio synchronizes the target schema to match the source. Five options in the `options:` block of the YAML file control this behaviour and the data transfer. These values are set interactively by `cloning:dump` and can be overridden at run time via CLI flags.
+Before transferring data, Clonio synchronizes the target schema to match the source. Six options in the `options:` block of the YAML file control this behaviour and the data transfer. These values are set interactively by `cloning:dump` and can be overridden at run time via CLI flags.
 
 | YAML option | Default | CLI override (on / off) | Effect |
 |-------------|---------|------------------------|--------|
 | `enforce_column_types` | `false` | `--enforce-column-types` / `--no-enforce-column-types` | Add columns to existing target tables that are present in the source but missing from the target |
 | `drop_unknown_tables` | `false` | `--drop-unknown-tables` / `--no-drop-unknown-tables` | Drop tables from the target that do not exist in the source |
 | `drop_extra_columns` | `false` | `--drop-extra-columns` / `--no-drop-extra-columns` | Drop columns from existing target tables that are absent from the source |
+| `recreate_tables` | `false` | `--recreate-tables` / `--no-recreate-tables` | Drop selected tables that already exist on the target and re-create them from the source schema |
 | `disable_foreign_key_checks` | `true` | `--disable-fk-checks` / `--no-disable-fk-checks` | Disable FK constraint checks during data transfer |
 | `remap_keys` | `true` | `--remap-keys` / `--no-remap-keys` | Generate key mappings and rewrite PK/FK values when remapping is configured |
 
@@ -183,6 +186,7 @@ The following options control what happens to columns and tables that diverge fr
 | Exists | Exists, missing columns | Columns added when `enforce_column_types: true` |
 | Exists | Exists, extra columns | Columns dropped when `drop_extra_columns: true` |
 | Missing | Exists | Table dropped when `drop_unknown_tables: true` |
+| Exists | Exists (any shape) | Table dropped and re-created from source when `recreate_tables: true` |
 
 ### Overriding options at run time
 
@@ -194,6 +198,9 @@ clonio cloning:run prod.cloning.yaml --target staging --enforce-column-types
 
 # Tear down stale tables on a throwaway CI database
 clonio cloning:run prod.cloning.yaml --target ci-db --drop-unknown-tables --drop-extra-columns
+
+# Rebuild drifted target tables from the source schema (e.g. a column that is too narrow)
+clonio cloning:run prod.cloning.yaml --target staging --recreate-tables
 
 # Disable a destructive option set in the YAML for this run only
 clonio cloning:run prod.cloning.yaml --target staging --no-drop-unknown-tables
@@ -211,6 +218,17 @@ Dropping columns is irreversible and will destroy any data stored in those colum
 
 - The target environment is ephemeral (e.g. a fresh CI database) or regularly rebuilt, **or**
 - You have confirmed that the extra columns on the target are safe to remove.
+
+### Caution: `recreate_tables`
+
+`recreate_tables: true` drops every selected table that already exists on the target and re-creates it from the source schema before the data transfer. Use it when the target schema has drifted from the source (for example, a `varchar` column on the target is shorter than on the source, which makes inserts fail with "Data too long").
+
+- All target-only structures on those tables are lost: indexes, triggers and extra columns.
+- Foreign keys from the source are not re-created on the target.
+- On **PostgreSQL** the table is dropped with `CASCADE`, and on **SQL Server** foreign keys that reference the table are dropped first. Foreign-key constraints on *other* target tables that point at a recreated table are therefore removed. On MySQL/MariaDB and SQLite, foreign-key checks are disabled for the schema session so the drop succeeds and those constraints stay.
+- Only tables selected for transfer are recreated. Tables in `skip:` or not listed under `tables:` stay untouched.
+- It has no effect with `--skip-schema`, because Phase 4 does not run.
+- If a drop fails (e.g. missing privileges), the table is reported as a schema failure and skipped.
 
 ---
 
@@ -387,14 +405,15 @@ Only runs when `--dry-run` is set. Fetches both the source and target schemas, c
 
 ### Phase 4 — Schema Replication
 
-Synchronizes the target schema with the source. Controlled by four options in the YAML `options` block (see [Schema Synchronization](#schema-synchronization)):
+Synchronizes the target schema with the source. Controlled by five options in the YAML `options` block (see [Schema Synchronization](#schema-synchronization)):
 
 - **Always** creates tables that exist in the source but not in the target.
 - `enforce_column_types: true` — adds missing columns to existing target tables.
 - `drop_extra_columns: true` — drops columns from existing target tables that are absent in the source.
 - `drop_unknown_tables: true` — drops tables from the target that are not present in the source.
+- `recreate_tables: true` — drops selected tables that already exist on the target and re-creates them from the source schema.
 
-Each option can be overridden for a single run via CLI flags (`--enforce-column-types`, `--drop-unknown-tables`, `--drop-extra-columns`, `--disable-fk-checks`, `--remap-keys` and their `--no-*` counterparts) without modifying the YAML file.
+Each option can be overridden for a single run via CLI flags (`--enforce-column-types`, `--drop-unknown-tables`, `--drop-extra-columns`, `--recreate-tables`, `--disable-fk-checks`, `--remap-keys` and their `--no-*` counterparts) without modifying the YAML file.
 
 Skipped entirely when `--skip-schema` is set.
 

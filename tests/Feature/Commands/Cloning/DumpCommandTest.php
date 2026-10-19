@@ -665,6 +665,7 @@ it('prompts for transfer options interactively and writes the chosen values', fu
         ->expectsConfirmation('    Enforce column types on target?', 'yes')
         ->expectsConfirmation('    Drop unknown tables on target?', 'no')
         ->expectsConfirmation('    Drop extra columns on target?', 'no')
+        ->expectsConfirmation('    Drop and re-create existing tables on target?', 'yes')
         ->expectsConfirmation('    Disable foreign key checks?', 'yes')
         ->expectsConfirmation('    Remap keys?', 'yes')
         ->assertExitCode(ExitCode::Success->value);
@@ -673,6 +674,7 @@ it('prompts for transfer options interactively and writes the chosen values', fu
     expect($yaml)
         ->toContain('enforce_column_types: true')
         ->toContain('drop_unknown_tables: false')
+        ->toContain('recreate_tables: true')
         ->toContain('disable_foreign_key_checks: true')
         ->toContain('remap_keys: true');
 });
@@ -707,6 +709,7 @@ it('interactive: prompts to select a connection from the choice list', function 
         ->expectsConfirmation('    Enforce column types on target?', 'no')
         ->expectsConfirmation('    Drop unknown tables on target?', 'no')
         ->expectsConfirmation('    Drop extra columns on target?', 'no')
+        ->expectsConfirmation('    Drop and re-create existing tables on target?', 'no')
         ->expectsConfirmation('    Disable foreign key checks?', 'yes')
         ->expectsConfirmation('    Remap keys?', 'yes')
         ->assertExitCode(ExitCode::Success->value);

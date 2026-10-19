@@ -39,6 +39,7 @@ class DumpCommand extends Command
         {--enforce-column-types  : Set enforce_column_types: true in the generated YAML}
         {--drop-unknown-tables   : Set drop_unknown_tables: true in the generated YAML}
         {--drop-extra-columns    : Set drop_extra_columns: true in the generated YAML}
+        {--recreate-tables       : Set recreate_tables: true in the generated YAML}
         {--no-disable-fk-checks  : Set disable_foreign_key_checks: false in the generated YAML}
         {--no-remap-keys         : Set remap_keys: false in the generated YAML}
         {--skip-remapping-keys   : Alias of --no-remap-keys}
@@ -246,6 +247,7 @@ class DumpCommand extends Command
         $enforceColumnTypes = (bool) $this->option('enforce-column-types');
         $dropUnknownTables = (bool) $this->option('drop-unknown-tables');
         $dropExtraColumns = (bool) $this->option('drop-extra-columns');
+        $recreateTables = (bool) $this->option('recreate-tables');
         $disableForeignKeyChecks = ! $this->option('no-disable-fk-checks');
         $remapKeys = ! $this->option('no-remap-keys') && ! $this->option('skip-remapping-keys');
 
@@ -254,6 +256,7 @@ class DumpCommand extends Command
             $enforceColumnTypes = $this->confirm('    Enforce column types on target?', $enforceColumnTypes);
             $dropUnknownTables = $this->confirm('    Drop unknown tables on target?', $dropUnknownTables);
             $dropExtraColumns = $this->confirm('    Drop extra columns on target?', $dropExtraColumns);
+            $recreateTables = $this->confirm('    Drop and re-create existing tables on target?', $recreateTables);
             $disableForeignKeyChecks = $this->confirm('    Disable foreign key checks?', $disableForeignKeyChecks);
             $remapKeys = $this->confirm('    Remap keys?', $remapKeys);
             $this->line('');
@@ -274,6 +277,7 @@ class DumpCommand extends Command
             dropExtraColumns: $dropExtraColumns,
             disableForeignKeyChecks: $disableForeignKeyChecks,
             remapKeys: $remapKeys,
+            recreateTables: $recreateTables,
         );
 
         // 12. Write YAML
