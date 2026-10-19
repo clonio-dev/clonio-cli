@@ -31,6 +31,7 @@ When run without flags, the command walks through each step interactively:
 | `hash` | Replace with a one-way hash of the original value. Useful for passwords and secrets. |
 | `mask` | Partially mask the value, preserving a configurable number of visible characters. |
 | `static` | Replace every value with a fixed string. |
+| `template` | Build a string by mixing literal text with `{fakerMethod}` placeholders, e.g. `{userName}@acme.test`. |
 | `remapping` | Replace primary-key values; foreign keys auto-detected from the live source schema. |
 
 ### `fake` Parameters
@@ -91,6 +92,12 @@ Argument reference for methods that accept parameters:
 |-----------|--------|-------------|
 | Value | `--value=` | The fixed string to replace every value with |
 
+### `template` Parameters
+
+| Parameter | Option | Description |
+|-----------|--------|-------------|
+| Template | `--template=` | Literal text with `{fakerMethod}` placeholders, e.g. `{firstName}.{lastName}@example.test` |
+
 ### `remapping` Parameters
 
 | Parameter | Option | Description |
@@ -125,7 +132,8 @@ If the source connection cannot be reached (config missing, host unreachable, et
 | `file` | Path to the `.cloning.yaml` file (argument, optional) |
 | `--table=` | Table name |
 | `--column=` | Column name |
-| `--strategy=` | Strategy to apply: `keep`, `fake`, `hash`, `mask`, `static`, `remapping` |
+| `--strategy=` | Strategy to apply: `keep`, `fake`, `hash`, `mask`, `static`, `template`, `remapping` |
+| `--template=` | (`template`) Template with `{fakerMethod}` placeholders |
 | `--remapping-use=` | (`remapping`) `random_integer` or `new_uuid` |
 
 ## Exit Codes

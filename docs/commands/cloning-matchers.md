@@ -10,19 +10,19 @@ The binary ships a **baseline** set of matchers. You can customise detection by 
 
 ## Sub-commands
 
-- [`matchers init`](#matchers-init) — write the baseline to disk
-- [`matchers update`](#matchers-update) — add new baseline matchers to an existing file
-- [`matchers list`](#matchers-list) — show the effective matcher set
-- [`matchers check`](#matchers-check) — test a column name against the active matcher set
+- `matchers:init` — write the baseline to disk
+- `matchers:update` — add new baseline matchers to an existing file
+- `matchers:list` — show the effective matcher set
+- `matchers:check` — test a column name against the active matcher set
 
 ---
 
-## matchers init
+## matchers:init
 
 Write the full baseline PII matcher configuration to `clonio.pii-matchers.yaml`.
 
 ```bash
-php clonio matchers init
+clonio matchers:init
 ```
 
 ### Options
@@ -54,7 +54,7 @@ php clonio matchers init
   Total: 20 matchers across 6 groups
 
   Edit clonio.pii-matchers.yaml to customise detection, then commit it to your repository.
-  Run matchers update after upgrading Clonio to add new baseline matchers.
+  Run matchers:update after upgrading Clonio to add new baseline matchers.
 
   Tip: clonio.pii-matchers.yaml contains no credentials and is safe to commit.
        Make sure clonio.json is in your .gitignore.
@@ -64,16 +64,16 @@ php clonio matchers init
 
 - Run this once per project to get started.
 - After editing `clonio.pii-matchers.yaml`, the file is the sole source of truth. The baseline is only used when the file is absent.
-- After upgrading Clonio, run `matchers update` to pick up any new baseline matchers.
+- After upgrading Clonio, run `matchers:update` to pick up any new baseline matchers.
 
 ---
 
-## matchers update
+## matchers:update
 
 Sync an existing `clonio.pii-matchers.yaml` with the current binary baseline by adding any new matchers that are in the baseline but not in your file.
 
 ```bash
-php clonio matchers update
+clonio matchers:update
 ```
 
 ### Options
@@ -121,16 +121,16 @@ php clonio matchers update
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `5` | `clonio.pii-matchers.yaml` not found — run `matchers init` first |
+| `5` | `clonio.pii-matchers.yaml` not found — run `matchers:init` first |
 
 ---
 
-## matchers list
+## matchers:list
 
 Show the full effective matcher set — from `clonio.pii-matchers.yaml` if it exists, otherwise from the binary baseline.
 
 ```bash
-php clonio matchers list
+clonio matchers:list
 ```
 
 ### Options
@@ -180,12 +180,12 @@ Each row is annotated with its source:
 
 ---
 
-## matchers check
+## matchers:check
 
 Test a column name against the active matcher set and show the result, including a live example of the transformation applied to a real input value.
 
 ```bash
-php clonio matchers check <column> [value]
+clonio matchers:check <column> [value]
 ```
 
 ### Arguments
@@ -204,7 +204,7 @@ php clonio matchers check <column> [value]
 ### Example — match found (built-in example)
 
 ```bash
-php clonio matchers check credit_card
+clonio matchers:check credit_card
 ```
 
 ```
@@ -231,7 +231,7 @@ php clonio matchers check credit_card
 ### Example — match found with custom value
 
 ```bash
-php clonio matchers check credit_card 5555555555554444
+clonio matchers:check credit_card 5555555555554444
 ```
 
 ```
@@ -243,7 +243,7 @@ php clonio matchers check credit_card 5555555555554444
 ### Example — fake strategy (input is not used)
 
 ```bash
-php clonio matchers check email
+clonio matchers:check email
 ```
 
 ```
@@ -255,7 +255,7 @@ php clonio matchers check email
 ### Example — no match
 
 ```bash
-php clonio matchers check created_at
+clonio matchers:check created_at
 ```
 
 ```
@@ -336,7 +336,7 @@ groups:
 
 ```bash
 # 1. Initialise the matcher file in your project
-php clonio matchers init
+clonio matchers:init
 
 # 2. Review and edit clonio.pii-matchers.yaml
 #    Enable any disabled matchers relevant to your data
@@ -344,11 +344,11 @@ php clonio matchers init
 # 3. Commit clonio.pii-matchers.yaml to version control
 
 # 4. Test that a column is classified correctly
-php clonio matchers check user_email
-php clonio matchers check ssn 123-45-6789   # test with a real value
+clonio matchers:check user_email
+clonio matchers:check ssn 123-45-6789   # test with a real value
 
 # 5. After upgrading Clonio, sync new baseline matchers
-php clonio matchers update
+clonio matchers:update
 ```
 
 ### Built-in matcher groups

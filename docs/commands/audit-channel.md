@@ -31,11 +31,11 @@ When run without flags the command walks through each field in order:
 
 1. **Name** — A unique identifier for the channel. Must match `[a-z0-9_-]+` (max 64 chars).
 2. **Type** — Selected from a list of supported channel types.
-3. **Type-specific fields** — Prompted based on the chosen type (see below).
-4. **Deliver audit log** — Whether this channel should deliver the signed HTML audit artefacts (default: yes).
-5. **Deliver process log** — Whether this channel should deliver the JSONL process log (default: yes for `local` and `s3`; no for all other types).
+3. **Type-specific fields** — Prompted based on the chosen type (see below). Network channels (`s3`, `email`, `ms_teams`, `slack`, `ntfy`) finish with "Override retry settings?" (default: no).
+4. **Summary** — A table of the collected values (secrets masked).
+5. **Save this channel?** — Confirm to write the channel to `clonio.json`; answering no cancels without changes.
 
-A summary table is displayed before writing. The operation can be cancelled at the final confirmation prompt.
+Every type-specific field has a matching option. Values passed as options are not prompted again.
 
 ### Channel types
 
@@ -47,7 +47,9 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | Microsoft Teams | `ms_teams` | Post notifications via an incoming webhook |
 | Slack | `slack` | Post notifications via an incoming webhook |
 | ntfy.sh / self-hosted ntfy | `ntfy` | Send push notifications via ntfy |
-| Fan-out | `stack` | Deliver to multiple channels simultaneously |
+| Standard output | `stdout` | Print to standard output (no fields) |
+| Standard error | `stderr` | Print to standard error (no fields) |
+| Stack | `stack` | Fan out delivery to multiple existing channels |
 
 ### Options
 
@@ -56,44 +58,42 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | Option | Description |
 |---|---|
 | `name` | Channel name (argument, optional) |
-| `--type=` | Channel type: `local`, `s3`, `email`, `ms_teams`, `slack`, `ntfy`, `stack` |
-| `--enable` | Add this channel to `audit.use` in `clonio.json` (active delivery list) |
-| `--deliver-audit-log` | Enable delivery of the signed HTML audit artefacts via this channel |
-| `--no-deliver-audit-log` | Disable delivery of the signed HTML audit artefacts via this channel |
-| `--deliver-run-log` | Enable delivery of the JSONL process log via this channel |
-| `--no-deliver-run-log` | Disable delivery of the JSONL process log via this channel |
+| `--type=` | Channel type: `local`, `s3`, `email`, `ms_teams`, `slack`, `ntfy`, `stdout`, `stderr`, `stack` |
+| `--enable` | Also add this channel to `audit.use` in `clonio.json` (active delivery list) |
 
 #### Local (`--type=local`)
 
 | Option | Description |
 |---|---|
-| `--local-path=` | Directory path template for audit and run logs (default: `./clonio-logs/{year}/{month}`) |
-
-Both audit logs and run logs are written to the same directory. Path templates support: `{year}`, `{month}`, `{day}`, `{source}`, `{target}`, `{timestamp}`.
+| `--local-path=` | Directory path template for audit and process logs (default: `./clonio-logs/{year}/{month}`) |
 
 #### S3 (`--type=s3`)
 
 | Option | Description |
 |---|---|
-| `--endpoint=` | S3-compatible endpoint URL |
-| `--bucket=` | Bucket name |
-| `--region=` | Region string |
-| `--access-key=` | Access key ID |
-| `--secret-key=` | Secret access key (stored encrypted) |
-| `--path-prefix=` | Key prefix template (default: `clonio/{year}/{month}/{source}/`) |
+| `--s3-endpoint=` | S3-compatible endpoint URL |
+| `--s3-bucket=` | Bucket name |
+| `--s3-region=` | Region string |
+| `--s3-access-key=` | Access key ID |
+| `--s3-secret-key=` | Secret access key (stored encrypted) |
+| `--s3-path-prefix=` | Key prefix template (default: `clonio/{year}/{month}/{source}/`) |
+
+Default retry settings: 5 attempts, 1000 ms initial delay, multiplier 2, max delay 30000 ms.
 
 #### Email (`--type=email`)
 
 | Option | Description |
 |---|---|
-| `--host=` | SMTP host |
-| `--port=` | SMTP port (default: `587`) |
-| `--encryption=` | Encryption: `tls`, `ssl`, `none` |
-| `--username=` | SMTP username |
-| `--password=` | SMTP password (stored encrypted) |
-| `--from-address=` | Sender email address |
-| `--from-name=` | Sender display name |
-| `--to=` | Comma-separated recipient addresses |
+| `--mail-host=` | SMTP host |
+| `--mail-port=` | SMTP port (default: `587`) |
+| `--mail-encryption=` | Encryption: `tls` (default), `ssl`, `none` |
+| `--mail-username=` | SMTP username |
+| `--mail-password=` | SMTP password (stored encrypted) |
+| `--mail-from-address=` | Sender email address |
+| `--mail-from-name=` | Sender display name |
+| `--mail-to=` | Comma-separated recipient addresses |
+
+Default retry settings: 3 attempts, 500 ms initial delay, multiplier 2, max delay 10000 ms.
 
 #### Microsoft Teams / Slack (`--type=ms_teams` or `--type=slack`)
 
@@ -101,29 +101,33 @@ Both audit logs and run logs are written to the same directory. Path templates s
 |---|---|
 | `--webhook-url=` | Incoming webhook URL (stored encrypted) |
 
+Default retry settings: 3 attempts, 500 ms initial delay, multiplier 2, max delay 10000 ms.
+
 #### ntfy (`--type=ntfy`)
 
 | Option | Description |
 |---|---|
-| `--url=` | ntfy server base URL (default: `https://ntfy.sh`) |
-| `--topic=` | ntfy topic name |
-| `--priority=` | Notification priority: `min`, `low`, `default`, `high`, `max` |
-| `--tags=` | Comma-separated tag strings (optional) |
-| `--token=` | Bearer token for authenticated servers (stored encrypted, optional) |
+| `--ntfy-url=` | ntfy server base URL (default: `https://ntfy.sh`) |
+| `--ntfy-topic=` | ntfy topic name |
+| `--ntfy-priority=` | Notification priority: `min`, `low`, `default` (default), `high`, `max` |
+| `--ntfy-tags=` | Comma-separated tag strings (optional) |
+| `--ntfy-token=` | Bearer token for authenticated servers (stored encrypted, optional) |
+
+Topics on the public `ntfy.sh` server are readable by anyone who knows the name. Use a hard-to-guess topic or a self-hosted server for sensitive environments.
+
+Default retry settings: 3 attempts, 500 ms initial delay, multiplier 2, max delay 10000 ms.
 
 #### Stack (`--type=stack`)
 
-| Option | Description |
-|---|---|
-| `--channels=` | Comma-separated list of child channel names to deliver to |
+A stack has no options. The command lists the existing channels and asks for "Channels to include (comma-separated)". At least one other channel must already exist; otherwise the command fails with a config error.
 
 ### Exit codes
 
 | Code | Constant | Meaning |
 |---|---|---|
 | `0` | `Success` | Channel added successfully, or save was cancelled by the user |
-| `2` | `ConfigError` | `clonio.json` not found, or encryption failed |
-| `4` | `ValidationError` | Invalid channel name or duplicate name |
+| `2` | `ConfigError` | `clonio.json` not found, encryption failed, or a stack was requested before any other channel exists |
+| `4` | `ValidationError` | Invalid channel name, duplicate name, or unknown `--type` |
 | `5` | `IoError` | Could not write to `clonio.json` |
 
 ### Examples
@@ -132,20 +136,24 @@ Both audit logs and run logs are written to the same directory. Path templates s
 # Interactive
 clonio audit:add
 
-# Non-interactive: local channel
-clonio audit:add logs --type=local --local-path=./clonio-logs/{year}/{month}
+# Non-interactive: local channel, enabled immediately
+clonio audit:add logs --type=local --local-path='./clonio-logs/{year}/{month}' --enable
 
-# Non-interactive: S3 channel
-clonio audit:add s3-backup --type=s3 --endpoint=https://s3.amazonaws.com --bucket=my-bucket \
-  --region=eu-west-1 --access-key=AKIA... --path-prefix=clonio/{year}/{month}/
+# S3 channel (the secret key is prompted, so it stays out of shell history)
+clonio audit:add s3-backup --type=s3 --s3-endpoint=https://s3.amazonaws.com \
+  --s3-bucket=my-bucket --s3-region=eu-west-1 --s3-access-key=AKIA... \
+  --s3-path-prefix='clonio/{year}/{month}/'
 
-# Non-interactive: Slack channel, audit log only
-clonio audit:add slack-alerts --type=slack --deliver-audit-log --no-deliver-run-log
+# Slack channel (the webhook URL is prompted)
+clonio audit:add slack-alerts --type=slack
 
-# Non-interactive: email with multiple recipients
-clonio audit:add email-report --type=email --host=smtp.example.com --port=587 \
-  --encryption=tls --username=bot@example.com --from-address=bot@example.com \
-  --from-name="Clonio" --to="alice@example.com,bob@example.com"
+# Email with multiple recipients
+clonio audit:add email-report --type=email --mail-host=smtp.example.com --mail-port=587 \
+  --mail-encryption=tls --mail-username=bot@example.com --mail-from-address=bot@example.com \
+  --mail-from-name="Clonio" --mail-to="alice@example.com,bob@example.com"
+
+# Fan out to existing channels (channel names are prompted)
+clonio audit:add production --type=stack
 ```
 
 ---
@@ -205,7 +213,7 @@ clonio audit:delete [<name>] [--force]
 
 If `name` is omitted and only one channel exists, it is selected automatically. With multiple channels, an interactive selection prompt is shown.
 
-A warning is displayed if the channel is currently in `audit.use` or is referenced by a `stack` channel.
+A warning is displayed if the channel is currently in `audit.use`. Stack channels that reference the deleted channel are not changed; remove the name from their `channels` list with `audit:update`.
 
 ### Options
 
@@ -240,7 +248,7 @@ clonio audit:delete logs --force
 
 ## `audit:list`
 
-Lists all configured audit delivery channels and their delivery assignments.
+Lists all configured audit delivery channels.
 
 ### Usage
 
@@ -248,7 +256,7 @@ Lists all configured audit delivery channels and their delivery assignments.
 clonio audit:list
 ```
 
-Outputs a table with columns: **Name**, **Type**, **Default** (★ for the default channel), **Audit Log** (✓/✗), **Process Log** (✓/✗), **Details**.
+Outputs a table with columns: **Name**, **Type**, **Active** (★ if the channel is listed in `audit.use`), **Details**.
 
 The Details column shows a summary appropriate to the channel type:
 - **Local**: audit log path
@@ -256,6 +264,7 @@ The Details column shows a summary appropriate to the channel type:
 - **Email**: first recipient address
 - **Teams / Slack**: `(webhook — encrypted)`
 - **ntfy**: `server-url / topic`
+- **Stack**: comma-separated child channel names
 
 ### Exit codes
 
@@ -319,7 +328,7 @@ All secrets (S3 secret keys, SMTP passwords, webhook URLs, ntfy tokens) are stor
 encrypted:<base64-encoded-ciphertext>
 ```
 
-This requires `APP_KEY` to be set in the environment (`.env` or exported). Passing secrets via CLI flags (`--secret-key=`, `--password=`, `--webhook-url=`, `--token=`) is supported but may expose them in shell history — use the interactive prompt instead.
+This requires `APP_KEY` to be set in the environment (`.env` or exported). Passing secrets via CLI flags (`--s3-secret-key=`, `--mail-password=`, `--webhook-url=`, `--ntfy-token=`) is supported but prints a warning, because the value may end up in shell history. Prefer the interactive prompt.
 
 ### What each channel delivers
 
@@ -335,12 +344,12 @@ Each channel has independent control over whether it delivers the audit artefact
 | `ntfy` | Yes | No |
 | `stdout` / `stderr` | Yes | No |
 
-These defaults can be overridden per channel using the `delivers_audit` and `delivers_process_log` boolean keys directly in `clonio.json`:
+`audit:add` always uses these defaults. To change them, set the `delivers_audit` and `delivers_process_log` boolean keys directly in `clonio.json`:
 
 ```json
 {
   "audit": {
-    "default": "local",
+    "use": ["local"],
     "channels": {
       "local": {
         "type": "local",
@@ -359,7 +368,7 @@ These defaults can be overridden per channel using the `delivers_audit` and `del
 }
 ```
 
-The `--deliver-audit-log` / `--deliver-run-log` flags in `audit:add` set the delivery assignments at channel-creation time; they cannot yet be changed via `audit:update`. Edit `clonio.json` directly to adjust `delivers_audit` or `delivers_process_log` on an existing channel.
+Note: `audit:update` rewrites the channel from the prompted fields and currently drops these two keys. Re-add them to `clonio.json` after running `audit:update` on such a channel.
 
 ### clonio.json location
 
@@ -380,7 +389,7 @@ Local and S3 path fields support the following placeholders:
 
 ### Retry settings
 
-S3, email, Teams, Slack, and ntfy channels support optional retry configuration. During `audit:add`, you are prompted with "Override retry settings?" (default: no). If yes, four values are collected:
+S3, email, Teams, Slack, and ntfy channels support optional retry configuration. During `audit:add`, you are prompted with "Override retry settings?" (default: no). If yes, four values are collected, pre-filled with the type defaults listed above:
 
 | Field | Description |
 |---|---|
