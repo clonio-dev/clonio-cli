@@ -41,7 +41,6 @@ class DumpCommand extends Command
         {--drop-extra-columns    : Set drop_extra_columns: true in the generated YAML}
         {--no-disable-fk-checks  : Set disable_foreign_key_checks: false in the generated YAML}
         {--no-remap-keys         : Set remap_keys: false in the generated YAML}
-        {--skip-remapping-keys   : Alias of --no-remap-keys}
         {--ci                    : CI mode — suppress non-error output}';
 
     /**
@@ -247,7 +246,7 @@ class DumpCommand extends Command
         $dropUnknownTables = (bool) $this->option('drop-unknown-tables');
         $dropExtraColumns = (bool) $this->option('drop-extra-columns');
         $disableForeignKeyChecks = ! $this->option('no-disable-fk-checks');
-        $remapKeys = ! $this->option('no-remap-keys') && ! $this->option('skip-remapping-keys');
+        $remapKeys = ! $this->option('no-remap-keys');
 
         if (! $ci) {
             $this->line('  Transfer options:');

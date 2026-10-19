@@ -76,7 +76,6 @@ class RunCommand extends Command
         {--audit-channel=      : Comma-separated list of channel names}
         {--remap-keys               : Override: remap_keys true for this run}
         {--no-remap-keys            : Override: remap_keys false for this run (skip key mapping generation and FK rewriting)}
-        {--skip-remapping-keys      : Alias of --no-remap-keys}
         {--no-memory-limit          : Remove PHP memory limit before generating key mappings (useful for very large databases when --file-based is not an option)}
         {--file-based               : Store key mappings in AES-256-CBC encrypted temp files instead of RAM; keeps memory usage bounded to the largest single table}
         {--enforce-column-types     : Override: enforce_column_types true for this run}
@@ -186,7 +185,7 @@ class RunCommand extends Command
         $dropUnkOverride = $this->option('drop-unknown-tables') ? true : ($this->option('no-drop-unknown-tables') ? false : null);
         $dropExtOverride = $this->option('drop-extra-columns') ? true : ($this->option('no-drop-extra-columns') ? false : null);
         $fkChecksOverride = $this->option('no-disable-fk-checks') ? false : ($this->option('disable-fk-checks') ? true : null);
-        $remapKeysOverride = ($this->option('no-remap-keys') || $this->option('skip-remapping-keys')) ? false : ($this->option('remap-keys') ? true : null);
+        $remapKeysOverride = $this->option('no-remap-keys') ? false : ($this->option('remap-keys') ? true : null);
 
         if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $fkChecksOverride !== null || $remapKeysOverride !== null) {
             $opts = $config->options;
@@ -1035,7 +1034,6 @@ class RunCommand extends Command
             'audit-channel' => '--audit-channel',
             'remap-keys' => '--remap-keys',
             'no-remap-keys' => '--no-remap-keys',
-            'skip-remapping-keys' => '--skip-remapping-keys',
             'file-based' => '--file-based',
             'enforce-column-types' => '--enforce-column-types',
             'no-enforce-column-types' => '--no-enforce-column-types',

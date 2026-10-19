@@ -28,7 +28,6 @@ clonio cloning:run <file> [options]
 | `--audit-channel=<list>` | Comma-separated list of channel names to use for this run (overrides `audit.default` in `clonio.json`) |
 | `--remap-keys` | Override: set `remap_keys: true` for this run (re-enables key remapping disabled in the YAML) |
 | `--no-remap-keys` | Override: set `remap_keys: false` for this run — skip key mapping generation and FK rewriting. Persist it in the YAML via [`options.remap_keys`](../cloning-yaml.md#options). |
-| `--skip-remapping-keys` | Alias of `--no-remap-keys` |
 | `--no-memory-limit` | Remove PHP's memory limit before generating key mappings. Useful for very large databases when `--file-based` is not viable. |
 | `--file-based` | Store key mappings in AES-256-CBC encrypted temporary files instead of RAM. Keeps memory usage bounded to the size of the largest single table's mapping. |
 | `--enforce-column-types` | Override: set `enforce_column_types: true` for this run |
@@ -311,7 +310,7 @@ options:
   remap_keys: false
 ```
 
-Both bypass all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined, so primary and foreign key values are copied from the source unchanged. Outside `--ci`, the run prints a notice when this happens. `--skip-remapping-keys` is kept as an alias of `--no-remap-keys`.
+Both bypass all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined, so primary and foreign key values are copied from the source unchanged. Outside `--ci`, the run prints a notice when this happens.
 
 When the YAML sets `remap_keys: false`, `--remap-keys` re-enables remapping for a single run. If both `--remap-keys` and `--no-remap-keys` are passed, `--no-remap-keys` wins.
 

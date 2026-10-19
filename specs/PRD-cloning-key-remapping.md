@@ -185,9 +185,9 @@ Phase 2  — Connection Checks
 Phase 3  — Dry-run (if --dry-run; exits here)
 Phase 4  — Schema Replication
 Phase 5  — Dependency Resolution
-Phase 5b — Key Mapping Generation              (NEW: when key_remapping.tables is non-empty and --skip-remapping-keys is not set)
+Phase 5b — Key Mapping Generation              (NEW: when key_remapping.tables is non-empty and remapping is not disabled)
 Phase 6  — Data Transfer                       (modified: PK and FK rewriting)
-Phase 7  — Key Mapping Cleanup                 (NEW: when key_remapping.tables is non-empty and --skip-remapping-keys is not set)
+Phase 7  — Key Mapping Cleanup                 (NEW: when key_remapping.tables is non-empty and remapping is not disabled)
 Phase 8  — Audit Log
 Phase 9  — Summary
 ```
@@ -239,12 +239,12 @@ A table where every column in `primary_key` is also listed as a FK entry in anot
 
 | Flag | Description |
 | --- | --- |
-| `--skip-remapping-keys` | Bypass phases 5b and 7 entirely (key mapping generation and cleanup), even when the YAML contains a `key_remapping` section with entries. No PK or FK rewriting is performed during data transfer. |
+| `--no-remap-keys` | Bypass phases 5b and 7 entirely (key mapping generation and cleanup), even when the YAML contains a `key_remapping` section with entries. No PK or FK rewriting is performed during data transfer. `--remap-keys` forces remapping on; persistent setting: `options.remap_keys`. |
 
 Example:
 
 ```
-php clonio cloning:run --skip-remapping-keys
+php clonio cloning:run --no-remap-keys
 ```
 
 ---

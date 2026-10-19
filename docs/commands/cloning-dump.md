@@ -23,7 +23,6 @@ clonio cloning:dump [options]
 | `--drop-extra-columns` | Set `drop_extra_columns: true` in the generated YAML |
 | `--no-disable-fk-checks` | Set `disable_foreign_key_checks: false` in the generated YAML |
 | `--no-remap-keys` | Set `remap_keys: false` in the generated YAML (key remapping stays defined but disabled) |
-| `--skip-remapping-keys` | Alias of `--no-remap-keys` |
 | `--ci` | CI mode — suppress non-error output and require `--connection` |
 
 ## Description
