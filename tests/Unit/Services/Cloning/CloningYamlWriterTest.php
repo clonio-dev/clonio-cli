@@ -514,3 +514,63 @@ it('writes value: null for a static column with a null value', function (): void
 
     expect($yaml)->toContain('value: null');
 });
+
+it('escapes quoted values so salts and mask chars with quotes and backslashes round-trip', function (string $value): void {
+    $writer = new CloningYamlWriter;
+    $column = static fn (string $name, string $strategy, array $fields): ColumnDumpData => new ColumnDumpData(...[
+        'name' => $name,
+        'strategy' => $strategy,
+        'fakerMethod' => null,
+        'fakerArguments' => [],
+        'maskChar' => null,
+        'visibleChars' => null,
+        'preserveFormat' => null,
+        'hashAlgorithm' => null,
+        'hashSalt' => null,
+        'staticValue' => null,
+        'piiDetected' => false,
+        'piiCategory' => null,
+        ...$fields,
+    ]);
+    $hash = $column('password', 'hash', ['hashAlgorithm' => 'sha256', 'hashSalt' => $value]);
+    $mask = $column('phone', 'mask', ['maskChar' => $value, 'visibleChars' => 2, 'preserveFormat' => false]);
+    $static = $column('note', 'static', ['staticValue' => $value]);
+    $table = new TableDumpData(name: 'users', columns: [$hash, $mask, $static], rowStrategy: 'full', rowLimit: null, sortBy: null);
+
+    $parsed = Yaml::parse($writer->write(makeDumpResult('prod', [$table])));
+
+    expect($parsed['tables']['users']['columns']['password']['salt'])->toBe($value)
+        ->and($parsed['tables']['users']['columns']['phone']['mask_char'])->toBe($value)
+        ->and($parsed['tables']['users']['columns']['note']['value'])->toBe($value);
+})->with([
+    'apostrophe' => ["it's"],
+    'double quote' => ['say "hi"'],
+    'backslash' => ['C:\\temp\\x'],
+    'newline and tab' => ["line1\nline2\tend"],
+    'control char' => ["bell\x07"],
+]);
+
+it('quotes table, column and connection names that YAML would not read back verbatim', function (string $name): void {
+    $writer = new CloningYamlWriter;
+    $column = makeNullColumn($name);
+    $table = new TableDumpData(name: $name, columns: [$column], rowStrategy: 'full', rowLimit: null, sortBy: $name);
+
+    $parsed = Yaml::parse($writer->write(makeDumpResult($name, [$table])));
+
+    expect($parsed['connection'])->toBe($name)
+        ->and(array_map(strval(...), array_keys($parsed['tables'])))->toBe([$name])
+        ->and(array_map(strval(...), array_keys($parsed['tables'][$name]['columns'])))->toBe([$name])
+        ->and((string) $parsed['tables'][$name]['rows']['sort_by'])->toBe($name);
+})->with(['null', 'true', 'yes', '2024-01-01', '0x1A', '.inf', '@prod', '-dash', 'with: colon']);
+
+it('leaves plain names unquoted', function (): void {
+    $writer = new CloningYamlWriter;
+    $table = new TableDumpData(name: 'order_items', columns: [makeNullColumn('gender')], rowStrategy: 'full', rowLimit: null, sortBy: 'created_at');
+
+    $yaml = $writer->write(makeDumpResult('production-db', [$table]));
+
+    expect($yaml)->toContain('connection: production-db')
+        ->toContain('  order_items:')
+        ->toContain('      gender:')
+        ->toContain('sort_by: created_at');
+});
