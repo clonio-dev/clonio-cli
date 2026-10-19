@@ -326,7 +326,6 @@ final readonly class FakeDataSeeder
         $rootCount = max(1, (int) ($this->rowCount * 0.1));
         $childCount = $this->rowCount - $rootCount;
 
-        $rootIds = [];
         $inserted = 0;
         $slugSuffix = 0;
 
@@ -410,7 +409,6 @@ final readonly class FakeDataSeeder
      */
     private function seedTags(callable $onProgress): array
     {
-        $ids = [];
         $inserted = 0;
         $batch = [];
 

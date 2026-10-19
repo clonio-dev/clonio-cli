@@ -565,7 +565,7 @@ class RunCommand extends Command
                     dumpResult: $dumpResult,
                 );
 
-                [$canonicalJson, $contentHash, $hmacSignature] = $signer->sign($auditRecord);
+                [$canonicalJson, , $hmacSignature] = $signer->sign($auditRecord);
                 $htmlContent = $renderer->render($auditRecord, $canonicalJson);
                 $pdfContent = $renderer->renderPdf($auditRecord, $canonicalJson);
 
@@ -731,7 +731,7 @@ class RunCommand extends Command
                 try {
                     $estimatedRows = $this->countRows($source, $tableName);
                 } catch (Throwable) {
-                    $estimatedRows = null;
+                    // Row count unavailable: leave the estimate empty.
                 }
 
                 if ($estimatedRows !== null) {

@@ -286,7 +286,6 @@ class AddCommand extends Command
         $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : [];
 
         $tokenOpt = $this->option('ntfy-token');
-        $token = null;
         if (is_string($tokenOpt) && $tokenOpt !== '') {
             $this->warn('Passing token via CLI flag may expose it in shell history.');
             $token = $tokenOpt;

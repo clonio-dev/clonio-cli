@@ -57,13 +57,9 @@ class CloningRunOrchestrator
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
 
         // Compute excluded tables
-        $explicitlyExcluded = [];
-
-        if ($onlyTables !== []) {
-            $explicitlyExcluded = array_values(array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true)));
-        } else {
-            $explicitlyExcluded = $skipTables;
-        }
+        $explicitlyExcluded = $onlyTables !== []
+            ? array_values(array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true)))
+            : $skipTables;
 
         // Compute cascade exclusions
         $cascadeExclusions = $this->resolver->computeCascadeExclusions($sourceSchema, $explicitlyExcluded, $tableNames);
