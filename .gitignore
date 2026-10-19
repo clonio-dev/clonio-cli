@@ -12,3 +12,4 @@
 /certs
 .DS_Store
 /.worktrees
+/.claude
