@@ -110,7 +110,7 @@ See [docs/development.md](docs/development.md) for setup, local builds, testing,
 composer test                # Full suite: type coverage, unit tests, PHPStan, lint
 composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php
                              # Mutation testing for one class or directory
-composer test:mutate:all     # Whole app, fails below 100% (runs in CI)
+composer test:mutate:all     # Whole app, fails below 100% (weekly in CI)
 ```
 
 Arguments after `--` go to Pest, e.g. `--parallel`, `--min=80`, `--no-cache` or a test file to limit the run. See [Mutation testing](docs/development.md#mutation-testing).

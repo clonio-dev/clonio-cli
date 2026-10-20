@@ -95,7 +95,7 @@
         }
     },
     "scripts-descriptions": {
-        "test:mutate:all": "Mutation testing for the whole app, fails below a 100% score (runs in CI)",
+        "test:mutate:all": "Mutation testing for the whole app, fails below a 100% score (weekly in CI)",
         "test:mutate": "Mutation testing for selected code, e.g. composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php"
     },
     "minimum-stability": "stable",

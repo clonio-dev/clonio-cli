@@ -1,0 +1,55 @@
+name: mutation
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 5 * * 1' # Mondays 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mutation:
+    # macOS runner: pest-plugin-mutate passes every covering test in one
+    # --filter argument, which exceeds Linux's 128 KiB per-argument limit
+    # (E2BIG -> ProcessStartFailedException) for widely covered lines.
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Pull requests mutate only the app files they change; the weekly and
+      # manual runs mutate the whole app.
+      - name: Select files
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only --diff-filter=AMR "origin/${{ github.base_ref }}...HEAD" -- 'app/*.php' | paste -sd, -)
+            echo "paths=$FILES" >> "$GITHUB_OUTPUT"
+            [ -n "$FILES" ] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup PHP
+        if: steps.scope.outputs.run == 'true'
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: 8.5
+          tools: composer:v2
+          coverage: pcov
+
+      - name: Install Dependencies
+        if: steps.scope.outputs.run == 'true'
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Mutation tests (changed files)
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request'
+        run: vendor/bin/pest --mutate --covered-only --parallel --no-cache --min=100 --path="${{ steps.scope.outputs.paths }}"
+
+      - name: Mutation tests (whole app)
+        if: steps.scope.outputs.run == 'true' && github.event_name != 'pull_request'
+        run: composer test:mutate:all
