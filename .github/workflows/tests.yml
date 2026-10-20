@@ -47,8 +47,11 @@ jobs:
 
   # Whole-app mutation testing. Separate job so the slower run does not
   # delay the main checks. Fails below a 100% mutation score.
+  # macOS runner: pest-plugin-mutate passes every covering test in one
+  # --filter argument, which exceeds Linux's 128 KiB per-argument limit
+  # (E2BIG -> ProcessStartFailedException) for widely covered lines.
   mutation:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
