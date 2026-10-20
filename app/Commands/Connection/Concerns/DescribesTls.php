@@ -15,7 +15,7 @@ trait DescribesTls
     private function tlsLabel(ConnectionData $connection): string
     {
         return $connection->type->requiresNetworkConfig()
-            ? ($connection->ssl?->mode->value ?? 'default')
+            ? ($connection->ssl?->mode->value ?? 'default') // @pest-mutate-ignore: RemoveNullSafeOperator
             : '—';
     }
 }

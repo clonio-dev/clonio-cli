@@ -77,6 +77,7 @@
             "pint --parallel --test",
             "rector --dry-run"
         ],
+        "test:mutate": "pest --mutate --covered-only",
         "test": [
             "@test:type-coverage",
             "@test:unit",
@@ -91,6 +92,9 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true
         }
+    },
+    "scripts-descriptions": {
+        "test:mutate": "Mutation testing for selected code, e.g. composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php"
     },
     "minimum-stability": "stable",
     "prefer-stable": true,

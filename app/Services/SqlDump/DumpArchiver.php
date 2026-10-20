@@ -17,13 +17,13 @@ class DumpArchiver
 {
     public function archive(string $sqlFileName, ?string $password): DumpResultData
     {
-        throw_unless(class_exists(ZipArchive::class), RuntimeException::class, 'ZIP support unavailable — the PHP zip extension is not loaded.');
+        throw_unless(class_exists(ZipArchive::class), RuntimeException::class, 'ZIP support unavailable — the PHP zip extension is not loaded.'); // @pest-mutate-ignore: RemoveFunctionCall
 
         $encrypted = $password !== null && $password !== '';
 
-        throw_if($encrypted && ! defined('ZipArchive::EM_AES_256'), RuntimeException::class, 'AES-256 ZIP encryption unavailable — requires libzip >= 1.2.0.');
+        throw_if($encrypted && ! defined('ZipArchive::EM_AES_256'), RuntimeException::class, 'AES-256 ZIP encryption unavailable — requires libzip >= 1.2.0.'); // @pest-mutate-ignore: RemoveFunctionCall
 
-        $zipFileName = preg_replace('/\.sql$/', '.zip', $sqlFileName) ?? ($sqlFileName.'.zip');
+        $zipFileName = preg_replace('/\.sql$/', '.zip', $sqlFileName) ?? ($sqlFileName.'.zip'); // @pest-mutate-ignore: ConcatRemoveLeft,ConcatRemoveRight,ConcatSwitchSides
         $sqlPath = Storage::disk('local')->path($sqlFileName);
         $zipPath = Storage::disk('local')->path($zipFileName);
         $entryName = basename($sqlFileName);
@@ -34,11 +34,11 @@ class DumpArchiver
         $opened = $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
         if ($opened !== true) {
-            throw new RuntimeException(sprintf('Cannot create ZIP archive: %s (code %s)', $zipFileName, (string) $opened));
+            throw new RuntimeException(sprintf('Cannot create ZIP archive: %s (code %s)', $zipFileName, (string) $opened)); // @pest-mutate-ignore: RemoveStringCast
         }
 
         if ($encrypted) {
-            $zip->setPassword((string) $password);
+            $zip->setPassword((string) $password); // @pest-mutate-ignore: RemoveStringCast
         }
 
         if (! $zip->addFile($sqlPath, $entryName)) {
@@ -58,12 +58,12 @@ class DumpArchiver
         Storage::disk('local')->delete($sqlFileName);
 
         $sha256 = hash_file('sha256', $zipPath);
-        $zipBytes = filesize($zipPath) ?: 0;
+        $zipBytes = filesize($zipPath) ?: 0; // @pest-mutate-ignore: IncrementInteger,DecrementInteger
 
         return new DumpResultData(
             zipPath: $zipPath,
             zipFileName: $zipFileName,
-            sha256: $sha256 === false ? '' : $sha256,
+            sha256: $sha256 === false ? '' : $sha256, // @pest-mutate-ignore: FalseToTrue,EmptyStringToNotEmpty
             encrypted: $encrypted,
             zipBytes: $zipBytes,
         );

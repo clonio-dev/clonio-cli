@@ -77,8 +77,8 @@ class KeyRemappingService
 
         $targets = [];
 
-        if ($upperSlots >= $rowCount) {
-            for ($i = 0; $i < $rowCount; $i++) {
+        if ($upperSlots >= $rowCount) { // @pest-mutate-ignore: GreaterOrEqualToGreater
+            for ($i = 0; $i < $rowCount; $i++) { // @pest-mutate-ignore: SmallerToSmallerOrEqual
                 $targets[] = $upperStart + $i;
             }
         } else {
@@ -122,7 +122,7 @@ class KeyRemappingService
     private function findGaps(array $existingIds, int $lo, int $hi): array
     {
         if ($hi < $lo) {
-            return [];
+            return []; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $set = array_flip($existingIds);
@@ -175,7 +175,7 @@ class KeyRemappingService
                 }
             }
 
-            $existingMax = $existingIdsInt === [] ? 0 : max($existingIdsInt);
+            $existingMax = $existingIdsInt === [] ? 0 : max($existingIdsInt); // @pest-mutate-ignore: DecrementInteger
 
             $tableMappings = match ($config->strategy) {
                 KeyRemappingStrategy::NewUuid => $this->allocateUuids($sourceIds),

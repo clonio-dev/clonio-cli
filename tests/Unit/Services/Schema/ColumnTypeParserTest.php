@@ -24,3 +24,12 @@ it('returns all null for types without a modifier', function (): void {
         ->and(ColumnTypeParser::parse('text'))->toBe(['length' => null, 'precision' => null, 'scale' => null])
         ->and(ColumnTypeParser::parse('timestamp'))->toBe(['length' => null, 'precision' => null, 'scale' => null]);
 });
+
+it('normalises case and surrounding whitespace before detecting the numeric family', function (): void {
+    expect(ColumnTypeParser::parse('DECIMAL(8)'))->toBe(['length' => null, 'precision' => 8, 'scale' => 0])
+        ->and(ColumnTypeParser::parse('  decimal(8)  '))->toBe(['length' => null, 'precision' => 8, 'scale' => 0]);
+});
+
+it('treats every numeric family alias with one argument as precision', function (string $type): void {
+    expect(ColumnTypeParser::parse($type.'(5)'))->toBe(['length' => null, 'precision' => 5, 'scale' => 0]);
+})->with(['decimal', 'numeric', 'dec', 'number']);

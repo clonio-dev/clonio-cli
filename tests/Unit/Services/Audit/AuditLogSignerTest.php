@@ -73,3 +73,84 @@ it('canonical JSON contains expected fields', function (): void {
     expect($decoded)->toHaveKey('success');
     expect($decoded['source_connection'])->toBe('production-db');
 });
+
+it('produces the exact sorted, pretty-printed, unescaped canonical JSON and its HMAC', function (): void {
+    config(['app.key' => 'g7-signing-key']);
+
+    $base = makeAuditRecord();
+    $record = new AuditRecordData(
+        clonioVersion: '1.2.3',
+        sourceConnection: 'prod/ü',
+        targetConnection: 'staging',
+        yamlFileName: 'dir/clone.yaml',
+        startedAt: $base->startedAt,
+        finishedAt: $base->finishedAt,
+        success: false,
+        options: $base->options,
+        tables: [],
+        totalRowsTransferred: 42,
+        totalRowsSkipped: 3,
+        channels: [],
+        contentHash: '',
+        hmacSignature: '',
+        sourceConnectionDetails: $base->sourceConnectionDetails,
+        targetConnectionDetails: $base->targetConnectionDetails,
+    );
+
+    [$canonicalJson, $contentHash, $hmacSignature] = (new AuditLogSigner)->sign($record);
+
+    $expectedJson = <<<'JSON'
+{
+    "clonio_version": "1.2.3",
+    "finished_at": "2026-04-01T14:34:14+00:00",
+    "source_connection": "prod/ü",
+    "started_at": "2026-04-01T14:32:00+00:00",
+    "success": false,
+    "target_connection": "staging",
+    "total_rows_skipped": 3,
+    "total_rows_transferred": 42,
+    "yaml_file_name": "dir/clone.yaml"
+}
+JSON;
+
+    expect($canonicalJson)->toBe($expectedJson)
+        ->and($contentHash)->toBe(hash('sha256', $expectedJson))
+        ->and($hmacSignature)->toBe(hash_hmac('sha256', hash('sha256', $expectedJson), 'g7-signing-key'));
+});
+
+it('signs with an empty key when the app key is not a string', function (): void {
+    config(['app.key' => null]);
+
+    [, $contentHash, $hmacSignature] = (new AuditLogSigner)->sign(makeAuditRecord());
+
+    expect($hmacSignature)->toBe(hash_hmac('sha256', $contentHash, ''));
+});
+
+it('falls back to an empty canonical JSON when the record cannot be encoded', function (): void {
+    config(['app.key' => 'g7-signing-key']);
+
+    $base = makeAuditRecord();
+    $record = new AuditRecordData(
+        clonioVersion: '1.0.0',
+        sourceConnection: "\xB1\x31",
+        targetConnection: 'staging',
+        yamlFileName: 'x.yaml',
+        startedAt: $base->startedAt,
+        finishedAt: $base->finishedAt,
+        success: true,
+        options: $base->options,
+        tables: [],
+        totalRowsTransferred: 0,
+        totalRowsSkipped: 0,
+        channels: [],
+        contentHash: '',
+        hmacSignature: '',
+        sourceConnectionDetails: $base->sourceConnectionDetails,
+        targetConnectionDetails: $base->targetConnectionDetails,
+    );
+
+    [$canonicalJson, $contentHash] = (new AuditLogSigner)->sign($record);
+
+    expect($canonicalJson)->toBe('')
+        ->and($contentHash)->toBe(hash('sha256', ''));
+});

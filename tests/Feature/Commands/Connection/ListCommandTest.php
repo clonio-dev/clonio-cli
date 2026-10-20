@@ -7,6 +7,7 @@ use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
+use Illuminate\Support\Facades\Artisan;
 
 it('shows message when no connections are configured', function (): void {
     $config = Mockery::mock(ConfigService::class);
@@ -88,4 +89,33 @@ it('shows the transport mode per connection', function (): void {
             ['local', 'sqlite', '—', 'a.db', '—', 'No'],
         ])
         ->assertExitCode(0);
+});
+
+it('shows the bare host when no port is configured', function (): void {
+    $connection = new ConnectionData(
+        name: 'noport', type: DatabaseConnectionType::Mysql, host: 'db.internal', port: null, database: 'app',
+        schema: null, username: 'u', password: 'encrypted:x', isProduction: false,
+    );
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['noport' => $connection]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:list')
+        ->expectsTable(['Name', 'Driver', 'Host', 'Database', 'TLS', 'Production'], [
+            ['noport', 'mysql', 'db.internal', 'app', 'default', 'No'],
+        ])
+        ->assertExitCode(0);
+});
+
+it('prints no table when no connections are configured', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $exitCode = Artisan::call('connection:list');
+
+    expect($exitCode)->toBe(0)
+        ->and(Artisan::output())
+        ->toBe('No connections configured. Run `connection:add` to add one.'.PHP_EOL);
 });

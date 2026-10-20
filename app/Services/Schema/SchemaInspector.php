@@ -78,7 +78,7 @@ class SchemaInspector
                 $colDefault = is_scalar($rawDefault) ? (string) $rawDefault : null;
                 /** @var string $colKey */
                 $colKey = $col->COLUMN_KEY;
-                $extra = is_string($col->EXTRA ?? null) ? $col->EXTRA : '';
+                $extra = is_string($col->EXTRA ?? null) ? $col->EXTRA : ''; // @pest-mutate-ignore: EmptyStringToNotEmpty
 
                 $mods = ColumnTypeParser::parse($columnType);
 
@@ -254,7 +254,7 @@ class SchemaInspector
             foreach ($colData as $col) {
                 // hidden: 0 = normal, 1 = hidden column of a virtual table,
                 // 2 = virtual generated, 3 = stored generated.
-                $hidden = is_numeric($col->hidden ?? null) ? (int) $col->hidden : 0;
+                $hidden = is_numeric($col->hidden ?? null) ? (int) $col->hidden : 0; // @pest-mutate-ignore: DecrementInteger
 
                 if ($hidden === 1) {
                     continue;
@@ -264,7 +264,7 @@ class SchemaInspector
                 $colName = $col->name;
                 /** @var string $colType */
                 $colType = $col->type;
-                $notNull = (bool) $col->notnull;
+                $notNull = (bool) $col->notnull; // @pest-mutate-ignore: RemoveBooleanCast
                 $rawDfltValue = $col->dflt_value ?? null;
                 $dfltValue = is_scalar($rawDfltValue) ? (string) $rawDfltValue : null;
                 $pk = (bool) $col->pk;

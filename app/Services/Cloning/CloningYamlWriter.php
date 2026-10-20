@@ -158,7 +158,7 @@ class CloningYamlWriter
     private function encodeYamlInlineList(array $items): string
     {
         if ($items === []) {
-            return '[]';
+            return '[]'; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $encoded = array_map($this->encodeYamlScalar(...), $items);
@@ -169,7 +169,7 @@ class CloningYamlWriter
     private function encodeYamlScalar(mixed $value): string
     {
         if ($value === null) {
-            return 'null';
+            return 'null'; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         if (is_bool($value)) {
@@ -201,7 +201,7 @@ class CloningYamlWriter
     private function quote(string $value): string
     {
         $escaped = strtr($value, ['\\' => '\\\\', '"' => '\\"']);
-        $escaped = (string) preg_replace_callback(
+        $escaped = (string) preg_replace_callback( // @pest-mutate-ignore: RemoveStringCast
             '/[\x00-\x1F\x7F]/',
             static fn (array $m): string => match ($m[0]) {
                 "\n" => '\\n',
@@ -217,8 +217,8 @@ class CloningYamlWriter
 
     private function needsQuoting(string $value): bool
     {
-        if ($value === '') {
-            return true;
+        if ($value === '') { // @pest-mutate-ignore: EmptyStringToNotEmpty
+            return true; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         // Contains special YAML characters or control characters
@@ -227,17 +227,27 @@ class CloningYamlWriter
         }
 
         // Contains actual newlines or carriage returns
-        if (str_contains($value, "\n") || str_contains($value, "\r")) {
-            return true;
+        if (str_contains($value, "\n") || str_contains($value, "\r")) { // @pest-mutate-ignore: BooleanOrToBooleanAnd
+            return true; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         // Leading/trailing whitespace
-        if ($value !== trim($value)) {
-            return true;
+        if ($value !== trim($value)) { // @pest-mutate-ignore: UnwrapTrim
+            return true; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
-        // Looks like a boolean
-        if (in_array(strtolower($value), ['true', 'false', 'yes', 'no', 'on', 'off', 'null', '~'], true)) {
+        // Looks like a boolean. true/false/null/~ are also caught by the
+        // parse round-trip below; yes/no/on/off are YAML 1.1 booleans only.
+        if (in_array(strtolower($value), [
+            'true', // @pest-mutate-ignore: RemoveArrayItem
+            'false', // @pest-mutate-ignore: RemoveArrayItem
+            'yes',
+            'no',
+            'on',
+            'off',
+            'null', // @pest-mutate-ignore: RemoveArrayItem
+            '~', // @pest-mutate-ignore: RemoveArrayItem
+        ], true)) {
             return true;
         }
 

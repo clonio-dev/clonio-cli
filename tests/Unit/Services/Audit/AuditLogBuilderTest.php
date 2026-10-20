@@ -12,6 +12,7 @@ use App\Data\Cloning\TableRowConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
+use App\Data\SqlDump\DumpResultData;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Audit\AuditLogBuilder;
 use App\Services\Audit\AuditLogSigner;
@@ -213,4 +214,170 @@ it('carries table notes from the run result into the audit record', function ():
     );
 
     expect($record->tables[0]->notes)->toBe(['Generated columns not copied, computed by the target: full_name']);
+});
+
+it('maps statuses, row strategies and unconfigured tables onto audit table records', function (): void {
+    $config = new CloningConfigData(
+        version: '1',
+        connectionName: 'production-db',
+        options: new CloningOptionsData(1000, false, false, false, true, 'en_US'),
+        tables: [
+            new TableCloningConfigData(
+                tableName: 'users',
+                rows: new TableRowConfigData(strategy: 'limit', limit: 10, sortBy: null),
+                columns: [],
+            ),
+        ],
+    );
+
+    $result = new RunResultData(
+        success: false,
+        tables: [
+            new TableRunResultData('users', TableRunStatus::SkippedByFlag, 0, 0, 0.0, null),
+            new TableRunResultData('ghost', TableRunStatus::NotFound, 0, 0, 0.0, null),
+            new TableRunResultData('orders', TableRunStatus::Transferred, 7, 2, 1.25, null),
+        ],
+        totalRows: 7,
+        skippedRows: 2,
+        durationSeconds: 1.3,
+        failureReason: null,
+    );
+
+    $record = (new AuditLogBuilder(new AuditLogSigner))->build(
+        config: $config,
+        result: $result,
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+    );
+
+    [$users, $ghost, $orders] = $record->tables;
+
+    expect($users->skippedByFlag)->toBeTrue()
+        ->and($users->existed)->toBeTrue()
+        ->and($users->rowStrategy)->toBe('limit')
+        ->and($users->rowLimit)->toBe(10)
+        ->and($ghost->existed)->toBeFalse()
+        ->and($ghost->skippedByFlag)->toBeFalse()
+        ->and($ghost->rowStrategy)->toBe('full')
+        ->and($ghost->rowLimit)->toBeNull()
+        ->and($orders->existed)->toBeTrue()
+        ->and($orders->skippedByFlag)->toBeFalse()
+        ->and($orders->rowStrategy)->toBe('full')
+        ->and($orders->rowLimit)->toBeNull()
+        ->and($orders->transformedColumns)->toBe([])
+        ->and($orders->keptColumnCount)->toBe(0)
+        ->and($orders->rowsTransferred)->toBe(7)
+        ->and($orders->rowsSkipped)->toBe(2)
+        ->and($orders->durationSeconds)->toBe(1.25)
+        ->and($record->success)->toBeFalse()
+        ->and($record->totalRowsSkipped)->toBe(2);
+});
+
+it('uses the configured clonio version, falling back to 1.0.0 for non-string values', function (mixed $version, string $expected): void {
+    config(['app.version' => $version]);
+
+    $record = (new AuditLogBuilder(new AuditLogSigner))->build(
+        config: makeBuilderCloningConfig(),
+        result: makeBuilderRunResult(),
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+    );
+
+    expect($record->clonioVersion)->toBe($expected);
+})->with([
+    'string' => ['9.8.7', '9.8.7'],
+    'non-string' => [42, '1.0.0'],
+]);
+
+it('produces exact stub connection details without ConnectionData', function (): void {
+    $record = (new AuditLogBuilder(new AuditLogSigner))->build(
+        config: makeBuilderCloningConfig(),
+        result: makeBuilderRunResult(),
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+    );
+
+    expect($record->sourceConnectionDetails)->toBe([
+        'name' => 'production-db',
+        'type' => '',
+        'host' => null,
+        'port' => null,
+        'database' => null,
+        'schema' => null,
+        'username' => null,
+    ])->and($record->dumpDialect)->toBeNull()
+        ->and($record->dumpFile)->toBeNull()
+        ->and($record->dumpSha256)->toBeNull()
+        ->and($record->dumpEncrypted)->toBeNull();
+});
+
+it('carries dump details and signs an unsigned placeholder record', function (): void {
+    $signer = Mockery::mock(AuditLogSigner::class);
+    $signer->shouldReceive('sign')->once()
+        ->with(Mockery::on(fn (AuditRecordData $placeholder): bool => $placeholder->contentHash === ''
+            && $placeholder->hmacSignature === ''
+            && $placeholder->dumpFile === '/tmp/dump.zip'
+            && $placeholder->dumpSha256 === 'abc123'
+            && $placeholder->dumpEncrypted === true
+            && $placeholder->dumpDialect === 'mysql'))
+        ->andReturn(['{}', 'hash-value', 'sig-value']);
+
+    $record = (new AuditLogBuilder($signer))->build(
+        config: makeBuilderCloningConfig(),
+        result: makeBuilderRunResult(),
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+        dumpDialect: 'mysql',
+        dumpResult: new DumpResultData('/tmp/dump.zip', 'dump.zip', 'abc123', true, 2048),
+    );
+
+    expect($record->contentHash)->toBe('hash-value')
+        ->and($record->hmacSignature)->toBe('sig-value')
+        ->and($record->dumpDialect)->toBe('mysql')
+        ->and($record->dumpFile)->toBe('/tmp/dump.zip')
+        ->and($record->dumpSha256)->toBe('abc123')
+        ->and($record->dumpEncrypted)->toBeTrue();
+});
+
+it('copies exact connection details including the schema but never the password', function (): void {
+    $source = new ConnectionData(
+        name: 'warehouse',
+        type: DatabaseConnectionType::PostgreSQL,
+        host: 'pg.prod.io',
+        port: 5432,
+        database: 'dwh',
+        schema: 'reporting',
+        username: 'reader',
+        password: 'secret',
+        isProduction: true,
+    );
+
+    $record = (new AuditLogBuilder(new AuditLogSigner))->build(
+        config: makeBuilderCloningConfig(),
+        result: makeBuilderRunResult(),
+        targetConnection: 'staging',
+        startedAt: new DateTimeImmutable('2026-04-01T14:32:00', new DateTimeZone('UTC')),
+        finishedAt: new DateTimeImmutable('2026-04-01T14:34:14', new DateTimeZone('UTC')),
+        yamlFileName: 'test.cloning.yaml',
+        sourceConnectionData: $source,
+        targetConnectionData: makeBuilderTargetConnection(),
+    );
+
+    expect($record->sourceConnectionDetails)->toBe([
+        'name' => 'warehouse',
+        'type' => 'pgsql',
+        'host' => 'pg.prod.io',
+        'port' => 5432,
+        'database' => 'dwh',
+        'schema' => 'reporting',
+        'username' => 'reader',
+    ]);
 });

@@ -141,3 +141,37 @@ it('rejects ssl on a sqlite connection when loading, naming the connection', fun
 it('prefixes invalid ssl blocks with the connection name', function (): void {
     ConnectionData::fromArray('prod', ['type' => 'mysql', 'password' => '', 'ssl' => ['mode' => 'bogus']]);
 })->throws(InvalidArgumentException::class, 'Connection "prod": Invalid ssl mode "bogus"');
+
+it('wraps an invalid ssl block with exception code 0 and keeps the original as previous', function (): void {
+    try {
+        ConnectionData::fromArray('prod', ['type' => 'mysql', 'password' => '', 'ssl' => ['mode' => 'bogus']]);
+        $this->fail('Expected exception');
+    } catch (InvalidArgumentException $invalidArgumentException) {
+        expect($invalidArgumentException->getCode())->toBe(0)
+            ->and($invalidArgumentException->getPrevious())->toBeInstanceOf(InvalidArgumentException::class);
+    }
+});
+
+it('rejects a missing type with an empty backing value', function (): void {
+    expect(fn () => ConnectionData::fromArray('x', []))
+        ->toThrow(ValueError::class, '"" is not a valid backing value');
+});
+
+it('casts a numeric string port to int', function (): void {
+    expect(ConnectionData::fromArray('x', ['type' => 'mysql', 'port' => '3307'])->port)->toBe(3307);
+});
+
+it('applies defaults for missing password and flags', function (): void {
+    $connection = ConnectionData::fromArray('x', ['type' => 'mysql']);
+
+    expect($connection->password)->toBe('')
+        ->and($connection->isProduction)->toBeFalse()
+        ->and($connection->trustServerCertificate)->toBeFalse();
+});
+
+it('casts truthy non-bool flags to bool', function (): void {
+    $connection = ConnectionData::fromArray('x', ['type' => 'sqlsrv', 'is_production' => 1, 'trust_server_certificate' => 'yes']);
+
+    expect($connection->isProduction)->toBeTrue()
+        ->and($connection->trustServerCertificate)->toBeTrue();
+});

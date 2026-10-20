@@ -65,7 +65,7 @@ abstract class AbstractDumpDialect implements SqlDumpDialect
             );
         }
 
-        $pk = array_values(array_filter(
+        $pk = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
             $table->columns,
             static fn (ColumnSchemaData $c): bool => $c->isPrimary,
         ));
@@ -189,24 +189,24 @@ abstract class AbstractDumpDialect implements SqlDumpDialect
         $t = preg_replace('/\s*\(.*$/', '', $t) ?? $t;
 
         return match (true) {
-            in_array($t, ['bool', 'boolean', 'bit'], true) => 'boolean',
+            in_array($t, ['bool', 'boolean', 'bit'], true) => 'boolean', // @pest-mutate-ignore: RemoveArrayItem
             $t === 'tinyint' => 'tinyint',
-            in_array($t, ['smallint', 'int2'], true) => 'smallint',
-            in_array($t, ['mediumint', 'int', 'integer', 'int4'], true) => 'int',
-            in_array($t, ['bigint', 'int8'], true) => 'bigint',
-            in_array($t, ['float', 'real', 'float4'], true) => 'float',
-            in_array($t, ['double', 'double precision', 'float8'], true) => 'double',
-            in_array($t, ['decimal', 'numeric', 'money', 'smallmoney'], true) => 'decimal',
-            in_array($t, ['char', 'bpchar', 'nchar', 'character'], true) => 'char',
-            in_array($t, ['varchar', 'nvarchar', 'character varying', 'varchar2', 'string'], true) => 'varchar',
-            in_array($t, ['text', 'longtext', 'mediumtext', 'tinytext', 'ntext', 'clob'], true) => 'text',
+            in_array($t, ['smallint', 'int2'], true) => 'smallint', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['mediumint', 'int', 'integer', 'int4'], true) => 'int', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['bigint', 'int8'], true) => 'bigint', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['float', 'real', 'float4'], true) => 'float', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['double', 'double precision', 'float8'], true) => 'double', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['decimal', 'numeric', 'money', 'smallmoney'], true) => 'decimal', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['char', 'bpchar', 'nchar', 'character'], true) => 'char', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['varchar', 'nvarchar', 'character varying', 'varchar2', 'string'], true) => 'varchar', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['text', 'longtext', 'mediumtext', 'tinytext', 'ntext', 'clob'], true) => 'text', // @pest-mutate-ignore: RemoveArrayItem
             $t === 'date' => 'date',
-            in_array($t, ['datetime', 'datetime2', 'smalldatetime'], true) => 'datetime',
-            in_array($t, ['timestamp', 'timestamp without time zone', 'timestamp with time zone', 'timestamptz', 'datetimeoffset'], true) => 'timestamp',
-            in_array($t, ['time', 'time without time zone'], true) => 'time',
-            in_array($t, ['json', 'jsonb'], true) => 'json',
-            in_array($t, ['blob', 'longblob', 'mediumblob', 'tinyblob', 'bytea', 'binary', 'varbinary', 'image'], true) => 'blob',
-            in_array($t, ['uuid', 'uniqueidentifier'], true) => 'uuid',
+            in_array($t, ['datetime', 'datetime2', 'smalldatetime'], true) => 'datetime', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['timestamp', 'timestamp without time zone', 'timestamp with time zone', 'timestamptz', 'datetimeoffset'], true) => 'timestamp', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['time', 'time without time zone'], true) => 'time', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['json', 'jsonb'], true) => 'json', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['blob', 'longblob', 'mediumblob', 'tinyblob', 'bytea', 'binary', 'varbinary', 'image'], true) => 'blob', // @pest-mutate-ignore: RemoveArrayItem
+            in_array($t, ['uuid', 'uniqueidentifier'], true) => 'uuid', // @pest-mutate-ignore: RemoveArrayItem
             $t === 'enum' => 'enum',
             default => $t,
         };

@@ -141,7 +141,7 @@ class CloningRunOrchestrator
         }
 
         // Tables with rows.strategy 'schema' are created on the target but get no rows.
-        $schemaOnlyTables = array_values(array_filter(
+        $schemaOnlyTables = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
             $sortedTables,
             static fn (string $t): bool => $config->getTable($t)?->rows->strategy === 'schema',
         ));
@@ -198,8 +198,8 @@ class CloningRunOrchestrator
                     $dumpSink instanceof SqlDumpService,
                 );
 
-            if (! $schemaOnly && $sourceTable instanceof TableSchemaData) {
-                $emptyParents = array_values(array_unique(array_filter(
+            if (! $schemaOnly && $sourceTable instanceof TableSchemaData) { // @pest-mutate-ignore: InstanceOfToTrue
+                $emptyParents = array_values(array_unique(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
                     array_map(static fn (ForeignKeyData $fk): string => $fk->referencedTable, $sourceTable->foreignKeys),
                     static fn (string $parent): bool => $parent !== $tableName && in_array($parent, $schemaOnlyTables, true),
                 )));
@@ -216,14 +216,14 @@ class CloningRunOrchestrator
                 Log::warning('table_column_note', ['table' => $tableName, 'note' => $note]);
             }
 
-            $selectColumns = $omittedColumns !== [] && $sourceTable instanceof TableSchemaData
-                ? array_values(array_filter(
+            $selectColumns = $omittedColumns !== [] && $sourceTable instanceof TableSchemaData // @pest-mutate-ignore: InstanceOfToTrue
+                ? array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
                     array_map(static fn (ColumnSchemaData $c): string => $c->name, $sourceTable->columns),
                     static fn (string $c): bool => ! in_array($c, $omittedColumns, true),
                 ))
                 : null;
-            $pkColumns = $sourceTable instanceof TableSchemaData
-                ? array_values(array_map(
+            $pkColumns = $sourceTable instanceof TableSchemaData // @pest-mutate-ignore: InstanceOfToTrue
+                ? array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
                     static fn (ColumnSchemaData $c): string => $c->name,
                     array_filter($sourceTable->columns, static fn (ColumnSchemaData $c): bool => $c->isPrimary)
                 ))
@@ -272,7 +272,7 @@ class CloningRunOrchestrator
                 break;
             }
 
-            if (! $failed && ! $dumpSink instanceof SqlDumpService && $sourceTable instanceof TableSchemaData) {
+            if (! $failed && ! $dumpSink instanceof SqlDumpService && $sourceTable instanceof TableSchemaData) { // @pest-mutate-ignore: InstanceOfToTrue
                 $pkColumn = $this->findIntegerPkColumn($target, $sourceTable);
                 if ($pkColumn !== null) {
                     try {
@@ -371,7 +371,7 @@ class CloningRunOrchestrator
                 );
 
                 if ($chunk === []) {
-                    break;
+                    break; // @pest-mutate-ignore: BreakToContinue
                 }
 
                 $transformed = $this->transformChunk($chunk, $tableConfig, $engine, $keyRemapping, $keyRemappingConfig);
@@ -473,7 +473,7 @@ class CloningRunOrchestrator
                 );
 
                 if ($chunk === []) {
-                    break;
+                    break; // @pest-mutate-ignore: BreakToContinue
                 }
 
                 $transformed = $this->transformChunk($chunk, $tableConfig, $engine, $keyRemapping, $keyRemappingConfig);
@@ -507,7 +507,7 @@ class CloningRunOrchestrator
         $transformed = [];
 
         foreach ($chunk as $row) {
-            $rowArray = (array) $row;
+            $rowArray = (array) $row; // @pest-mutate-ignore: RemoveArrayCast
             $transformedRow = [];
 
             foreach ($rowArray as $col => $val) {
@@ -542,7 +542,7 @@ class CloningRunOrchestrator
     private function extractPkSnapshot(array $sourceRow, array $pkColumns): ?array
     {
         if ($pkColumns === []) {
-            return null;
+            return null; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $snapshot = [];

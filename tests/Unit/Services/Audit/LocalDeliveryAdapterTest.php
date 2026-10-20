@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Audit\LocalDeliveryAdapter;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 
 it('delivers artefacts to local filesystem with template variable resolution', function (): void {
@@ -35,4 +36,16 @@ it('delivers artefacts to path without template variables', function (): void {
     );
 
     Storage::disk('local')->assertExists('run-logs/run.jsonl');
+});
+
+it('strips trailing slashes from the resolved path before writing', function (): void {
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('put')->once()->with('audit-logs/2026/run.jsonl', 'x');
+    Storage::shouldReceive('disk')->once()->with('local')->andReturn($disk);
+
+    (new LocalDeliveryAdapter)->deliver(
+        artefacts: ['run.jsonl' => 'x'],
+        channelConfig: ['path' => 'audit-logs/{year}//'],
+        templateVars: ['year' => '2026'],
+    );
 });

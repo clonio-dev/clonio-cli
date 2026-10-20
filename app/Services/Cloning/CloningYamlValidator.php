@@ -213,7 +213,7 @@ class CloningYamlValidator
 
             if ($limit === 0) {
                 $errors[] = sprintf("%s: rows.limit must be an integer >= 1 when strategy is '%s'. To copy only the table structure, use strategy 'schema'", $prefix, $strategy);
-            } elseif (! is_int($limit) || $limit < 1) {
+            } elseif (! is_int($limit) || $limit < 1) { // @pest-mutate-ignore: DecrementInteger
                 $errors[] = sprintf("%s: rows.limit must be an integer >= 1 when strategy is '%s'", $prefix, $strategy);
             }
         }
@@ -446,7 +446,7 @@ class CloningYamlValidator
                     break;
                 }
 
-                if (preg_match_all('/\{([a-zA-Z][a-zA-Z0-9]*)\}/', $template, $matches) > 0) {
+                if (preg_match_all('/\{([a-zA-Z][a-zA-Z0-9]*)\}/', $template, $matches) > 0) { // @pest-mutate-ignore: GreaterToGreaterOrEqual,DecrementInteger
                     foreach ($matches[1] as $method) {
                         if (! in_array($method, self::KNOWN_FAKER_METHODS, true)) {
                             $errors[] = sprintf("%s: template references unknown faker method '%s'", $prefix, $method);

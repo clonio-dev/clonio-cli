@@ -72,3 +72,14 @@ it('throws a ValueError for an unknown label', function (): void {
     expect(fn () => DatabaseConnectionType::fromLabel('Oracle'))
         ->toThrow(ValueError::class, "'Oracle' is not a valid label");
 });
+
+it('names the enum class at the end of the unknown-label error', function (): void {
+    expect(fn () => DatabaseConnectionType::fromLabel('Oracle'))
+        ->toThrow(ValueError::class, "'Oracle' is not a valid label for App\\Enums\\DatabaseConnectionType");
+
+    try {
+        DatabaseConnectionType::fromLabel('Oracle');
+    } catch (ValueError $valueError) {
+        expect($valueError->getMessage())->toBe("'Oracle' is not a valid label for ".DatabaseConnectionType::class);
+    }
+});

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Cloning\CloningConfigData;
 use App\Enums\ClearMode;
 use App\Services\Cloning\CloningYamlLoader;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -941,3 +942,281 @@ it('parses recreate_tables option and defaults it to false', function (bool $pre
 
     expect($config->options->recreateTables)->toBe($present);
 })->with(['present' => [true], 'absent' => [false]]);
+
+function g6_loadCloningYaml(string $yaml): CloningConfigData
+{
+    Storage::fake('local');
+    Storage::disk('local')->put('g6.cloning.yaml', $yaml);
+
+    return (new CloningYamlLoader)->load('g6.cloning.yaml');
+}
+
+it('applies defaults for version, connection and all options when absent', function (): void {
+    $config = g6_loadCloningYaml("tables: {}\n");
+
+    expect($config->version)->toBe('1')
+        ->and($config->connectionName)->toBe('')
+        ->and($config->options->chunkSize)->toBe(1000)
+        ->and($config->options->enforceColumnTypes)->toBeFalse()
+        ->and($config->options->dropUnknownTables)->toBeFalse()
+        ->and($config->options->dropExtraColumns)->toBeFalse()
+        ->and($config->options->disableForeignKeyChecks)->toBeTrue()
+        ->and($config->options->fakerLocale)->toBe('en_US')
+        ->and($config->options->remapKeys)->toBeTrue()
+        ->and($config->options->recreateTables)->toBeFalse()
+        ->and($config->tables)->toBe([])
+        ->and($config->keyRemapping)->toBeNull()
+        ->and($config->skipTables)->toBe([]);
+});
+
+it('reads a custom version string and casts a numeric version to string', function (): void {
+    expect(g6_loadCloningYaml("version: \"3\"\n")->version)->toBe('3')
+        ->and(g6_loadCloningYaml("version: 2\n")->version)->toBe('2')
+        ->and(g6_loadCloningYaml("version: [1, 2]\n")->version)->toBe('1');
+});
+
+it('falls back to an empty connection name when connection is not a string', function (): void {
+    expect(g6_loadCloningYaml("connection: [a, b]\n")->connectionName)->toBe('');
+});
+
+it('casts truthy integer option values to booleans', function (): void {
+    $yaml = <<<'YAML'
+options:
+  enforce_column_types: 1
+  drop_unknown_tables: 1
+  drop_extra_columns: 1
+  disable_foreign_key_checks: 0
+  remap_keys: 0
+  recreate_tables: 1
+YAML;
+
+    $options = g6_loadCloningYaml($yaml)->options;
+
+    expect($options->enforceColumnTypes)->toBeTrue()
+        ->and($options->dropUnknownTables)->toBeTrue()
+        ->and($options->dropExtraColumns)->toBeTrue()
+        ->and($options->disableForeignKeyChecks)->toBeFalse()
+        ->and($options->remapKeys)->toBeFalse()
+        ->and($options->recreateTables)->toBeTrue();
+});
+
+it('reads explicitly set boolean options and faker locale', function (): void {
+    $yaml = <<<'YAML'
+options:
+  drop_unknown_tables: true
+  disable_foreign_key_checks: false
+  faker_locale: de_DE
+YAML;
+
+    $options = g6_loadCloningYaml($yaml)->options;
+
+    expect($options->dropUnknownTables)->toBeTrue()
+        ->and($options->disableForeignKeyChecks)->toBeFalse()
+        ->and($options->fakerLocale)->toBe('de_DE');
+});
+
+it('casts numeric table and column names to strings', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  123:
+    columns:
+      456:
+        strategy: keep
+YAML;
+
+    $config = g6_loadCloningYaml($yaml);
+
+    expect($config->tables)->toHaveCount(1)
+        ->and($config->tables[0]->tableName)->toBe('123')
+        ->and($config->tables[0]->columns[0]->columnName)->toBe('456');
+});
+
+it('reads rows.sort_by', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    rows:
+      strategy: limit
+      limit: 10
+      sort_by: created_at
+YAML;
+
+    $rows = g6_loadCloningYaml($yaml)->tables[0]->rows;
+
+    expect($rows->strategy)->toBe('limit')
+        ->and($rows->limit)->toBe(10)
+        ->and($rows->sortBy)->toBe('created_at');
+});
+
+it('skips non-mapping column entries but keeps following columns', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      broken: just-a-string
+      email:
+        strategy: keep
+YAML;
+
+    $columns = g6_loadCloningYaml($yaml)->tables[0]->columns;
+
+    expect($columns)->toHaveCount(1)
+        ->and($columns[0]->columnName)->toBe('email');
+});
+
+it('collects inline remapping columns that follow non-remapping columns', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      name:
+        strategy: keep
+      id:
+        strategy: remapping
+        arguments:
+          - use: new_uuid
+YAML;
+
+    $config = g6_loadCloningYaml($yaml);
+
+    expect($config->keyRemapping?->tables)->toHaveCount(1)
+        ->and($config->keyRemapping?->tables[0]->table)->toBe('users')
+        ->and($config->keyRemapping?->tables[0]->primaryKey)->toBe('id')
+        ->and($config->keyRemapping?->tables[0]->strategy->value)->toBe('new_uuid');
+});
+
+it('returns null key remapping when key_remapping.tables is not a list', function (): void {
+    $yaml = <<<'YAML'
+key_remapping:
+  tables: not-a-list
+YAML;
+
+    expect(g6_loadCloningYaml($yaml)->keyRemapping)->toBeNull();
+});
+
+it('returns null key remapping when key_remapping.tables is empty', function (): void {
+    $yaml = <<<'YAML'
+key_remapping:
+  tables: []
+YAML;
+
+    expect(g6_loadCloningYaml($yaml)->keyRemapping)->toBeNull();
+});
+
+it('ignores key_remapping entries without a table name', function (): void {
+    $yaml = <<<'YAML'
+key_remapping:
+  tables:
+    - primary_key: id
+      strategy: new_uuid
+YAML;
+
+    expect(g6_loadCloningYaml($yaml)->keyRemapping)->toBeNull();
+});
+
+it('defaults missing key_remapping foreign key fields and casts self_referential', function (): void {
+    $yaml = <<<'YAML'
+key_remapping:
+  tables:
+    - table: users
+      primary_key: id
+      foreign_keys:
+        - {}
+        - table: users
+          column: parent_id
+          self_referential: 1
+YAML;
+
+    $fks = g6_loadCloningYaml($yaml)->keyRemapping?->tables[0]->foreignKeys ?? [];
+
+    expect($fks)->toHaveCount(2)
+        ->and($fks[0]->table)->toBe('')
+        ->and($fks[0]->column)->toBe('')
+        ->and($fks[0]->selfReferential)->toBeFalse()
+        ->and($fks[1]->table)->toBe('users')
+        ->and($fks[1]->column)->toBe('parent_id')
+        ->and($fks[1]->selfReferential)->toBeTrue();
+});
+
+it('defaults faker arguments to an empty list when absent', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      email:
+        strategy: fake
+        faker_method: safeEmail
+YAML;
+
+    $column = g6_loadCloningYaml($yaml)->tables[0]->columns[0];
+
+    expect($column->fakerMethod)->toBe('safeEmail')
+        ->and($column->fakerArguments)->toBe([]);
+});
+
+it('converts mapped faker arguments into a list', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      age:
+        strategy: fake
+        faker_method: numberBetween
+        faker_arguments:
+          min: 18
+          max: 99
+YAML;
+
+    expect(g6_loadCloningYaml($yaml)->tables[0]->columns[0]->fakerArguments)->toBe([18, 99]);
+});
+
+it('casts scalar hash salt, static value and preserve_format', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      password:
+        strategy: hash
+        algorithm: sha256
+        salt: 123
+      status:
+        strategy: static
+        value: 5
+      phone:
+        strategy: mask
+        preserve_format: 1
+YAML;
+
+    $columns = g6_loadCloningYaml($yaml)->tables[0]->columns;
+
+    expect($columns[0]->hashSalt)->toBe('123')
+        ->and($columns[1]->staticValue)->toBe('5')
+        ->and($columns[2]->preserveFormat)->toBeTrue();
+});
+
+it('skips non-mapping inline remapping foreign keys and defaults missing fields', function (): void {
+    $yaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - foreign_keys:
+              - not-a-mapping
+              - {}
+              - table: users
+                column: parent_id
+                self_referential: 1
+YAML;
+
+    $fks = g6_loadCloningYaml($yaml)->tables[0]->columns[0]->remappingForeignKeys ?? [];
+
+    expect($fks)->toHaveCount(2)
+        ->and($fks[0]->table)->toBe('')
+        ->and($fks[0]->column)->toBe('')
+        ->and($fks[0]->selfReferential)->toBeFalse()
+        ->and($fks[1]->table)->toBe('users')
+        ->and($fks[1]->column)->toBe('parent_id')
+        ->and($fks[1]->selfReferential)->toBeTrue();
+});

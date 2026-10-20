@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Cloning\ColumnDumpData;
 use App\Data\Cloning\DumpResultData;
 use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableDumpData;
 use App\Enums\KeyRemappingStrategy;
@@ -598,4 +599,166 @@ it('writes the exclude strategy without extra fields', function (): void {
     $yaml = (new CloningYamlWriter)->write(makeDumpResult('prod', [$table]));
 
     expect($yaml)->toContain("internal_note:\n        strategy: exclude\n");
+});
+
+function g6_column(string $name, string $strategy, array $overrides = []): ColumnDumpData
+{
+    return new ColumnDumpData(...array_merge([
+        'name' => $name,
+        'strategy' => $strategy,
+        'fakerMethod' => null,
+        'fakerArguments' => [],
+        'maskChar' => null,
+        'visibleChars' => null,
+        'preserveFormat' => null,
+        'hashAlgorithm' => null,
+        'hashSalt' => null,
+        'staticValue' => null,
+        'piiDetected' => false,
+        'piiCategory' => null,
+    ], $overrides));
+}
+
+it('writes the exact yaml document for a remapped table with foreign keys', function (): void {
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [g6_column('email', 'fake', ['fakerMethod' => 'numberBetween', 'fakerArguments' => [1, 'a']])],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+    $result = new DumpResultData(
+        connectionName: 'prod',
+        tables: [$table],
+        totalColumns: 1,
+        piiColumnsDetected: 0,
+        outputPath: 'prod.cloning.yaml',
+        keyRemapping: new KeyRemappingConfigData(tables: [
+            new KeyRemappingTableData(
+                table: 'users',
+                primaryKey: 'id',
+                strategy: KeyRemappingStrategy::NewUuid,
+                foreignKeys: [
+                    new KeyRemappingForeignKeyData(table: 'orders', column: 'user_id', selfReferential: false),
+                    new KeyRemappingForeignKeyData(table: 'users', column: 'parent_id', selfReferential: true),
+                ],
+            ),
+        ]),
+    );
+
+    expect((new CloningYamlWriter)->write($result))->toBe(<<<'YAML'
+# yaml-language-server: $schema=https://clonio.dev/schema/cloning-v1.json
+version: "1"
+connection: prod
+
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  drop_extra_columns: false
+  recreate_tables: false
+  disable_foreign_key_checks: true
+  remap_keys: true
+  faker_locale: en_US
+
+tables:
+  users:
+    rows:
+      strategy: full
+      clear: delete
+    columns:
+      # Primary Key — remapped
+      id:
+        strategy: remapping
+        arguments:
+          - use: new_uuid
+          - foreign_keys: [{table: orders, column: user_id, self_referential: false}, {table: users, column: parent_id, self_referential: true}]
+      email:
+        strategy: fake
+        faker_method: numberBetween
+        faker_arguments: [1, a]
+
+
+YAML);
+});
+
+it('writes a PII comment only when PII is detected and a category is known', function (): void {
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [
+            g6_column('a', 'null', ['piiDetected' => true, 'piiCategory' => null]),
+            g6_column('b', 'null', ['piiDetected' => false, 'piiCategory' => 'Email Address']),
+            g6_column('c', 'null', ['piiDetected' => true, 'piiCategory' => 'Phone Number']),
+        ],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+
+    $yaml = (new CloningYamlWriter)->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain("    columns:\n      a:\n        strategy: \"null\"\n      b:\n        strategy: \"null\"\n      # PII: Phone Number\n      c:\n")
+        ->and(substr_count($yaml, '# PII:'))->toBe(1);
+});
+
+it('writes the configured hash algorithm and defaults to sha256 without a salt line', function (): void {
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [
+            g6_column('a', 'hash', ['hashAlgorithm' => 'sha512']),
+            g6_column('b', 'hash'),
+        ],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+
+    $yaml = (new CloningYamlWriter)->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain("      a:\n        strategy: hash\n        algorithm: sha512\n      b:\n        strategy: hash\n        algorithm: sha256\n\n")
+        ->not->toContain('salt:');
+});
+
+it('writes mask defaults when mask fields are null', function (): void {
+    $table = new TableDumpData(
+        name: 'users',
+        columns: [g6_column('phone', 'mask')],
+        rowStrategy: 'full',
+        rowLimit: null,
+        sortBy: null,
+    );
+
+    $yaml = (new CloningYamlWriter)->write(makeDumpResult('prod', [$table]));
+
+    expect($yaml)->toContain("      phone:\n        strategy: mask\n        visible_chars: 0\n        mask_char: \"*\"\n        preserve_format: false\n");
+});
+
+it('quotes strings that YAML 1.1 would read as booleans or that start with an indicator', function (string $value): void {
+    $yaml = (new CloningYamlWriter)->write(makeDumpResult($value));
+
+    expect($yaml)->toContain(sprintf("connection: \"%s\"\n", $value))
+        ->and(Yaml::parse($yaml)['connection'])->toBe($value);
+})->with(['yes', 'no', 'on', 'off', 'Yes', 'OFF', '-abc', '?abc']);
+
+it('leaves plain identifiers unquoted', function (): void {
+    expect((new CloningYamlWriter)->write(makeDumpResult('prod_db-1')))->toContain("connection: prod_db-1\n");
+});
+
+it('lists the remapped primary key even when every other column is kept', function (): void {
+    $table = new TableDumpData(name: 'users', columns: [makeKeepColumn('id'), makeKeepColumn('name')], rowStrategy: 'full', rowLimit: null, sortBy: null);
+    $result = new DumpResultData(
+        connectionName: 'prod',
+        tables: [$table],
+        totalColumns: 2,
+        piiColumnsDetected: 0,
+        outputPath: 'prod.cloning.yaml',
+        keyRemapping: new KeyRemappingConfigData(tables: [
+            new KeyRemappingTableData(table: 'users', primaryKey: 'id', strategy: KeyRemappingStrategy::RandomInteger, foreignKeys: []),
+        ]),
+    );
+
+    $yaml = (new CloningYamlWriter)->write($result);
+
+    expect($yaml)->toContain("    columns:\n      # Primary Key — remapped\n      id:\n        strategy: remapping\n        arguments:\n          - use: random_integer\n          - foreign_keys: []\n\n")
+        ->not->toContain('no PII detected');
 });

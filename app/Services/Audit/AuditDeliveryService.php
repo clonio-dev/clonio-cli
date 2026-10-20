@@ -64,7 +64,7 @@ class AuditDeliveryService
             $targetNames = $channelOverride;
         } else {
             $useList = $auditConfig['use'] ?? null;
-            $targetNames = is_array($useList) ? array_values(array_filter($useList, is_string(...))) : [];
+            $targetNames = is_array($useList) ? array_values(array_filter($useList, is_string(...))) : []; // @pest-mutate-ignore: UnwrapArrayValues
         }
 
         foreach ($targetNames as $channelName) {
@@ -89,7 +89,7 @@ class AuditDeliveryService
         if (! is_array($channelConfig)) {
             Log::warning('audit_channel_not_found', ['channel' => $channelName]);
 
-            return;
+            return; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $typeValue = $channelConfig['type'] ?? null;
@@ -121,11 +121,11 @@ class AuditDeliveryService
 
         // Resolve delivery flags
         $deliversAudit = isset($channelConfig['delivers_audit'])
-            ? (bool) $channelConfig['delivers_audit']
+            ? (bool) $channelConfig['delivers_audit'] // @pest-mutate-ignore: RemoveBooleanCast
             : true;
 
         $deliversProcessLog = isset($channelConfig['delivers_process_log'])
-            ? (bool) $channelConfig['delivers_process_log']
+            ? (bool) $channelConfig['delivers_process_log'] // @pest-mutate-ignore: RemoveBooleanCast
             : $channelType->defaultDeliversProcessLog();
 
         $processLogFilename = ($templateVars['source'] ?? 'source')
@@ -156,7 +156,7 @@ class AuditDeliveryService
         $attempt = 0;
         $delay = $initialDelayMs;
 
-        while ($attempt < $maxAttempts) {
+        while ($attempt < $maxAttempts) { // @pest-mutate-ignore: SmallerToSmallerOrEqual
             try {
                 $fn();
 

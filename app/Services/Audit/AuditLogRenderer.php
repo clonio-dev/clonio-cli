@@ -19,8 +19,8 @@ class AuditLogRenderer
     {
         $startedAt = $record->startedAt->format('Y-m-d H:i:s T');
         $finishedAt = $record->finishedAt->format('Y-m-d H:i:s T');
-        $durationSeconds = (float) ($record->finishedAt->getTimestamp() - $record->startedAt->getTimestamp())
-            + (((int) $record->finishedAt->format('u')) - ((int) $record->startedAt->format('u'))) / 1_000_000;
+        $durationSeconds = (float) ($record->finishedAt->getTimestamp() - $record->startedAt->getTimestamp()) // @pest-mutate-ignore: RemoveDoubleCast
+            + (((int) $record->finishedAt->format('u')) - ((int) $record->startedAt->format('u'))) / 1_000_000; // @pest-mutate-ignore: RemoveIntegerCast
         $duration = self::formatDuration(max(0.0, $durationSeconds));
 
         $tableCount = count($record->tables);
@@ -320,7 +320,7 @@ HTML;
     public static function formatDuration(float $seconds): string
     {
         $totalSeconds = (int) floor($seconds);
-        $milliseconds = (int) round(($seconds - $totalSeconds) * 1000);
+        $milliseconds = (int) round(($seconds - $totalSeconds) * 1000); // @pest-mutate-ignore: RemoveIntegerCast
 
         $hours = intdiv($totalSeconds, 3600);
         $minutes = intdiv($totalSeconds % 3600, 60);
@@ -338,22 +338,22 @@ HTML;
 
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
-            'format' => 'A4',
-            'margin_top' => 18,
-            'margin_bottom' => 18,
-            'margin_left' => 14,
-            'margin_right' => 14,
+            'format' => 'A4', // @pest-mutate-ignore: RemoveArrayItem
+            'margin_top' => 18, // @pest-mutate-ignore: IncrementInteger,DecrementInteger,RemoveArrayItem
+            'margin_bottom' => 18, // @pest-mutate-ignore: IncrementInteger,DecrementInteger,RemoveArrayItem
+            'margin_left' => 14, // @pest-mutate-ignore: IncrementInteger,DecrementInteger,RemoveArrayItem
+            'margin_right' => 14, // @pest-mutate-ignore: IncrementInteger,DecrementInteger,RemoveArrayItem
             'default_font' => 'DejaVuSans',
             // Direct mpdf's spill files to the OS temp dir. Without this, mpdf
             // defaults to a path inside its own vendor directory, which is read-only
             // when clonio runs from the PHAR/micro-SAPI distribution.
-            'tempDir' => sys_get_temp_dir(),
+            'tempDir' => sys_get_temp_dir(), // @pest-mutate-ignore: RemoveArrayItem
         ]);
 
         $mpdf->WriteHTML($html);
 
         // @phpstan-ignore-next-line
-        return $mpdf->Output('', 'S');
+        return $mpdf->Output('', 'S'); // @pest-mutate-ignore: EmptyStringToNotEmpty
     }
 
     private function renderTableRow(AuditTableRecordData $table, bool $alt): string

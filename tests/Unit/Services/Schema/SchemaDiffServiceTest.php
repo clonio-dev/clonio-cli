@@ -177,3 +177,15 @@ it('reports table diff hasDifferences only when columns differ', function (): vo
 
     expect($diff->modifiedTables)->toBe([]);
 });
+
+it('ignores type case differences when the source type is upper case', function (): void {
+    $source = diffSchemaWith('db', [
+        diffTable('users', [diffColumn('email', 'VARCHAR')]),
+    ]);
+
+    $target = diffSchemaWith('db', [
+        diffTable('users', [diffColumn('email', 'varchar')]),
+    ]);
+
+    expect((new SchemaDiffService)->diff($source, $target)->isIdentical())->toBeTrue();
+});

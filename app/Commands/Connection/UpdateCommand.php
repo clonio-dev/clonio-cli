@@ -143,7 +143,7 @@ class UpdateCommand extends Command
             $selectedDriver = $this->choice(
                 'Database driver',
                 $typeValues,
-                $currentTypeIndex !== false ? (int) $currentTypeIndex : 0,
+                $currentTypeIndex !== false ? (int) $currentTypeIndex : 0, // @pest-mutate-ignore: FalseToTrue,DecrementInteger,IncrementInteger,RemoveIntegerCast
             );
             $newTypeValue = is_string($selectedDriver) ? $selectedDriver : $current->type->value;
         } else {
@@ -263,10 +263,8 @@ class UpdateCommand extends Command
             'database' => [$old->database ?? '', $new->database ?? ''],
             'schema' => [$old->schema ?? '', $new->schema ?? ''],
             'username' => [$old->username ?? '', $new->username ?? ''],
-            'password' => [
-                $passwordChanged ? '••••••••' : '(unchanged)',
-                $passwordChanged ? '••••••••' : '(unchanged)',
-            ],
+            // Secrets are never printed: only whether the password changed.
+            'password' => $passwordChanged ? ['••••••••', '(changed)'] : ['(unchanged)', '(unchanged)'],
             'is_production' => [
                 $old->isProduction ? 'true' : 'false',
                 $new->isProduction ? 'true' : 'false',
@@ -275,7 +273,7 @@ class UpdateCommand extends Command
                 $old->trustServerCertificate ? 'true' : 'false',
                 $new->trustServerCertificate ? 'true' : 'false',
             ],
-            'ssl.mode' => [$old->ssl?->mode->value ?? 'default', $new->ssl?->mode->value ?? 'default'],
+            'ssl.mode' => [$old->ssl?->mode->value ?? 'default', $new->ssl?->mode->value ?? 'default'], // @pest-mutate-ignore: RemoveNullSafeOperator
             'ssl.ca' => [$old->ssl->ca ?? '', $new->ssl->ca ?? ''],
             'ssl.cert' => [$old->ssl->cert ?? '', $new->ssl->cert ?? ''],
             'ssl.key' => [$old->ssl->key ?? '', $new->ssl->key ?? ''],
@@ -292,7 +290,7 @@ class UpdateCommand extends Command
         $rows = array_map(
             static fn (string $field, array $pair): array => [$field, $pair[0], $pair[1]],
             array_keys($changed),
-            array_values($changed),
+            array_values($changed), // @pest-mutate-ignore: UnwrapArrayValues
         );
 
         $this->table(['Field', 'Old', 'New'], $rows);

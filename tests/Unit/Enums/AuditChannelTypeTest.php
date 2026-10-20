@@ -67,3 +67,14 @@ it('label returns expected string for each case', function (): void {
         ->and(AuditChannelType::Stderr->label())->toBe('Standard error')
         ->and(AuditChannelType::Stack->label())->toBe('Stack (fan-out to multiple channels)');
 });
+
+it('names the unknown label and the enum class in the ValueError message', function (): void {
+    expect(fn () => AuditChannelType::fromLabel('Carrier pigeon'))
+        ->toThrow(ValueError::class, "'Carrier pigeon' is not a valid label for App\\Enums\\AuditChannelType");
+
+    try {
+        AuditChannelType::fromLabel('Carrier pigeon');
+    } catch (ValueError $e) {
+        expect($e->getMessage())->toBe("'Carrier pigeon' is not a valid label for App\\Enums\\AuditChannelType");
+    }
+});

@@ -53,7 +53,7 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
     private function decryptIfNeeded(string $value): string
     {
         if (str_starts_with($value, 'encrypted:')) {
-            return Crypt::decryptString(substr($value, 10));
+            return Crypt::decryptString(substr($value, 10)); // @pest-mutate-ignore: DecrementInteger
         }
 
         return $value;

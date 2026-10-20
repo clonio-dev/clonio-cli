@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Services\Cloning\AnonymizationEngine;
+use Faker\Generator;
 
 function makeColumn(
     string $strategy,
@@ -281,4 +282,96 @@ it('produces real first and last names in a multi-token template, not just liter
 
 it('returns null for the exclude strategy (column is dropped before transform)', function (): void {
     expect((new AnonymizationEngine)->transform('secret', makeColumn('exclude')))->toBeNull();
+});
+
+function g3_anon_engine_with_provider(): AnonymizationEngine
+{
+    $engine = new AnonymizationEngine(runSalt: 'run-salt');
+
+    /** @var Generator $faker */
+    $faker = (new ReflectionProperty($engine, 'faker'))->getValue($engine);
+    $faker->addProvider(new class
+    {
+        /** @return list<mixed> */
+        public function g3MixedList(): array
+        {
+            return [1, null, 'b', new stdClass];
+        }
+
+        public function g3Nothing(): ?string
+        {
+            return null;
+        }
+    });
+
+    return $engine;
+}
+
+it('hashes non-string scalar values by their string form', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('hash', hashSalt: 's');
+
+    expect($engine->transform(42, $col))->toBe(hash('sha256', 's42'))
+        ->and($engine->transform(null, $col))->toBe(hash('sha256', 's'));
+});
+
+it('hashes with the configured algorithm', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('hash', hashAlgorithm: 'md5', hashSalt: 's');
+
+    expect($engine->transform('value', $col))->toBe(md5('svalue'));
+});
+
+it('masks non-string scalar values and treats non-scalars as empty', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('mask', visibleChars: 2);
+
+    expect($engine->transform(12345, $col))->toBe('12***')
+        ->and($engine->transform(null, $col))->toBe('');
+});
+
+it('returns null when faker method is an empty string', function (): void {
+    $engine = new AnonymizationEngine;
+
+    expect($engine->transform('hello', makeColumn('fake', fakerMethod: '')))->toBeNull();
+});
+
+it('joins array faker output and renders non-scalar items as empty strings', function (): void {
+    $engine = g3_anon_engine_with_provider();
+
+    expect($engine->transform('x', makeColumn('fake', fakerMethod: 'g3MixedList')))->toBe('1  b ')
+        ->and($engine->transform('x', makeColumn('template', template: '<{g3MixedList}>')))->toBe('<1  b >');
+});
+
+it('renders a non-scalar faker result as empty string in template', function (): void {
+    $engine = g3_anon_engine_with_provider();
+
+    expect($engine->transform('x', makeColumn('template', template: 'a{g3Nothing}b')))->toBe('ab');
+});
+
+it('masks every character when no mask options are configured', function (): void {
+    $engine = new AnonymizationEngine;
+
+    expect($engine->transform('a-bc', makeColumn('mask')))->toBe('****');
+});
+
+it('masks with the configured mask character', function (): void {
+    $engine = new AnonymizationEngine;
+
+    expect($engine->transform('secret', makeColumn('mask', maskChar: '#', visibleChars: 1)))->toBe('s#####');
+});
+
+it('preserves separators and reveals exactly the first visible alphanumerics', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('mask', maskChar: '*', visibleChars: 3, preserveFormat: true);
+
+    expect($engine->transform('ab-cd.ef', $col))->toBe('ab-c*.**')
+        ->and($engine->transform('hello@world.com', $col))->toBe('hel**@*****.***');
+});
+
+it('masks every alphanumeric when preserving format without visible chars', function (): void {
+    $engine = new AnonymizationEngine;
+    $col = makeColumn('mask', preserveFormat: true);
+
+    expect($engine->transform('ab-c', $col))->toBe('**-*');
 });

@@ -102,3 +102,30 @@ it('returns null for unrelated errors', function (): void {
 
     expect(ConnectionErrorHint::for($e, hintConnection(DatabaseConnectionType::Mysql, SslMode::Require), 'db'))->toBeNull();
 });
+
+it('recognises the insecure-transport message even without the [3159] code', function (): void {
+    $e = new PDOException('Connections using insecure transport are prohibited while --require_secure_transport=ON.');
+
+    expect(ConnectionErrorHint::for($e, hintConnection(DatabaseConnectionType::Mysql, null), 'db.example.com'))
+        ->toBe('The server requires TLS. Run "clonio connection:update prod" and set transport security to "require" or "verify".');
+});
+
+it('does not treat "no encryption" without pg_hba.conf as a TLS requirement', function (): void {
+    $e = new PDOException('SQLSTATE[08006] FATAL: password authentication failed, no encryption');
+
+    expect(ConnectionErrorHint::for($e, hintConnection(DatabaseConnectionType::PostgreSQL, null), 'db.example.com'))->toBeNull();
+});
+
+it('suggests disable when the mysql handshake fails on a connection without an ssl block', function (): void {
+    $e = new PDOException('SQLSTATE[HY000] [2002] Cannot connect to MySQL using SSL');
+
+    expect(ConnectionErrorHint::for($e, hintConnection(DatabaseConnectionType::Mysql, null), 'db.example.com'))
+        ->toBe('TLS handshake failed. The server may not support TLS — use mode "disable" if the connection is on a trusted network.');
+});
+
+it('names an empty host in the verification hint when the host is unknown', function (): void {
+    $e = new PDOException('certificate verify failed');
+
+    expect(ConnectionErrorHint::for($e, hintConnection(DatabaseConnectionType::PostgreSQL, SslMode::Verify), null))
+        ->toBe('TLS handshake failed. Likely causes: the CA file did not sign the server certificate, or the host name "" is not in the certificate. Use mode "require" to skip verification.');
+});

@@ -108,3 +108,11 @@ it('does not match non-pii columns', function (): void {
     expect($matcherSet->match('updated_at'))->toBeNull();
     expect($matcherSet->match('deleted_at'))->toBeNull();
 });
+
+it('treats regex metacharacters in glob patterns literally', function (): void {
+    $set = new PiiMatcherSetData([makeTestMatcher('dotted', 'g', ['user.name*'])]);
+
+    expect($set->match('user.name_first'))->not->toBeNull();
+    expect($set->match('userXname_first'))->toBeNull();
+    expect($set->matchIncludingDisabled('userXname_first'))->toBeNull();
+});

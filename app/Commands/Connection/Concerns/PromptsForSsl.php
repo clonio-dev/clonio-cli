@@ -30,7 +30,7 @@ trait PromptsForSsl
         $labels[] = self::DRIVER_DEFAULT_LABEL;
 
         $defaultIndex = $default instanceof SslMode
-            ? (int) array_search($default->label(), $labels, true)
+            ? (int) array_search($default->label(), $labels, true) // @pest-mutate-ignore: RemoveIntegerCast
             : count($labels) - 1;
 
         $answer = $this->choice('Transport security', $labels, $defaultIndex);

@@ -7,7 +7,10 @@ use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 function makeUpdateConnection(string $name = 'staging', ?SslConfig $ssl = null): ConnectionData
 {
@@ -645,6 +648,516 @@ it('removes ssl when the type changes to sqlite', function (): void {
         ->expectsQuestion('Database file path', '/tmp/a.db')
         ->expectsQuestion('Password (press Enter to keep current)', '')
         ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+/**
+ * Runs connection:update against a real (non-mocked) question helper fed from an in-memory
+ * stdin stream, so prompt defaults are applied exactly as for a user pressing Enter.
+ *
+ * @param  list<string>  $lines
+ * @return array{int, string}
+ */
+function g4b_runUpdateWithStdin(array $params, array $lines): array
+{
+    $stream = fopen('php://memory', 'r+');
+    fwrite($stream, implode(PHP_EOL, $lines).PHP_EOL);
+    rewind($stream);
+
+    $input = new ArrayInput(['command' => 'connection:update', ...$params]);
+    $input->setStream($stream);
+    $input->setInteractive(true);
+    $output = new BufferedOutput;
+
+    $command = app(Kernel::class)->all()['connection:update'];
+    $exitCode = $command->run($input, $output);
+
+    return [$exitCode, $output->fetch()];
+}
+
+function g4b_mysqlConnection(?string $host = 'db.internal', ?int $port = 3307, ?string $database = 'appdb', ?string $username = 'app'): ConnectionData
+{
+    return new ConnectionData(
+        name: 'staging',
+        type: DatabaseConnectionType::Mysql,
+        host: $host,
+        port: $port,
+        database: $database,
+        schema: null,
+        username: $username,
+        password: 'encrypted:abc123',
+        isProduction: false,
+    );
+}
+
+function g4b_pgsqlConnection(string $schema = 'custom'): ConnectionData
+{
+    return new ConnectionData(
+        name: 'pg',
+        type: DatabaseConnectionType::PostgreSQL,
+        host: 'pg.internal',
+        port: 5433,
+        database: 'pgdb',
+        schema: $schema,
+        username: 'pgu',
+        password: 'encrypted:abc123',
+        isProduction: false,
+    );
+}
+
+function g4b_sqliteConnection(?string $database): ConnectionData
+{
+    return new ConnectionData(
+        name: 'local',
+        type: DatabaseConnectionType::Sqlite,
+        host: null,
+        port: null,
+        database: $database,
+        schema: null,
+        username: null,
+        password: '',
+        isProduction: false,
+    );
+}
+
+it('applies the stored values as prompt defaults when every question is answered with Enter', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    [$exitCode, $output] = g4b_runUpdateWithStdin(['name' => 'staging'], array_fill(0, 12, ''));
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain(' Connection name [staging]:')
+        ->and($output)->toContain(' Database driver [mysql]:')
+        ->and($output)->toContain(' Host [db.internal]:')
+        ->and($output)->toContain(' Port [3307]:')
+        ->and($output)->toContain(' Database [appdb]:')
+        ->and($output)->toContain(' Username [app]:')
+        ->and($output)->toContain(' Password (press Enter to keep current):'.PHP_EOL)
+        ->and($output)->toContain('No fields changed.')
+        ->and($output)->toContain(' Save changes? (yes/no) [yes]:')
+        ->and($output)->toContain("Connection 'staging' updated successfully.")
+        ->and($output)->not->toContain('No changes saved.');
+});
+
+it('pre-selects the stored driver and schema when Enter is pressed for a pgsql connection', function (): void {
+    $current = g4b_pgsqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    [$exitCode, $output] = g4b_runUpdateWithStdin(['name' => 'pg'], array_fill(0, 12, ''));
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain(' Database driver [pgsql]:')
+        ->and($output)->toContain(' Port [5433]:')
+        ->and($output)->toContain(' Schema [custom]:')
+        ->and($output)->toContain('No fields changed.');
+});
+
+it('offers the new driver defaults (not the stored values) after switching to another network driver', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->type === DatabaseConnectionType::PostgreSQL
+        && $d->host === 'localhost'
+        && $d->port === 5432
+        && $d->database === null
+        && $d->username === null
+        && $d->schema === 'public'
+        && $d->password === 'encrypted:abc123'
+        && $d->ssl === null));
+
+    [$exitCode, $output] = g4b_runUpdateWithStdin(['name' => 'staging'], ['', 'pgsql', '', '', '', '', '', '', '', '', '', '']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain(' Host [localhost]:')
+        ->and($output)->toContain(' Port [5432]:')
+        ->and($output)->toContain(' Database:'.PHP_EOL)
+        ->and($output)->toContain(' Username:'.PHP_EOL)
+        ->and($output)->toContain(' Schema [public]:');
+});
+
+it('asks for a fresh file path without default after switching to sqlite', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->type === DatabaseConnectionType::Sqlite
+        && $d->database === null
+        && $d->host === null
+        && $d->port === null
+        && $d->username === null));
+
+    [$exitCode, $output] = g4b_runUpdateWithStdin(['name' => 'staging'], ['', 'sqlite', '', '', '', '']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain(' Database file path:'.PHP_EOL);
+});
+
+it('keeps every stored network field unchanged under --no-interaction', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'staging', '--no-interaction' => true])
+        ->expectsOutputToContain('No fields changed.')
+        ->assertExitCode(0);
+});
+
+it('keeps null network fields null under --no-interaction', function (): void {
+    $current = g4b_mysqlConnection(host: null, port: null, database: null, username: null);
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'staging', '--no-interaction' => true])
+        ->expectsOutputToContain('No fields changed.')
+        ->assertExitCode(0);
+});
+
+it('keeps the stored schema under --no-interaction', function (): void {
+    $current = g4b_pgsqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'pg', '--no-interaction' => true])
+        ->assertExitCode(0);
+});
+
+it('keeps the sqlite file path under --no-interaction', function (?string $database): void {
+    $current = g4b_sqliteConnection($database);
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'local', '--no-interaction' => true])
+        ->expectsOutputToContain('No fields changed.')
+        ->assertExitCode(0);
+})->with([
+    'with a path' => ['/tmp/g4b-existing.db'],
+    'without a path' => [null],
+]);
+
+it('stores empty answers as null and falls back to the stored port', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->host === null
+        && $d->port === 3307
+        && $d->database === null
+        && $d->username === null));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', '')
+        ->expectsQuestion('Port', '')
+        ->expectsQuestion('Database', '')
+        ->expectsQuestion('Username', '')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('falls back to the new driver default port and stores an empty schema as null after a type change', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->type === DatabaseConnectionType::PostgreSQL
+        && $d->host === null
+        && $d->port === 5432
+        && $d->database === null
+        && $d->username === null
+        && $d->schema === null));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'pgsql')
+        ->expectsQuestion('Host', '')
+        ->expectsQuestion('Port', '')
+        ->expectsQuestion('Database', '')
+        ->expectsQuestion('Username', '')
+        ->expectsQuestion('Schema', '')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('stores port 0 as null but keeps port 1', function (string $answer, ?int $expected): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->port === $expected));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'db.internal')
+        ->expectsQuestion('Port', $answer)
+        ->expectsQuestion('Database', 'appdb')
+        ->expectsQuestion('Username', 'app')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+})->with([
+    'zero' => ['0', null],
+    'one' => ['1', 1],
+]);
+
+it('treats an empty name argument like a missing one', function (): void {
+    $current = makeUpdateConnection('staging');
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => '', '--no-interaction' => true])
+        ->assertExitCode(0);
+});
+
+it('updates the connection picked from the list', function (?string $answer, string $expected): void {
+    $staging = makeUpdateConnection('staging');
+    $production = makeUpdateConnection('production');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $staging, 'production' => $production]);
+    $config->shouldReceive('getConnection')->once()->with($expected)->andReturn($expected === 'staging' ? $staging : $production);
+    $config->shouldReceive('setConnection')->once()->with($expected, Mockery::type(ConnectionData::class));
+
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update')
+        ->expectsQuestion('Which connection do you want to update?', $answer)
+        ->expectsQuestion('Connection name', $expected)
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->expectsOutputToContain(sprintf("Connection '%s' updated successfully.", $expected))
+        ->assertExitCode(0);
+})->with([
+    'second entry' => ['production', 'production'],
+    'no answer falls back to the first entry' => [null, 'staging'],
+]);
+
+it('keeps a network connection without ssl on the driver default under --no-interaction', function (): void {
+    $current = g4b_mysqlConnection();
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->ssl === null));
+
+    $this->artisan('connection:update', ['name' => 'staging', '--no-interaction' => true])
+        ->assertExitCode(0);
+});
+
+it('tells the user that certificate paths were removed when switching to sqlsrv', function (): void {
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->ssl == new SslConfig(SslMode::Verify)));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'sqlsrv')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '1433')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsOutputToContain('Certificate paths are not supported for sqlsrv and were removed.')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('does not mention removed certificate paths for sqlsrv without certificate files', function (): void {
+    $current = new ConnectionData(
+        name: 'mssql', type: DatabaseConnectionType::SqlServer, host: 'localhost', port: 1433, database: 'mydb',
+        schema: null, username: 'sa', password: 'encrypted:abc123', isProduction: false,
+        ssl: new SslConfig(SslMode::Require),
+    );
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'mssql'])
+        ->expectsQuestion('Connection name', 'mssql')
+        ->expectsQuestion('Database driver', 'sqlsrv')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '1433')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'sa')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+        ->doesntExpectOutputToContain('Certificate paths are not supported')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('does not mention removed certificate paths when a mysql connection keeps its CA', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem'));
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', '')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+        ->doesntExpectOutputToContain('Certificate paths are not supported')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('shows every changed field in the diff when filling an empty sqlite connection', function (): void {
+    config(['app.key' => 'base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=']);
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    Storage::disk('local')->put('certs/client.pem', 'x');
+    Storage::disk('local')->put('certs/client.key', 'x');
+    chmod(Storage::disk('local')->path('certs/client.key'), 0600);
+
+    $current = g4b_sqliteConnection('/tmp/g4b-a.db');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('local')->andReturn($current);
+    $config->shouldReceive('hasConnection')->with('renamed')->andReturn(false);
+    $config->shouldReceive('renameConnection')->once()->withArgs(
+        static fn (string $old, string $new, ConnectionData $d): bool => $old === 'local' && $new === 'renamed'
+    );
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update', ['name' => 'local'])
+        ->expectsQuestion('Connection name', 'renamed')
+        ->expectsQuestion('Database driver', 'pgsql')
+        ->expectsQuestion('Host', 'pg.local')
+        ->expectsQuestion('Port', '5433')
+        ->expectsQuestion('Database', 'pgdb')
+        ->expectsQuestion('Username', 'pgu')
+        ->expectsQuestion('Schema', 'sch')
+        ->expectsQuestion('Password (press Enter to keep current)', 'secret')
+        ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
+        ->expectsQuestion('CA certificate path (leave empty for none)', 'certs/ca.pem')
+        ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'yes')
+        ->expectsQuestion('Client certificate path (leave empty for none)', 'certs/client.pem')
+        ->expectsQuestion('Client key path (leave empty for none)', 'certs/client.key')
+        ->expectsConfirmation('Is this a production connection?', 'yes')
+        ->expectsTable(['Field', 'Old', 'New'], [
+            ['name', 'local', 'renamed'],
+            ['type', 'sqlite', 'pgsql'],
+            ['host', '', 'pg.local'],
+            ['port', '', '5433'],
+            ['database', '/tmp/g4b-a.db', 'pgdb'],
+            ['schema', '', 'sch'],
+            ['username', '', 'pgu'],
+            ['is_production', 'false', 'true'],
+            ['ssl.mode', 'default', 'verify'],
+            ['ssl.ca', '', 'certs/ca.pem'],
+            ['ssl.cert', '', 'certs/client.pem'],
+            ['ssl.key', '', 'certs/client.key'],
+        ])
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('shows every cleared field in the diff when turning a full pgsql connection into sqlite', function (): void {
+    $current = new ConnectionData(
+        name: 'pg', type: DatabaseConnectionType::PostgreSQL, host: 'pg.local', port: 5433, database: 'pgdb',
+        schema: 'sch', username: 'pgu', password: 'encrypted:abc123', isProduction: true, trustServerCertificate: true,
+        ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem', 'certs/client.pem', 'certs/client.key'),
+    );
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d->type === DatabaseConnectionType::Sqlite));
+
+    $this->artisan('connection:update', ['name' => 'pg'])
+        ->expectsQuestion('Connection name', 'pg')
+        ->expectsQuestion('Database driver', 'sqlite')
+        ->expectsQuestion('Database file path', '/tmp/g4b-b.db')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsTable(['Field', 'Old', 'New'], [
+            ['type', 'pgsql', 'sqlite'],
+            ['host', 'pg.local', ''],
+            ['port', '5433', ''],
+            ['database', 'pgdb', '/tmp/g4b-b.db'],
+            ['schema', 'sch', ''],
+            ['username', 'pgu', ''],
+            ['is_production', 'true', 'false'],
+            ['trust_server_certificate', 'true', 'false'],
+            ['ssl.mode', 'verify', 'default'],
+            ['ssl.ca', 'certs/ca.pem', ''],
+            ['ssl.cert', 'certs/client.pem', ''],
+            ['ssl.key', 'certs/client.key', ''],
+        ])
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('reports that nothing was saved when the save confirmation is declined', function (): void {
+    $current = makeUpdateConnection('staging');
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($current);
+    $config->shouldNotReceive('setConnection');
+    $this->app->instance(ConfigService::class, $config);
+
+    [$exitCode, $output] = g4b_runUpdateWithStdin(['name' => 'staging'], [...array_fill(0, 9, ''), 'no']);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('No changes saved.')
+        ->and($output)->not->toContain('updated successfully');
+});
+
+it('warns when the client key of the updated connection is readable by other users', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('certs/ca.pem', 'x');
+    Storage::disk('local')->put('certs/client.pem', 'x');
+    Storage::disk('local')->put('certs/client.key', 'x');
+    chmod(Storage::disk('local')->path('certs/client.key'), 0644);
+    $current = makeUpdateConnection(ssl: new SslConfig(SslMode::Verify, 'certs/ca.pem', 'certs/client.pem', 'certs/client.key'));
+    $this->app->instance(ConfigService::class, fakeUpdateConfig($current, static fn (ConnectionData $d): bool => $d == $current));
+
+    $this->artisan('connection:update', ['name' => 'staging', '--no-interaction' => true])
+        ->expectsOutputToContain('Client key certs/client.key is readable by other users. Run: chmod 600 ')
+        ->assertExitCode(0);
+});
+
+it('lists a changed password in the change summary without printing it', function (): void {
+    $current = makeUpdateConnection();
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig(
+        $current,
+        static fn (ConnectionData $d): bool => $d->password !== $current->password
+    ));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', 'newsecret')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsTable(['Field', 'Old', 'New'], [['password', '••••••••', '(changed)']])
+        ->doesntExpectOutputToContain('newsecret')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->assertExitCode(0);
+});
+
+it('reports no changes when only the unchanged password is kept', function (): void {
+    $current = makeUpdateConnection();
+
+    $this->app->instance(ConfigService::class, fakeUpdateConfig(
+        $current,
+        static fn (ConnectionData $d): bool => $d->password === $current->password
+    ));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'localhost')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsOutputToContain('No fields changed.')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
 });

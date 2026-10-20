@@ -220,7 +220,7 @@ class ConfigService
     {
         $data = $this->load();
         if (! isset($data['audit']) || ! is_array($data['audit'])) {
-            $data['audit'] = ['channels' => [], 'use' => []];
+            $data['audit'] = ['channels' => [], 'use' => []]; // @pest-mutate-ignore: RemoveArrayItem
         }
 
         $data['audit']['use'] = $channels;

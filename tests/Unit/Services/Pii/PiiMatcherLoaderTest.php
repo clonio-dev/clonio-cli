@@ -87,3 +87,16 @@ YAML;
 
     expect($set->matchers)->toHaveCount(3);
 });
+
+it('does not try to read the file when it does not exist', function (): void {
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('exists')->once()->with('clonio.pii-matchers.yaml')->andReturnFalse();
+    $disk->shouldNotReceive('get');
+    Storage::shouldReceive('disk')->with('local')->andReturn($disk);
+
+    $baseline = (new PiiMatcherBaselineProvider)->getMatcherSet();
+
+    $set = $this->loader->load();
+
+    expect($set->matchers)->toHaveCount(count($baseline->matchers));
+});

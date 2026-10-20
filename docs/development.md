@@ -46,6 +46,32 @@ Individual stages:
 | `composer test:types`      | PHPStan static analysis (level max)       |
 | `composer test:lint`       | Pint code style + Rector dry-run          |
 
+### Mutation testing
+
+`composer test:mutate` runs Pest mutation testing on the code you select. It is not part of `composer test`, because mutating the whole app takes several minutes. Arguments after `--` are passed to Pest:
+
+```bash
+# One class (file path)
+composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php
+
+# Limit the tests that run against the mutants (faster)
+composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php \
+  tests/Unit/Services/Cloning/FrameworkTableCatalogTest.php
+
+# A whole directory, in parallel
+composer test:mutate -- --path=app/Services/Cloning --parallel
+
+# Fail below a minimum score
+composer test:mutate -- --path=app/Services/Cloning --min=80
+```
+
+Notes:
+
+- Select the code with `--path` (file or directory) or `--class` (class or namespace). Without a selection, Pest prints usage hints and mutates nothing. Do not combine `--class` with `--everything`: `--everything` ignores the filter and mutates all ~100 files.
+- The script runs with `--covered-only`. Pest skips mutants on lines without line coverage. Constant arrays (such as the table lists in `FrameworkTableCatalog`) never report line coverage, so without this flag they count as untested and lower the score.
+- Results are cached between runs. Add `--no-cache` to force a fresh run.
+- A coverage driver (pcov or Xdebug) is required.
+
 ## Linting / auto-fix
 
 ```bash

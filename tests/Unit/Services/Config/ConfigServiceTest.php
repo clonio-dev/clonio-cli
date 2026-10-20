@@ -296,3 +296,135 @@ it('initialises the audit section when setting the use list on a fresh config', 
     expect($config->getAuditUse())->toBe(['ch1'])
         ->and($config->getAuditChannels())->toBe([]);
 });
+
+// ─── Mutation hardening ───────────────────────────────────────────────────────
+
+function g9_sqliteConnection(string $name): ConnectionData
+{
+    return new ConnectionData(
+        name: $name,
+        type: DatabaseConnectionType::Sqlite,
+        host: null,
+        port: null,
+        database: '/tmp/'.$name.'.db',
+        schema: null,
+        username: null,
+        password: '',
+        isProduction: false,
+    );
+}
+
+it('loads a default structure with an empty connections list when no file exists', function (): void {
+    expect((new ConfigService)->load())->toBe(['connections' => []]);
+});
+
+it('saves pretty printed JSON without escaping slashes or unicode', function (): void {
+    (new ConfigService)->save(['audit' => ['channels' => ['local' => ['type' => 'local', 'path' => './grüße']]]]);
+
+    expect(Storage::get('clonio.json'))->toBe(<<<'JSON'
+{
+    "audit": {
+        "channels": {
+            "local": {
+                "type": "local",
+                "path": "./grüße"
+            }
+        }
+    }
+}
+JSON);
+});
+
+it('throws when the configuration cannot be encoded as JSON', function (): void {
+    expect(fn () => (new ConfigService)->save(['connections' => ["\xB1\x31"]]))
+        ->toThrow(RuntimeException::class, 'Failed to encode configuration as JSON');
+
+    Storage::assertMissing('clonio.json');
+});
+
+it('keeps valid connections listed after skipped entries', function (): void {
+    $valid = g9_sqliteConnection('valid')->toArray();
+
+    Storage::put('clonio.json', json_encode(['connections' => [
+        '0' => $valid,
+        'broken' => 'not-an-array',
+        'valid' => $valid,
+    ]]));
+
+    expect(array_keys((new ConfigService)->getConnections()))->toBe(['valid']);
+});
+
+it('keeps the remaining connections when deleting one', function (): void {
+    $config = new ConfigService;
+    $config->setConnection('alpha', g9_sqliteConnection('alpha'));
+    $config->setConnection('beta', g9_sqliteConnection('beta'));
+
+    $config->deleteConnection('alpha');
+
+    expect(array_keys($config->getConnections()))->toBe(['beta']);
+});
+
+it('keeps the remaining connections when renaming one', function (): void {
+    $config = new ConfigService;
+    $config->setConnection('alpha', g9_sqliteConnection('alpha'));
+    $config->setConnection('beta', g9_sqliteConnection('beta'));
+
+    $config->renameConnection('alpha', 'gamma', g9_sqliteConnection('gamma'));
+
+    expect(array_keys($config->getConnections()))->toBe(['beta', 'gamma']);
+});
+
+it('initialises the audit section with channels before use when setting a channel on a fresh config', function (): void {
+    (new ConfigService)->setAuditChannel('local', ['type' => 'local']);
+
+    expect((new ConfigService)->load())->toBe([
+        'connections' => [],
+        'audit' => [
+            'channels' => ['local' => ['type' => 'local']],
+            'use' => [],
+        ],
+    ]);
+});
+
+it('initialises the audit section with empty channels when setting the use list on a fresh config', function (): void {
+    (new ConfigService)->setAuditUse(['local']);
+
+    expect((new ConfigService)->load())->toBe([
+        'connections' => [],
+        'audit' => [
+            'channels' => [],
+            'use' => ['local'],
+        ],
+    ]);
+});
+
+it('returns only string channel names from the use list as a list', function (): void {
+    Storage::put('clonio.json', json_encode(['audit' => ['use' => [1, 'a', null, 'b']]]));
+
+    expect((new ConfigService)->getAuditUse())->toBe(['a', 'b']);
+});
+
+it('stores the use list re-indexed after deleting a channel', function (): void {
+    $config = new ConfigService;
+    $config->setAuditUse(['a', 'b', 'c']);
+
+    $config->deleteAuditChannel('a');
+
+    expect((new ConfigService)->load()['audit'])->toBe(['channels' => [], 'use' => ['b', 'c']]);
+});
+
+it('leaves non-array channels and use sections untouched when deleting a channel', function (): void {
+    Storage::put('clonio.json', json_encode(['audit' => ['channels' => 'corrupt', 'use' => 'corrupt']]));
+
+    (new ConfigService)->deleteAuditChannel('a');
+
+    expect((new ConfigService)->load())->toBe(['audit' => ['channels' => 'corrupt', 'use' => 'corrupt']]);
+});
+
+it('deletes a channel when the audit section has no channels or use keys', function (): void {
+    Storage::put('clonio.json', json_encode(['audit' => ['other' => true]]));
+
+    (new ConfigService)->deleteAuditChannel('a');
+
+    expect((new ConfigService)->load())->toBe(['audit' => ['other' => true]]);
+});

@@ -35,11 +35,11 @@ final class AuditBuffer
     /** @param array<string, mixed> $context */
     public function record(DateTimeInterface $datetime, string $level, string $event, array $context): void
     {
-        $utc = $datetime instanceof DateTimeImmutable
+        $utc = $datetime instanceof DateTimeImmutable // @pest-mutate-ignore: InstanceOfToFalse
             ? $datetime->setTimezone(new DateTimeZone('UTC'))
             : new DateTimeImmutable('@'.$datetime->getTimestamp())->setTimezone(new DateTimeZone('UTC'));
 
-        $ms = sprintf('%03d', (int) ($datetime->format('u') / 1000));
+        $ms = sprintf('%03d', (int) ($datetime->format('u') / 1000)); // @pest-mutate-ignore: RemoveIntegerCast
         $ts = $utc->format('Y-m-d\TH:i:s.').$ms.'Z';
 
         $this->records[] = array_merge([

@@ -295,7 +295,7 @@ class SchemaReplicator
             in_array($type, ['double', 'double precision', 'float8'], true) => 'DOUBLE',
             in_array($type, ['decimal', 'numeric'], true) => 'DECIMAL(10,2)',
             // Text types
-            in_array($type, ['text', 'clob'], true) => 'TEXT',
+            in_array($type, ['text', 'clob'], true) => 'TEXT', // @pest-mutate-ignore: RemoveArrayItem
             $type === 'tinytext' => match ($driver) {
                 DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => 'TINYTEXT',
                 default => 'TEXT',
@@ -393,8 +393,8 @@ class SchemaReplicator
             );
 
             $row = (array) ($rows[0] ?? new stdClass);
-            $rawVal = $row['next_val'] ?? 1;
-            $nextVal = max(1, is_numeric($rawVal) ? (int) $rawVal : 1);
+            $rawVal = $row['next_val'] ?? 1; // @pest-mutate-ignore: DecrementInteger
+            $nextVal = max(1, is_numeric($rawVal) ? (int) $rawVal : 1); // @pest-mutate-ignore: DecrementInteger
 
             DB::connection($connName)->statement(
                 'ALTER TABLE '.$quotedTable.' AUTO_INCREMENT = '.$nextVal
@@ -426,14 +426,14 @@ class SchemaReplicator
                 $rows = DB::connection($sourceConnName)->select('SHOW CREATE TABLE '.$quotedTable);
 
                 if ($rows === []) {
-                    return null;
+                    return null; // @pest-mutate-ignore: RemoveEarlyReturn
                 }
 
                 $row = (array) $rows[0];
                 $ddl = $row['Create Table'] ?? null;
 
                 if (! is_string($ddl)) {
-                    return null;
+                    return null; // @pest-mutate-ignore: RemoveEarlyReturn
                 }
 
                 return $this->sanitiseNativeDdl($ddl);

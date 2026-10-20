@@ -121,3 +121,40 @@ it('finalize is a no-op when no step was started', function (): void {
 
     expect($output->fetch())->toBe('');
 });
+
+it('pads a decorated step with dots so the symbol lands at the target column', function (?string $suffix, string $compose): void {
+    [$step, $output] = makeStepRenderer(decorated: true);
+
+    $step->start('users');
+    $step->success($suffix);
+
+    $symbol = $output->getFormatter()->format('<info>✓</info>');
+    $padding = ' '.str_repeat('.', 80 - mb_strlen($compose) - 3);
+
+    expect($output->fetch())->toBe(
+        "  users ...\n"
+        ."\x1b[1A\r\x1b[K"
+        .$compose.$padding.'  '.$symbol."\n"
+    );
+})->with([
+    'no suffix' => [null, '  users'],
+    'empty suffix' => ['', '  users'],
+    'suffix' => ['(12 rows)', '  users (12 rows)'],
+]);
+
+it('keeps a single space before the symbol when a decorated label exceeds the target column', function (): void {
+    [$step, $output] = makeStepRenderer(decorated: true);
+
+    $label = str_repeat('x', 90);
+
+    $step->start($label);
+    $step->fail('(boom)');
+
+    $symbol = $output->getFormatter()->format('<error>✗</error>');
+
+    expect($output->fetch())->toBe(
+        '  '.$label." ...\n"
+        ."\x1b[1A\r\x1b[K"
+        .'  '.$label.' (boom)'.' '.'  '.$symbol."\n"
+    );
+});

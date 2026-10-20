@@ -123,7 +123,7 @@ class PiiMatcherYamlReader
     {
         if (! is_array($rawTransformation)) {
             // Provide a default empty transformation for disabled matchers or missing config
-            return new ColumnCloningConfigData(
+            return new ColumnCloningConfigData( // @pest-mutate-ignore: RemoveEarlyReturn
                 columnName: $columnName,
                 strategy: 'keep',
                 fakerMethod: null,
