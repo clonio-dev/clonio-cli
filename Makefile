@@ -166,3 +166,6 @@ docker-test: docker-build
 
 docker-shell: docker-build
 	docker run --rm -it -v "$$(pwd)":/workspace --entrypoint sh $(DOCKER_IMAGE)
+
+
+include Makefile.dev.mk
