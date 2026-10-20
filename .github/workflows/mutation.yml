@@ -10,6 +10,9 @@ on:
 
 jobs:
   mutation:
+    permissions:
+      contents: read
+      issues: write
     # macOS runner: pest-plugin-mutate passes every covering test in one
     # --filter argument, which exceeds Linux's 128 KiB per-argument limit
     # (E2BIG -> ProcessStartFailedException) for widely covered lines.
@@ -52,4 +55,29 @@ jobs:
 
       - name: Mutation tests (whole app)
         if: steps.scope.outputs.run == 'true' && github.event_name != 'pull_request'
-        run: composer test:mutate:all
+        shell: bash
+        run: |
+          set -o pipefail
+          composer test:mutate:all 2>&1 | tee mutation.log
+
+      # Weekly/manual run failed: open an issue, or comment on the open one.
+      - name: Report surviving mutants
+        if: failure() && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          LOG=$(sed -E 's/\x1b\[[0-9;]*m//g' mutation.log 2>/dev/null || true)
+          SURVIVORS=$(grep -E '^\s*UNTESTED ' <<<"$LOG" | sed -E 's/^\s*UNTESTED /- /' || true)
+          SUMMARY=$(grep -E 'Mutations:|Score:' <<<"$LOG" || true)
+          [ -n "$SURVIVORS" ] || SURVIVORS=$(printf '```\n%s\n```' "$(tail -n 40 <<<"$LOG")")
+          BODY=$(printf 'The full mutation run (${{ github.event_name }}) failed: %s\n\n%s\n\n%s\n\nReproduce with `composer test:mutate:all` or `composer test:mutate -- --path=<file>`.\n' "$RUN_URL" "$SUMMARY" "$SURVIVORS")
+
+          gh label create mutation --color D93F0B --description "Mutation testing" --force
+          ISSUE=$(gh issue list --label mutation --state open --json number -q '.[0].number')
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body "$BODY"
+          else
+            gh issue create --title "Mutation testing: surviving mutants" --label mutation --body "$BODY"
+          fi
