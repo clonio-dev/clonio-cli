@@ -15,8 +15,8 @@ php clonio <command>
 
 # Testing
 composer test              # Full suite: type coverage, unit tests, PHPStan, lint
-composer test:unit         # Pest with coverage (min 75%)
-composer test:type-coverage  # Type coverage check (min 90%)
+composer test:unit         # Pest with coverage (min 95%)
+composer test:type-coverage  # Type coverage check (min 99%)
 composer test:types        # PHPStan static analysis (level max)
 composer test:lint         # Pint + Rector dry-run
 
@@ -99,7 +99,8 @@ In tests, isolate filesystem operations with `Storage::fake('local')` (no temp d
 - Framework: **PestPHP v4**
 - Feature tests: `tests/Feature/Commands/` — test CLI commands via `$this->artisan()`
 - Unit tests: `tests/Unit/` — test services with Mockery for dependencies
-- Coverage minimum: 75% (unit), 90% (type coverage)
+- Coverage minimum: 95% (unit), 99% (type coverage)
+- Mutation score: 100% (`composer test:mutate:all`, CI job `mutation`); mark unkillable mutants with `// @pest-mutate-ignore: <Mutator>`
 - All tests extend `Tests\TestCase`
 
 ## Specs and Docs

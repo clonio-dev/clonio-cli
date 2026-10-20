@@ -70,14 +70,15 @@
             "rector",
             "pint --parallel"
         ],
-        "test:type-coverage": "pest --type-coverage --min=90",
-        "test:unit": "pest --parallel --coverage --min=85",
+        "test:type-coverage": "pest --type-coverage --min=99",
+        "test:unit": "pest --parallel --coverage --min=95",
         "test:types": "phpstan",
         "test:lint": [
             "pint --parallel --test",
             "rector --dry-run"
         ],
         "test:mutate": "pest --mutate --covered-only",
+        "test:mutate:all": "pest --mutate --everything --covered-only --parallel --no-cache --min=100",
         "test": [
             "@test:type-coverage",
             "@test:unit",
@@ -94,6 +95,7 @@
         }
     },
     "scripts-descriptions": {
+        "test:mutate:all": "Mutation testing for the whole app, fails below a 100% score (runs in CI)",
         "test:mutate": "Mutation testing for selected code, e.g. composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php"
     },
     "minimum-stability": "stable",

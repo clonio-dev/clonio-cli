@@ -41,8 +41,8 @@ Individual stages:
 
 | Command                    | What it does                              |
 |----------------------------|-------------------------------------------|
-| `composer test:unit`       | PestPHP with coverage (min 85%)           |
-| `composer test:type-coverage` | Type coverage check (min 90%)          |
+| `composer test:unit`       | PestPHP with coverage (min 95%)           |
+| `composer test:type-coverage` | Type coverage check (min 99%)          |
 | `composer test:types`      | PHPStan static analysis (level max)       |
 | `composer test:lint`       | Pint code style + Rector dry-run          |
 
@@ -71,6 +71,19 @@ Notes:
 - The script runs with `--covered-only`. Pest skips mutants on lines without line coverage. Constant arrays (such as the table lists in `FrameworkTableCatalog`) never report line coverage, so without this flag they count as untested and lower the score.
 - Results are cached between runs. Add `--no-cache` to force a fresh run.
 - A coverage driver (pcov or Xdebug) is required.
+
+### Whole app (CI)
+
+```bash
+composer test:mutate:all
+```
+
+Mutates every file in parallel and fails below a score of 100%. The `mutation` job in `.github/workflows/tests.yml` runs it on every pull request. New code therefore needs tests that kill all its mutants. Mark a mutant that cannot be killed (equivalent, or not observable in tests) on its line, naming only the mutator, with a short reason in a comment above:
+
+```php
+// Outside a PHAR (as in tests) both Phar::running(true|false) return ''.
+$pharPath = $this->pharPath ?? Phar::running(false); // @pest-mutate-ignore: FalseToTrue
+```
 
 ## Linting / auto-fix
 

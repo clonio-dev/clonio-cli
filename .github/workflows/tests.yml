@@ -45,6 +45,28 @@ jobs:
       - name: Tests
         run: composer test
 
+  # Whole-app mutation testing. Separate job so the slower run does not
+  # delay the main checks. Fails below a 100% mutation score.
+  mutation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: 8.5
+          tools: composer:v2
+          coverage: pcov
+
+      - name: Install Dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Mutation tests
+        run: composer test:mutate:all
+
   # Early warning for the next PHP release. Allowed to fail and not a required
   # check, so it never blocks a merge. Runs only the Pest suite: coverage
   # drivers, PHPStan and Rector may not support the pre-release yet.
