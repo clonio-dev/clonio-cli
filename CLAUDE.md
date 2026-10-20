@@ -100,7 +100,7 @@ In tests, isolate filesystem operations with `Storage::fake('local')` (no temp d
 - Feature tests: `tests/Feature/Commands/` — test CLI commands via `$this->artisan()`
 - Unit tests: `tests/Unit/` — test services with Mockery for dependencies
 - Coverage minimum: 95% (unit), 99% (type coverage)
-- Mutation score: 100% (`composer test:mutate:all`; CI workflow `mutation`: changed files on PRs, whole app weekly); mark unkillable mutants with `// @pest-mutate-ignore: <Mutator>`
+- Mutation score: 100% (`composer test:mutate:all`, run locally, not in CI); mark unkillable mutants with `// @pest-mutate-ignore: <Mutator>`
 - All tests extend `Tests\TestCase`
 
 ## Specs and Docs

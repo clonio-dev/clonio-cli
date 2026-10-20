@@ -72,13 +72,13 @@ Notes:
 - Results are cached between runs. Add `--no-cache` to force a fresh run.
 - A coverage driver (pcov or Xdebug) is required.
 
-### Whole app (CI)
+### Whole app
 
 ```bash
 composer test:mutate:all
 ```
 
-Mutates every file in parallel and fails below a score of 100%. The `mutation` workflow (`.github/workflows/mutation.yml`) runs it weekly and on manual dispatch; when that run fails, it opens an issue labelled `mutation` listing the surviving mutants (or comments on the open one). On pull requests it mutates only the `app/` files the PR changes, also with a 100% minimum. New code therefore needs tests that kill all its mutants. Mark a mutant that cannot be killed (equivalent, or not observable in tests) on its line, naming only the mutator, with a short reason in a comment above:
+Mutates every file in parallel and fails below a score of 100%. CI does not run it (a full run takes too long), so run it locally before merging larger changes. New code therefore needs tests that kill all its mutants. Mark a mutant that cannot be killed (equivalent, or not observable in tests) on its line, naming only the mutator, with a short reason in a comment above:
 
 ```php
 // Outside a PHAR (as in tests) both Phar::running(true|false) return ''.
