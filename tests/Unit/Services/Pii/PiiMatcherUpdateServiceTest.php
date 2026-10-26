@@ -126,3 +126,76 @@ it('skips additions whose matcher key is missing from the baseline group', funct
     expect($result[0]->matchers)->toHaveCount(1);
     expect($result[0]->matchers[0]->key)->toBe('a');
 });
+
+it('returns file groups untouched when hasChanges is false even if additions are present', function (): void {
+    $file = [updGroup('g', 'Group', ['a'])];
+    $baseline = [updGroup('g', 'Group', ['a', 'b'])];
+    $diff = new MatchersUpdateDiffData(
+        additions: [new NewMatcherEntryData('g', 'Group', 'b', 'B', false)],
+        orphans: [],
+        hasChanges: false,
+    );
+
+    $result = $this->service->applyDiff($file, $diff, $baseline);
+
+    expect($result)->toBe($file);
+    expect($result[0]->matchers)->toHaveCount(1);
+});
+
+it('keeps processing additions after one with a missing baseline group', function (): void {
+    $file = [updGroup('g', 'Group', ['a'])];
+    $baseline = [updGroup('g', 'Group', ['a', 'b'])];
+    $diff = new MatchersUpdateDiffData(
+        additions: [
+            new NewMatcherEntryData('ghost', 'Ghost', 'm', 'M', true),
+            new NewMatcherEntryData('g', 'Group', 'b', 'B', false),
+        ],
+        orphans: [],
+        hasChanges: true,
+    );
+
+    $result = $this->service->applyDiff($file, $diff, $baseline);
+
+    expect(array_map(fn ($m): string => $m->key, $result[0]->matchers))->toBe(['a', 'b']);
+});
+
+it('keeps processing additions after one with a missing baseline matcher', function (): void {
+    $file = [updGroup('g', 'Group', ['a'])];
+    $baseline = [updGroup('g', 'Group', ['a', 'b'])];
+    $diff = new MatchersUpdateDiffData(
+        additions: [
+            new NewMatcherEntryData('g', 'Group', 'nope', 'Nope', false),
+            new NewMatcherEntryData('g', 'Group', 'b', 'B', false),
+        ],
+        orphans: [],
+        hasChanges: true,
+    );
+
+    $result = $this->service->applyDiff($file, $diff, $baseline);
+
+    expect(array_map(fn ($m): string => $m->key, $result[0]->matchers))->toBe(['a', 'b']);
+});
+
+it('uses the first baseline matcher when a key appears more than once', function (): void {
+    $first = updMatcher('b');
+    $second = new PiiMatcherData(
+        key: 'b',
+        group: 'g',
+        name: 'Duplicate B',
+        enabled: true,
+        patterns: ['b'],
+        transformation: new ColumnCloningConfigData('b', 'keep', null, [], null, null, null, null, null, null),
+        isBaseline: true,
+    );
+    $file = [updGroup('g', 'Group', ['a'])];
+    $baseline = [new PiiMatcherGroupData('g', 'Group', [updMatcher('a'), $first, $second])];
+    $diff = new MatchersUpdateDiffData(
+        additions: [new NewMatcherEntryData('g', 'Group', 'b', 'B', false)],
+        orphans: [],
+        hasChanges: true,
+    );
+
+    $result = $this->service->applyDiff($file, $diff, $baseline);
+
+    expect($result[0]->matchers[1])->toBe($first);
+});

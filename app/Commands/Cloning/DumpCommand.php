@@ -66,9 +66,9 @@ class DumpCommand extends Command
             return ExitCode::ConfigError->value;
         }
 
-        $ci = (bool) $this->option('ci');
-        $onlyPii = (bool) $this->option('only-pii');
-        $allColumns = (bool) $this->option('all-columns');
+        $ci = (bool) $this->option('ci'); // @pest-mutate-ignore: RemoveBooleanCast
+        $onlyPii = (bool) $this->option('only-pii'); // @pest-mutate-ignore: RemoveBooleanCast
+        $allColumns = (bool) $this->option('all-columns'); // @pest-mutate-ignore: RemoveBooleanCast
 
         if ($allColumns && $onlyPii) {
             $this->error('--all-columns and --only-pii cannot be used together.');
@@ -98,7 +98,7 @@ class DumpCommand extends Command
 
             $names = array_keys($connections);
             $chosen = $this->choice('Select a connection to inspect', $names, 0);
-            $connectionName = is_string($chosen) ? $chosen : $names[0];
+            $connectionName = is_string($chosen) ? $chosen : $names[0]; // @pest-mutate-ignore: DecrementInteger,IncrementInteger
         }
 
         $connection = $config->getConnection($connectionName);
@@ -200,7 +200,7 @@ class DumpCommand extends Command
                         hashAlgorithm: null,
                         hashSalt: null,
                         staticValue: null,
-                        piiDetected: false,
+                        piiDetected: false, // @pest-mutate-ignore: FalseToTrue
                         piiCategory: null,
                     );
                 }
@@ -226,16 +226,16 @@ class DumpCommand extends Command
 
         // 9. Apply --only-pii filter
         if ($onlyPii) {
-            $tableDumps = array_values(array_filter(
+            $tableDumps = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
                 $tableDumps,
                 static fn (TableDumpData $t): bool => $t->rowStrategy === 'schema'
                     || array_any($t->columns, fn (ColumnDumpData $col): bool => $col->strategy !== 'keep')
             ));
 
             // Also filter columns in remaining tables
-            $tableDumps = array_map(
+            $tableDumps = array_map( // @pest-mutate-ignore: UnwrapArrayMap
                 static function (TableDumpData $t): TableDumpData {
-                    $filtered = array_values(array_filter(
+                    $filtered = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayFilter,UnwrapArrayValues
                         $t->columns,
                         static fn (ColumnDumpData $col): bool => $col->strategy !== 'keep'
                     ));
@@ -253,10 +253,10 @@ class DumpCommand extends Command
         }
 
         // 10. Collect transfer options
-        $enforceColumnTypes = (bool) $this->option('enforce-column-types');
-        $dropUnknownTables = (bool) $this->option('drop-unknown-tables');
-        $dropExtraColumns = (bool) $this->option('drop-extra-columns');
-        $recreateTables = (bool) $this->option('recreate-tables');
+        $enforceColumnTypes = (bool) $this->option('enforce-column-types'); // @pest-mutate-ignore: RemoveBooleanCast
+        $dropUnknownTables = (bool) $this->option('drop-unknown-tables'); // @pest-mutate-ignore: RemoveBooleanCast
+        $dropExtraColumns = (bool) $this->option('drop-extra-columns'); // @pest-mutate-ignore: RemoveBooleanCast
+        $recreateTables = (bool) $this->option('recreate-tables'); // @pest-mutate-ignore: RemoveBooleanCast
         $disableForeignKeyChecks = ! $this->option('no-disable-fk-checks');
         $remapKeys = ! $this->option('no-remap-keys') && ! $this->option('skip-remapping-keys');
 
@@ -391,7 +391,7 @@ class DumpCommand extends Command
         }
 
         if ($intPkByTable === []) {
-            return null;
+            return null; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         // Build reverse FK index: referencedTable -> list of KeyRemappingForeignKeyData

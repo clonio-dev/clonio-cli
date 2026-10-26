@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\PiiSensitivity;
 use App\Services\Pii\PiiMatcherYamlReader;
+use Symfony\Component\Yaml\Exception\ParseException;
 
 beforeEach(function (): void {
     $this->reader = new PiiMatcherYamlReader;
@@ -257,3 +258,104 @@ YAML;
 
     $this->reader->read($yaml);
 })->throws(RuntimeException::class, 'must have a string "strategy"');
+
+it('wraps YAML parse errors with code 0 and the original exception', function (): void {
+    try {
+        $this->reader->read("groups:\n  - [unbalanced");
+        $this->fail('Expected exception');
+    } catch (RuntimeException $runtimeException) {
+        expect($runtimeException->getCode())->toBe(0);
+        expect($runtimeException->getPrevious())->toBeInstanceOf(ParseException::class);
+    }
+});
+
+it('throws when a group name is an empty string', function (): void {
+    $yaml = <<<'YAML'
+groups:
+  g:
+    name: ""
+    matchers: {}
+YAML;
+
+    $this->reader->read($yaml);
+})->throws(RuntimeException::class, 'Group "g" must have a non-empty "name" field.');
+
+it('throws when a matcher name is an empty string', function (): void {
+    $yaml = <<<'YAML'
+groups:
+  g:
+    name: "Group"
+    matchers:
+      x:
+        name: ""
+YAML;
+
+    $this->reader->read($yaml);
+})->throws(RuntimeException::class, 'Matcher "g.x" must have a non-empty "name" field.');
+
+it('casts numeric group and matcher keys to strings', function (): void {
+    $yaml = <<<'YAML'
+groups:
+  1:
+    name: "Numeric Group"
+    matchers:
+      2:
+        name: "Numeric Matcher"
+YAML;
+
+    $groups = $this->reader->read($yaml);
+
+    expect($groups[0]->key)->toBe('1');
+    expect($groups[0]->matchers[0]->key)->toBe('2');
+    expect($groups[0]->matchers[0]->group)->toBe('1');
+    expect($groups[0]->matchers[0]->transformation->columnName)->toBe('2');
+});
+
+it('casts non-boolean enabled and preserve_format values to booleans', function (): void {
+    $yaml = <<<'YAML'
+groups:
+  g:
+    name: "Group"
+    matchers:
+      on:
+        name: "On"
+        enabled: 1
+        transformation:
+          strategy: mask
+          preserve_format: 1
+      off:
+        name: "Off"
+        enabled: 0
+        transformation:
+          strategy: mask
+          preserve_format: 0
+YAML;
+
+    $matchers = $this->reader->read($yaml)[0]->matchers;
+
+    expect($matchers[0]->enabled)->toBeTrue();
+    expect($matchers[0]->transformation->preserveFormat)->toBeTrue();
+    expect($matchers[1]->enabled)->toBeFalse();
+    expect($matchers[1]->transformation->preserveFormat)->toBeFalse();
+});
+
+it('re-indexes faker arguments given as a mapping into a list', function (): void {
+    $yaml = <<<'YAML'
+groups:
+  g:
+    name: "Group"
+    matchers:
+      x:
+        name: "X"
+        transformation:
+          strategy: fake
+          faker_method: numerify
+          faker_arguments:
+            format: "###"
+            other: 2
+YAML;
+
+    $matcher = $this->reader->read($yaml)[0]->matchers[0];
+
+    expect($matcher->transformation->fakerArguments)->toBe(['###', 2]);
+});

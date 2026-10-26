@@ -24,7 +24,7 @@ class VerifyAuditCommand extends Command
 
     public function handle(): int
     {
-        $filePath = (string) $this->argument('file');
+        $filePath = (string) $this->argument('file'); // @pest-mutate-ignore: RemoveStringCast
 
         // Locate sig file
         $sigOption = $this->option('sig');
@@ -45,8 +45,8 @@ class VerifyAuditCommand extends Command
         }
 
         try {
-            $htmlContent = (string) file_get_contents($filePath);
-            $sigContent = trim((string) file_get_contents($sigPath));
+            $htmlContent = (string) file_get_contents($filePath); // @pest-mutate-ignore: RemoveStringCast
+            $sigContent = trim((string) file_get_contents($sigPath)); // @pest-mutate-ignore: RemoveStringCast
         } catch (Throwable $throwable) {
             $this->error(sprintf('Failed to read files: %s', $throwable->getMessage()));
 

@@ -487,3 +487,59 @@ it('returns null when the SQL Server encrypt_option query throws', function (): 
     expect((new DatabaseConnectionService(inDocker: false))->negotiatedCipher('c1', DatabaseConnectionType::SqlServer))
         ->toBeNull();
 });
+
+// ── exact config shapes ──────────────────────────────────────────────────────
+
+it('builds the exact sqlite config', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))->buildConfig(makeConnection(DatabaseConnectionType::Sqlite), 'secret');
+
+    expect($config)->toBe(['driver' => 'sqlite', 'database' => '/tmp/test.db', 'prefix' => '']);
+});
+
+it('builds the exact network config for mysql', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: false))->buildConfig(makeConnection(DatabaseConnectionType::Mysql), 'plain-pw');
+
+    expect($config)->toBe([
+        'driver' => 'mysql',
+        'host' => '127.0.0.1',
+        'port' => 3306,
+        'database' => 'mydb',
+        'username' => 'root',
+        'password' => 'plain-pw',
+        'prefix' => '',
+        'charset' => 'utf8mb4',
+        'collation' => 'utf8mb4_unicode_ci',
+    ]);
+});
+
+it('rewrites an upper-case loopback host when running in docker', function (): void {
+    $config = (new DatabaseConnectionService(inDocker: true))->buildConfig(makeConnection(DatabaseConnectionType::Mysql, host: 'LOCALHOST'), 'secret');
+
+    expect($config['host'])->toBe('host.docker.internal');
+});
+
+it('returns a clonio_ prefixed connection name from open()', function (): void {
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(Mockery::mock(PDO::class));
+
+    $name = (new DatabaseConnectionService(inDocker: false))->open(makeConnection(DatabaseConnectionType::Mysql));
+
+    expect($name)->toStartWith('clonio_')
+        ->and(config('database.connections.'.$name.'.driver'))->toBe('mysql');
+});
+
+it('builds the hinted exception message as driver error, newline, hint with code 0', function (): void {
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andThrow(new PDOException('[3159] insecure transport are prohibited'));
+    DB::shouldReceive('purge');
+
+    try {
+        (new DatabaseConnectionService(inDocker: false))->open(makeConnection(DatabaseConnectionType::Mysql));
+        $this->fail('Expected exception');
+    } catch (RuntimeException $runtimeException) {
+        expect($runtimeException->getMessage())->toBe(
+            '[3159] insecure transport are prohibited'.PHP_EOL
+            .'The server requires TLS. Run "clonio connection:update test" and set transport security to "require" or "verify".'
+        )->and($runtimeException->getCode())->toBe(0);
+    }
+});

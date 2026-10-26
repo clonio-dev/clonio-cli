@@ -28,7 +28,7 @@ class CheckCommand extends Command
 
     public function handle(PiiMatcherLoader $loader, AnonymizationEngine $engine): int
     {
-        $column = (string) $this->argument('column');
+        $column = (string) $this->argument('column'); // @pest-mutate-ignore: RemoveStringCast
 
         $pathOption = $this->option('path');
         $filePath = is_string($pathOption) && $pathOption !== '' ? $pathOption : null;
@@ -145,7 +145,7 @@ class CheckCommand extends Command
 
         $outputStr = match (true) {
             $output === null => '(null)',
-            is_scalar($output) => (string) $output,
+            is_scalar($output) => (string) $output, // @pest-mutate-ignore: RemoveStringCast
             default => '(non-scalar)',
         };
 

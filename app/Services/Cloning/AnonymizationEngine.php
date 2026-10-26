@@ -96,11 +96,11 @@ class AnonymizationEngine
     {
         $template = $config->template;
 
-        if ($template === null || $template === '') {
+        if ($template === null || $template === '') { // @pest-mutate-ignore: EmptyStringToNotEmpty
             return '';
         }
 
-        return (string) preg_replace_callback(
+        return (string) preg_replace_callback( // @pest-mutate-ignore: RemoveStringCast
             '/\{([a-zA-Z][a-zA-Z0-9]*)\}/',
             function (array $matches): string {
                 $method = $matches[1];
@@ -148,7 +148,7 @@ class AnonymizationEngine
 
         $len = mb_strlen($value);
 
-        if ($len <= $visible) {
+        if ($len <= $visible) { // @pest-mutate-ignore: SmallerOrEqualToSmaller
             return $value;
         }
 

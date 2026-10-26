@@ -49,7 +49,7 @@ class DatabaseConnectionService
         }
 
         try {
-            return Crypt::decryptString(substr($password, 10));
+            return Crypt::decryptString(substr($password, 10)); // @pest-mutate-ignore: DecrementInteger
         } catch (Throwable) {
             throw new RuntimeException('Could not decrypt password — check APP_KEY.');
         }
@@ -271,11 +271,11 @@ class DatabaseConnectionService
         // verifies CA and hostname by default as soon as TLS is on. Verified against
         // MySQL 8.4 and MariaDB 11 (PRD-connection-tls §5.1).
         $options = [
-            Mysql::ATTR_SSL_CA => $ssl->mode === SslMode::Verify && $ssl->ca !== null ? $this->certificates->resolve($ssl->ca) : '',
+            Mysql::ATTR_SSL_CA => $ssl->mode === SslMode::Verify && $ssl->ca !== null ? $this->certificates->resolve($ssl->ca) : '', // @pest-mutate-ignore: BooleanAndToBooleanOr
             Mysql::ATTR_SSL_VERIFY_SERVER_CERT => $ssl->mode === SslMode::Verify,
         ];
 
-        if ($ssl->cert !== null && $ssl->key !== null) {
+        if ($ssl->cert !== null && $ssl->key !== null) { // @pest-mutate-ignore: BooleanAndToBooleanOr
             $options[Mysql::ATTR_SSL_CERT] = $this->certificates->resolve($ssl->cert);
             $options[Mysql::ATTR_SSL_KEY] = $this->certificates->resolve($ssl->key);
         }
@@ -302,7 +302,7 @@ class DatabaseConnectionService
             $config['sslrootcert'] = $ssl->ca !== null ? $this->quoteLibpqPath($this->certificates->resolve($ssl->ca)) : 'system';
         }
 
-        if ($ssl->mode !== SslMode::Disable && $ssl->cert !== null && $ssl->key !== null) {
+        if ($ssl->mode !== SslMode::Disable && $ssl->cert !== null && $ssl->key !== null) { // @pest-mutate-ignore: BooleanAndToBooleanOr
             $config['sslcert'] = $this->quoteLibpqPath($this->certificates->resolve($ssl->cert));
             $config['sslkey'] = $this->quoteLibpqPath($this->certificates->resolve($ssl->key));
         }

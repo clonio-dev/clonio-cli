@@ -66,7 +66,7 @@ class TableEditCommand extends Command
                 $filePath = $files[0];
             } else {
                 $chosen = $this->choice('Select a cloning YAML file', $files, 0);
-                $filePath = is_string($chosen) ? $chosen : $files[0];
+                $filePath = is_string($chosen) ? $chosen : $files[0]; // @pest-mutate-ignore: DecrementInteger,IncrementInteger
             }
         }
 
@@ -116,7 +116,7 @@ class TableEditCommand extends Command
                     $asked = $this->ask('Table name');
                     $tableName = is_string($asked) ? $asked : '';
                 } else {
-                    $tableName = is_string($chosen) ? $chosen : $tableNames[0];
+                    $tableName = is_string($chosen) ? $chosen : $tableNames[0]; // @pest-mutate-ignore: DecrementInteger,IncrementInteger
                 }
             }
         }
@@ -134,8 +134,8 @@ class TableEditCommand extends Command
         $currentStrategy = is_string($existingRowsConfig['strategy'] ?? null) ? $existingRowsConfig['strategy'] : null;
         $currentLimit = is_int($existingRowsConfig['limit'] ?? null) ? $existingRowsConfig['limit'] : null;
         $currentSortBy = is_string($existingRowsConfig['sort_by'] ?? null) ? $existingRowsConfig['sort_by'] : null;
-        $currentClear = $existingRowsConfig['clear'] ?? false;
-        $currentClearKey = $currentClear === false ? 'none' : (is_string($currentClear) ? $currentClear : 'none');
+        $currentClear = $existingRowsConfig['clear'] ?? false; // @pest-mutate-ignore: FalseToTrue
+        $currentClearKey = $currentClear === false ? 'none' : (is_string($currentClear) ? $currentClear : 'none'); // @pest-mutate-ignore: FalseToTrue
 
         if ($currentStrategy !== null) {
             $this->line(sprintf('  Current strategy for <info>%s</info>: <comment>%s</comment>', $tableName, $currentStrategy));
@@ -148,9 +148,9 @@ class TableEditCommand extends Command
 
         if ($strategy === null) {
             $defaultKey = $currentStrategy ?? 'full';
-            $defaultIdx = (int) array_search($defaultKey, array_keys(self::ROW_STRATEGY_LABELS), true);
+            $defaultIdx = (int) array_search($defaultKey, array_keys(self::ROW_STRATEGY_LABELS), true); // @pest-mutate-ignore: RemoveIntegerCast
             $chosen = $this->choice('Select a row strategy', array_values(self::ROW_STRATEGY_LABELS), $defaultIdx);
-            $resolved = is_string($chosen) ? array_search($chosen, self::ROW_STRATEGY_LABELS, true) : false;
+            $resolved = is_string($chosen) ? array_search($chosen, self::ROW_STRATEGY_LABELS, true) : false; // @pest-mutate-ignore: FalseToTrue
             $strategy = is_string($resolved) ? $resolved : 'full';
         }
 
@@ -168,7 +168,7 @@ class TableEditCommand extends Command
             $limitOption = $this->option('rows-limit');
 
             if (is_string($limitOption) && $limitOption !== '') {
-                if (! ctype_digit($limitOption) || (int) $limitOption < 1) {
+                if (! ctype_digit($limitOption) || (int) $limitOption < 1) { // @pest-mutate-ignore: RemoveIntegerCast
                     $this->error(sprintf("--rows-limit must be a positive integer (got '%s').", $limitOption));
 
                     return ExitCode::ValidationError->value;
@@ -176,11 +176,11 @@ class TableEditCommand extends Command
 
                 $limit = (int) $limitOption;
             } else {
-                $defaultLimit = $currentLimit !== null ? (string) $currentLimit : '100';
+                $defaultLimit = $currentLimit !== null ? (string) $currentLimit : '100'; // @pest-mutate-ignore: RemoveStringCast
                 $answer = $this->ask('Row limit', $defaultLimit);
-                $limitStr = is_string($answer) ? trim($answer) : '';
+                $limitStr = is_string($answer) ? trim($answer) : ''; // @pest-mutate-ignore: EmptyStringToNotEmpty
 
-                if (! ctype_digit($limitStr) || (int) $limitStr < 1) {
+                if (! ctype_digit($limitStr) || (int) $limitStr < 1) { // @pest-mutate-ignore: RemoveIntegerCast
                     $this->error('Row limit must be a positive integer.');
 
                     return ExitCode::ValidationError->value;
@@ -204,9 +204,9 @@ class TableEditCommand extends Command
         $clearKey = is_string($clearOption) && $clearOption !== '' ? $clearOption : null;
 
         if ($clearKey === null) {
-            $defaultIdx = (int) array_search($currentClearKey, array_keys(self::CLEAR_MODE_LABELS), true);
+            $defaultIdx = (int) array_search($currentClearKey, array_keys(self::CLEAR_MODE_LABELS), true); // @pest-mutate-ignore: RemoveIntegerCast
             $chosen = $this->choice('Select a clear mode', array_values(self::CLEAR_MODE_LABELS), $defaultIdx);
-            $resolved = is_string($chosen) ? array_search($chosen, self::CLEAR_MODE_LABELS, true) : false;
+            $resolved = is_string($chosen) ? array_search($chosen, self::CLEAR_MODE_LABELS, true) : false; // @pest-mutate-ignore: FalseToTrue
             $clearKey = is_string($resolved) ? $resolved : 'none';
         }
 
@@ -224,7 +224,7 @@ class TableEditCommand extends Command
         ];
 
         if ($limit !== null) {
-            $rows[] = ['Limit', (string) $limit];
+            $rows[] = ['Limit', (string) $limit]; // @pest-mutate-ignore: RemoveStringCast
         }
 
         if ($sortBy !== null) {
@@ -257,7 +257,8 @@ class TableEditCommand extends Command
 
         // Preserve any other rows.* keys we don't manage explicitly.
         foreach ($existingRowsConfig as $key => $value) {
-            if (! array_key_exists($key, $newRows) && ! in_array($key, ['limit', 'sort_by', 'clear'], true)) {
+            // 'clear' is always set above, so array_key_exists() already skips it.
+            if (! array_key_exists($key, $newRows) && ! in_array($key, ['limit', 'sort_by'], true)) {
                 $newRows[$key] = $value;
             }
         }

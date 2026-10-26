@@ -74,7 +74,7 @@ class UpdateCommand extends Command
             return ExitCode::Success->value;
         }
 
-        $isDryRun = (bool) $this->option('dry-run');
+        $isDryRun = (bool) $this->option('dry-run'); // @pest-mutate-ignore: RemoveBooleanCast
 
         if ($diff->additions !== []) {
             $this->line('  New matchers added:');

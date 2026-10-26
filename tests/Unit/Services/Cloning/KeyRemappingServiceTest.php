@@ -384,3 +384,213 @@ it('allocateIntegerIds returns empty mapping for empty source', function (): voi
 
     expect($result)->toBe([]);
 });
+
+it('KeyRemappingExhaustedException builds a descriptive message for signed columns', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint'); // signed ceiling 127
+
+    $existingIds = array_values(array_diff(range(1, 126), [5])); // single gap at 5
+
+    try {
+        $service->allocateIntegerIds('t', $col, ['a', 'b', 'c'], 126, $existingIds);
+        $this->fail('Expected KeyRemappingExhaustedException');
+    } catch (KeyRemappingExhaustedException $e) {
+        expect($e->getMessage())->toBe(
+            "Cannot remap table 't': column 'id' is TINYINT (signed, ceiling 127); 3 rows requested, only 2 slots available (1 above MAX(id), 1 gaps below)."
+        )
+            ->and($e->table)->toBe('t')
+            ->and($e->upperSlots)->toBe(1)
+            ->and($e->gapSlots)->toBe(1);
+    }
+});
+
+it('KeyRemappingExhaustedException reports unsigned columns', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint', true); // ceiling 255
+
+    $sourceIds = array_map(static fn (int $i): string => (string) $i, range(1, 300));
+
+    expect(fn () => $service->allocateIntegerIds('big_table', $col, $sourceIds, 0, []))
+        ->toThrow(
+            KeyRemappingExhaustedException::class,
+            "Cannot remap table 'big_table': column 'id' is TINYINT (unsigned, ceiling 255); 300 rows requested, only 255 slots available (255 above MAX(id), 0 gaps below)."
+        );
+});
+
+it('allocateIntegerIds returns an empty mapping for empty source without resolving the column type', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('varchar'); // unsupported by the bounds resolver
+
+    expect($service->allocateIntegerIds('users', $col, [], 0, []))->toBe([]);
+});
+
+it('allocateIntegerIds starts at 1 when all existing ids are negative', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('int');
+
+    expect($service->allocateIntegerIds('users', $col, ['-5'], -5, [-5]))->toBe([-5 => '1']);
+});
+
+it('allocateIntegerIds uses the very last slot at the type ceiling', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint', true); // ceiling 255
+
+    expect($service->allocateIntegerIds('users', $col, ['9'], 254, range(1, 254)))->toBe([9 => '255']);
+});
+
+it('allocateIntegerIds uses only gaps when MAX(id) already sits at the type ceiling', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint', true); // ceiling 255
+
+    $existingIds = array_values(array_diff(range(1, 255), [7]));
+
+    expect($service->allocateIntegerIds('users', $col, ['9'], 255, $existingIds))->toBe([9 => '7']);
+});
+
+it('allocateIntegerIds fills the gap at id 1', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint', true); // ceiling 255
+
+    expect($service->allocateIntegerIds('users', $col, ['9'], 255, range(2, 255)))->toBe([9 => '1']);
+});
+
+it('allocateIntegerIds succeeds when the gaps exactly cover the remaining rows', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint', true); // ceiling 255
+
+    // upper slots: 255 only; gaps: 3 and 10
+    $existingIds = array_values(array_diff(range(1, 254), [3, 10]));
+
+    $result = $service->allocateIntegerIds('users', $col, ['a', 'b', 'c'], 254, $existingIds);
+
+    expect($result)->toBe(['a' => '255', 'b' => '3', 'c' => '10']);
+});
+
+it('allocateIntegerIds treats MAX(id) itself as a gap candidate when it is not in the existing ids', function (): void {
+    $service = makeKeyRemappingService();
+    $col = makePkCol('tinyint', true); // ceiling 255
+
+    $sourceIds = array_map(static fn (int $i): string => 's'.$i, range(1, 255));
+
+    $result = $service->allocateIntegerIds('users', $col, $sourceIds, 1, []);
+
+    // 254 upper slots (2..255) + gap 1
+    expect($result['s1'])->toBe('2')
+        ->and($result['s254'])->toBe('255')
+        ->and($result['s255'])->toBe('1');
+});
+
+it('generateMappings keeps processing tables after an unconfigured one', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, $store);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows([1, 2]));
+    DB::shouldReceive('purge')->once()->with('krs_conn')->andReturnNull();
+
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
+
+    $counts = $service->generateMappings($config, makeKrsSource(), makeKrsSchema(), ['orders', 'users']);
+
+    expect($counts)->toBe(['users' => 2]);
+});
+
+it('generateTableMapping quotes identifiers with backticks for mysql and mariadb', function (): void {
+    $captured = [];
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, new InMemoryKeyRemappingStore);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->withArgs(function (string $sql) use (&$captured): bool {
+        $captured[] = $sql;
+
+        return true;
+    })->andReturn(krsRows([1], 'uid'));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'uid')]);
+
+    $service->generateMappings($config, makeKrsSource(DatabaseConnectionType::Mysql), makeKrsSchema(), ['users']);
+    $service->generateMappings($config, makeKrsSource(DatabaseConnectionType::PostgreSQL), makeKrsSchema(), ['users']);
+    $service->generateMappings($config, makeKrsSource(DatabaseConnectionType::SqlServer), makeKrsSchema(), ['users']);
+
+    expect($captured)->toBe([
+        'SELECT `uid` FROM `users`',
+        'SELECT "uid" FROM "users"',
+        'SELECT [uid] FROM [users]',
+    ]);
+});
+
+it('generateMappings maps null and fractional primary keys by their string form', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, $store);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows([null, 1.5]));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id')]);
+
+    $service->generateMappings($config, makeKrsSource(), makeKrsSchema(), ['users']);
+
+    expect($store->lookup('users', ''))->toMatch('/^[0-9a-f-]{36}$/')
+        ->and($store->lookup('users', '1.5'))->toMatch('/^[0-9a-f-]{36}$/')
+        ->and($store->lookup('users', 'PEST Mutator was here!'))->toBeNull();
+});
+
+it('generateMappings starts random integers at 1 when no source id is numeric', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('krs_conn');
+    $service = new KeyRemappingService($connector, $store);
+
+    DB::shouldReceive('connection')->with('krs_conn')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn(krsRows(['abc', 'def']));
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $table = new KeyRemappingTableData('users', 'id', KeyRemappingStrategy::RandomInteger, []);
+    $config = new KeyRemappingConfigData([$table]);
+
+    $service->generateMappings($config, makeKrsSource(), makeKrsSchema(), ['users']);
+
+    expect($store->lookup('users', 'abc'))->toBe('1')
+        ->and($store->lookup('users', 'def'))->toBe('2');
+});
+
+it('applyToRow maps null primary and foreign keys through their empty-string mapping', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['' => 'uuid-empty']);
+
+    $service = makeKeyRemappingService($store);
+
+    $fk = new KeyRemappingForeignKeyData(table: 'users', column: 'parent_id', selfReferential: true);
+    $config = new KeyRemappingConfigData([makeKeyRemappingTable('users', 'id', [$fk])]);
+
+    $result = $service->applyToRow(['id' => null, 'parent_id' => null], 'users', $config);
+
+    expect($result)->toBe(['id' => 'uuid-empty', 'parent_id' => 'uuid-empty']);
+});
+
+it('applyToRow continues with later foreign keys after skipping non-matching ones', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['10' => 'uuid-10', '20' => 'uuid-20']);
+
+    $service = makeKeyRemappingService($store);
+
+    $usersTable = makeKeyRemappingTable('users', 'id', [
+        new KeyRemappingForeignKeyData(table: 'invoices', column: 'user_id', selfReferential: false),
+        new KeyRemappingForeignKeyData(table: 'orders', column: 'missing_col', selfReferential: false),
+        new KeyRemappingForeignKeyData(table: 'orders', column: 'user_id', selfReferential: false),
+        new KeyRemappingForeignKeyData(table: 'orders', column: 'approver_id', selfReferential: false),
+    ]);
+    $config = new KeyRemappingConfigData([$usersTable]);
+
+    $result = $service->applyToRow(['id' => 1, 'user_id' => 10, 'approver_id' => 20], 'orders', $config);
+
+    expect($result)->toBe(['id' => 1, 'user_id' => 'uuid-10', 'approver_id' => 'uuid-20']);
+});

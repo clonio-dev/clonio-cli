@@ -153,7 +153,7 @@ class TestCommand extends Command
             $this->line(sprintf('%d of %d connection', $failCount, $total).($total === 1 ? '' : 's').' failed.');
         }
 
-        return $failCount === 0
+        return $failCount === 0 // @pest-mutate-ignore: DecrementInteger
             ? ExitCode::Success->value
             : $worstExitCode->value;
     }
@@ -194,7 +194,7 @@ class TestCommand extends Command
             return [false, 'Working directory not writable: '.($cwd === false ? '(unknown)' : $cwd), $this->elapsedMs($start), ExitCode::IoError];
         }
 
-        return [true, '', $this->elapsedMs($start), ExitCode::Success];
+        return [true, '', $this->elapsedMs($start), ExitCode::Success]; // @pest-mutate-ignore: EmptyStringToNotEmpty
     }
 
     /**
@@ -216,7 +216,7 @@ class TestCommand extends Command
             return [false, 'File not writable: '.$path, $this->elapsedMs($start), ExitCode::ConnectionError];
         }
 
-        return [true, '', $this->elapsedMs($start), ExitCode::Success];
+        return [true, '', $this->elapsedMs($start), ExitCode::Success]; // @pest-mutate-ignore: EmptyStringToNotEmpty
     }
 
     /**
@@ -244,7 +244,7 @@ class TestCommand extends Command
 
         DB::purge($dynamicName);
 
-        return [true, '', $elapsed, ExitCode::Success, $cipher];
+        return [true, '', $elapsed, ExitCode::Success, $cipher]; // @pest-mutate-ignore: EmptyStringToNotEmpty
     }
 
     private function elapsedMs(int $startNs): int

@@ -8,6 +8,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
 use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -445,4 +446,163 @@ it('does not query the negotiated cipher for the overview table in --ci -v mode'
 
     $this->artisan('connection:test', ['--ci' => true, '-v' => true])
         ->assertExitCode(ExitCode::Success->value);
+});
+
+function g4c_sqlite(string $name, string $path): ConnectionData
+{
+    return new ConnectionData(
+        name: $name, type: DatabaseConnectionType::Sqlite, host: null, port: null, database: $path,
+        schema: null, username: null, password: '', isProduction: false,
+    );
+}
+
+/** Runs connection:test via Artisan::call and returns [exit code, plain output]. */
+function g4c_runTest(array $parameters = []): array
+{
+    $exitCode = Artisan::call('connection:test', $parameters);
+
+    return [$exitCode, Artisan::output()];
+}
+
+it('prints the full dump line with unknown dialect and the working directory as target', function (): void {
+    $connection = new ConnectionData(
+        name: 'nodialect', type: DatabaseConnectionType::Dump, host: null, port: null, database: null,
+        schema: null, username: null, password: '', isProduction: false, dialect: null,
+    );
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('nodialect')->andReturn($connection);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test', ['name' => 'nodialect'])
+        ->expectsOutput('Dump connection "nodialect" — dialect: unknown, target: '.getcwd().', encryption: none')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('reports an unknown working directory when the cwd has been removed', function (): void {
+    $dir = sys_get_temp_dir().'/g4c_gone_'.uniqid();
+    mkdir($dir);
+    $originalCwd = getcwd();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging-dump')->andReturn(makeDumpConnection('staging-dump'));
+    $this->app->instance(ConfigService::class, $config);
+
+    chdir($dir);
+    rmdir($dir);
+
+    try {
+        [$exitCode, $output] = g4c_runTest(['name' => 'staging-dump']);
+    } finally {
+        chdir((string) $originalCwd);
+    }
+
+    expect($exitCode)->toBe(ExitCode::IoError->value)
+        ->and($output)->toContain('staging-dump: FAILED — Working directory not writable: (unknown)');
+});
+
+it('names the unwritable working directory in the dump failure', function (): void {
+    $dir = sys_get_temp_dir().'/g4c_ro_'.uniqid();
+    mkdir($dir, 0o555);
+    $originalCwd = getcwd();
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging-dump')->andReturn(makeDumpConnection('staging-dump'));
+    $this->app->instance(ConfigService::class, $config);
+
+    chdir($dir);
+
+    try {
+        $cwd = (string) getcwd();
+        [$exitCode, $output] = g4c_runTest(['name' => 'staging-dump']);
+    } finally {
+        chdir((string) $originalCwd);
+        chmod($dir, 0o755);
+        rmdir($dir);
+    }
+
+    expect($exitCode)->toBe(ExitCode::IoError->value)
+        ->and($output)->toContain('staging-dump: FAILED — Working directory not writable: '.$cwd.PHP_EOL);
+})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses directory permission checks');
+
+it('names the missing SQLite file in the failure', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('bad')->andReturn(g4c_sqlite('bad', '/nonexistent/g4c/db.sqlite'));
+    $this->app->instance(ConfigService::class, $config);
+
+    [$exitCode, $output] = g4c_runTest(['name' => 'bad']);
+
+    expect($exitCode)->toBe(ExitCode::ConnectionError->value)
+        ->and($output)->toContain('bad: FAILED — File not found: /nonexistent/g4c/db.sqlite'.PHP_EOL);
+});
+
+it('names the read-only SQLite file in the failure', function (): void {
+    $path = (string) tempnam(sys_get_temp_dir(), 'g4c_ro_');
+    chmod($path, 0o444);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('ro')->andReturn(g4c_sqlite('ro', $path));
+    $this->app->instance(ConfigService::class, $config);
+
+    try {
+        [$exitCode, $output] = g4c_runTest(['name' => 'ro']);
+    } finally {
+        chmod($path, 0o644);
+        @unlink($path);
+    }
+
+    expect($exitCode)->toBe(ExitCode::ConnectionError->value)
+        ->and($output)->toContain('ro: FAILED — File not writable: '.$path.PHP_EOL);
+})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses file permission checks');
+
+it('renders the overview table with driver, status and timing columns', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn([
+        'good' => g4c_sqlite('good', __FILE__),
+        'bad' => g4c_sqlite('bad', '/nonexistent/g4c/db.sqlite'),
+    ]);
+    $this->app->instance(ConfigService::class, $config);
+
+    [$exitCode, $output] = g4c_runTest();
+
+    expect($exitCode)->toBe(ExitCode::ConnectionError->value)
+        ->and($output)->toMatch('/\|\s*Connection\s*\|\s*Driver\s*\|\s*TLS\s*\|\s*Status\s*\|\s*Time\s*\|/')
+        ->and($output)->toMatch('/\|\s*good\s*\|\s*SQLite\s*\|\s*—\s*\|\s*OK\s*\|\s*\d+ms\s*\|/')
+        ->and($output)->toMatch('/\|\s*bad\s*\|\s*SQLite\s*\|\s*—\s*\|\s*FAILED — File not found: \/nonexistent\/g4c\/db\.sqlite\s*\|\s*-\s*\|/')
+        ->and($output)->toContain(PHP_EOL.'1 of 2 connections failed.'.PHP_EOL);
+});
+
+it('uses the singular for a single successful connection', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['good' => g4c_sqlite('good', __FILE__)]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test')
+        ->expectsOutput('All 1 connection OK.')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('uses the singular for a single failed connection', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['bad' => g4c_sqlite('bad', '/nonexistent/g4c/db.sqlite')]);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test')
+        ->expectsOutput('1 of 1 connection failed.')
+        ->assertExitCode(ExitCode::ConnectionError->value);
+});
+
+it('reports only OK and purges the dynamic connection after a successful network test', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeMysqlConnection('staging'));
+    $this->app->instance(ConfigService::class, $config);
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(new PDO('sqlite::memory:'));
+    DB::shouldReceive('purge')->once()->with(Mockery::pattern('/^clonio_/'));
+
+    [$exitCode, $output] = g4c_runTest(['name' => 'staging']);
+
+    expect($exitCode)->toBe(ExitCode::Success->value)
+        ->and($output)->toContain('staging: OK')
+        ->and($output)->not->toContain('FAILED');
 });

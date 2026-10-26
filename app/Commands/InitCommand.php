@@ -51,7 +51,7 @@ class InitCommand extends Command
             $this->warn('  ⚠  Warning: regenerating the key will make all existing encrypted');
             $this->warn('     passwords in clonio.json unreadable. You will need to re-enter');
             $this->warn('     them via `connection:update`.');
-            $this->line('');
+            $this->line(''); // @pest-mutate-ignore: RemoveMethodCall
 
             if (! $this->confirm('  Regenerate key?', false)) {
                 $this->line('  Cancelled.');
@@ -197,7 +197,7 @@ class InitCommand extends Command
             $this->line('  ℹ  No .gitignore found. Add .env and clonio.json to avoid committing secrets.');
             $this->line('');
 
-            return;
+            return; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $content = Storage::get('.gitignore');

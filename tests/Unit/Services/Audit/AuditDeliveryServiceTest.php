@@ -15,6 +15,7 @@ use App\Services\Audit\StdoutDeliveryAdapter;
 use App\Services\Audit\WebhookDeliveryAdapter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
+use Mockery\MockInterface;
 
 beforeEach(function (): void {
     app(AuditBuffer::class)->clear();
@@ -311,4 +312,186 @@ it('skips delivery when use list is empty', function (): void {
         channelOverride: [],
         templateVars: ['source' => 'prod', 'target' => 'staging', 'timestamp' => '2026-04-01T14-32-00Z'],
     );
+});
+
+/**
+ * Build a delivery service where every adapter is a distinct strict mock.
+ *
+ * @return array{AuditDeliveryService, array<string, MockInterface>}
+ */
+function g7_makeMockedDeliveryService(): array
+{
+    $mocks = [
+        'local' => Mockery::mock(LocalDeliveryAdapter::class),
+        'stdout' => Mockery::mock(StdoutDeliveryAdapter::class),
+        'stderr' => Mockery::mock(StderrDeliveryAdapter::class),
+        's3' => Mockery::mock(S3DeliveryAdapter::class),
+        'email' => Mockery::mock(EmailDeliveryAdapter::class),
+        'ms_teams' => Mockery::mock(WebhookDeliveryAdapter::class),
+        'slack' => Mockery::mock(WebhookDeliveryAdapter::class),
+        'ntfy' => Mockery::mock(NtfyDeliveryAdapter::class),
+    ];
+
+    $service = new AuditDeliveryService(
+        localAdapter: $mocks['local'],
+        stdoutAdapter: $mocks['stdout'],
+        stderrAdapter: $mocks['stderr'],
+        s3Adapter: $mocks['s3'],
+        emailAdapter: $mocks['email'],
+        teamsAdapter: $mocks['ms_teams'],
+        slackAdapter: $mocks['slack'],
+        ntfyAdapter: $mocks['ntfy'],
+    );
+
+    return [$service, $mocks];
+}
+
+/** @return list<array<string, mixed>> */
+function g7_auditLogRecordsWithoutTimestamps(): array
+{
+    return array_map(static function (array $record): array {
+        unset($record['ts']);
+
+        return $record;
+    }, app(AuditBuffer::class)->records());
+}
+
+it('routes each channel type to its own adapter with the exact artefacts, config and file name', function (string $type, bool $deliversProcessLog): void {
+    [$service, $mocks] = g7_makeMockedDeliveryService();
+    $channelConfig = ['type' => $type, 'extra' => 'value'];
+    $vars = ['source' => 'prod', 'target' => 'staging', 'timestamp' => '2026-04-01'];
+
+    foreach ($mocks as $mockType => $mock) {
+        if ($mockType !== $type) {
+            $mock->shouldNotReceive('deliver');
+        }
+    }
+
+    $mocks[$type]->shouldReceive('deliver')->once()->ordered()->with(['audit.html' => '<html/>'], $channelConfig, $vars);
+    if ($deliversProcessLog) {
+        $mocks[$type]->shouldReceive('deliver')->once()->ordered()->with(['prod_staging_2026-04-01_process.jsonl' => '{"e":1}'], $channelConfig, $vars);
+    }
+
+    $service->deliver(
+        auditConfig: ['use' => ['chan'], 'channels' => ['chan' => $channelConfig]],
+        auditArtefacts: ['audit.html' => '<html/>'],
+        processLogContent: '{"e":1}',
+        channelOverride: [],
+        templateVars: $vars,
+    );
+
+    expect(g7_auditLogRecordsWithoutTimestamps())->toBe([]);
+})->with([
+    'local' => ['local', true],
+    'stdout' => ['stdout', false],
+    'stderr' => ['stderr', false],
+    's3' => ['s3', true],
+    'email' => ['email', false],
+    'ms_teams' => ['ms_teams', false],
+    'slack' => ['slack', false],
+    'ntfy' => ['ntfy', false],
+]);
+
+it('names the process log after default template values when none are given', function (): void {
+    [$service, $mocks] = g7_makeMockedDeliveryService();
+    $channelConfig = ['type' => 'stdout', 'delivers_audit' => false, 'delivers_process_log' => true];
+
+    $mocks['stdout']->shouldReceive('deliver')->once()
+        ->with([sprintf('source_target_%s_process.jsonl', date('Y-m-d')) => 'log'], $channelConfig, []);
+
+    $service->deliver(
+        auditConfig: ['use' => ['out'], 'channels' => ['out' => $channelConfig]],
+        auditArtefacts: ['audit.html' => '<html/>'],
+        processLogContent: 'log',
+        channelOverride: [],
+        templateVars: [],
+    );
+});
+
+it('ignores non-string entries in the use list', function (): void {
+    [$service, $mocks] = g7_makeMockedDeliveryService();
+    $mocks['local']->shouldReceive('deliver')->once();
+
+    $service->deliver(
+        auditConfig: ['use' => [7, 'main'], 'channels' => ['main' => ['type' => 'local', 'delivers_process_log' => false]]],
+        auditArtefacts: ['audit.html' => '<html/>'],
+        processLogContent: '',
+        channelOverride: [],
+        templateVars: [],
+    );
+
+    expect(g7_auditLogRecordsWithoutTimestamps())->toBe([]);
+});
+
+it('casts channel override names to strings', function (): void {
+    [$service, $mocks] = g7_makeMockedDeliveryService();
+    $mocks['local']->shouldReceive('deliver')->once();
+
+    $service->deliver(
+        auditConfig: ['channels' => ['5' => ['type' => 'local', 'delivers_process_log' => false]]],
+        auditArtefacts: ['audit.html' => '<html/>'],
+        processLogContent: '',
+        channelOverride: [5],
+        templateVars: [],
+    );
+
+    expect(g7_auditLogRecordsWithoutTimestamps())->toBe([]);
+});
+
+it('logs the exact channel context for missing and unsupported channels', function (): void {
+    [$service] = g7_makeMockedDeliveryService();
+
+    $service->deliver(
+        auditConfig: ['use' => ['ghost', 'bad'], 'channels' => ['bad' => ['type' => 'carrier_pigeon']]],
+        auditArtefacts: [],
+        processLogContent: '',
+        channelOverride: [],
+        templateVars: [],
+    );
+
+    expect(g7_auditLogRecordsWithoutTimestamps())->toBe([
+        ['level' => 'warning', 'event' => 'audit_channel_not_found', 'channel' => 'ghost'],
+        ['level' => 'warning', 'event' => 'audit_channel_unsupported', 'channel' => 'bad', 'type' => 'carrier_pigeon'],
+    ]);
+});
+
+it('does not treat a stack channel itself as an unsupported delivery target', function (): void {
+    [$service, $mocks] = g7_makeMockedDeliveryService();
+    $mocks['stdout']->shouldReceive('deliver')->once();
+
+    $service->deliver(
+        auditConfig: ['use' => ['all'], 'channels' => [
+            'all' => ['type' => 'stack', 'channels' => ['out', 3]],
+            'out' => ['type' => 'stdout'],
+        ]],
+        auditArtefacts: ['audit.html' => '<html/>'],
+        processLogContent: '',
+        channelOverride: [],
+        templateVars: [],
+    );
+
+    expect(g7_auditLogRecordsWithoutTimestamps())->toBe([]);
+});
+
+it('backs off exponentially between attempts and logs the final error', function (): void {
+    Sleep::fake();
+    [$service, $mocks] = g7_makeMockedDeliveryService();
+    $mocks['local']->shouldReceive('deliver')->times(3)->andThrow(new RuntimeException('always down'));
+
+    $service->deliver(
+        auditConfig: ['use' => ['main'], 'channels' => ['main' => ['type' => 'local', 'delivers_process_log' => false]]],
+        auditArtefacts: ['audit.html' => '<html/>'],
+        processLogContent: '',
+        channelOverride: [],
+        templateVars: [],
+    );
+
+    Sleep::assertSequence([
+        Sleep::usleep(500_000),
+        Sleep::usleep(1_000_000),
+    ]);
+
+    expect(g7_auditLogRecordsWithoutTimestamps())->toBe([
+        ['level' => 'error', 'event' => 'audit_delivery_failed', 'error' => 'always down'],
+    ]);
 });

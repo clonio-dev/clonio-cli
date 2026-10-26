@@ -63,6 +63,6 @@ class CertificateFiles
 
         $permissions = fileperms($resolved);
 
-        return $permissions !== false && ($permissions & 0o077) !== 0;
+        return $permissions !== false && ($permissions & 0o077) !== 0; // @pest-mutate-ignore: FalseToTrue
     }
 }

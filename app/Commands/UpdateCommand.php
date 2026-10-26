@@ -35,7 +35,7 @@ class UpdateCommand extends Command
 
         [$currentPath, $filename] = $resolver->resolve();
 
-        $skipSsl = (bool) $this->option('no-verify-ssl');
+        $skipSsl = (bool) $this->option('no-verify-ssl'); // @pest-mutate-ignore: RemoveBooleanCast
 
         if ($skipSsl) {
             $this->warn('SSL verification disabled. Use only when behind a corporate VPN or proxy.');

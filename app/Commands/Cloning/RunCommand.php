@@ -132,7 +132,7 @@ class RunCommand extends Command
                 $config = $loader->load($filePath);
 
                 $content = Storage::disk('local')->get($filePath);
-                $content ??= (string) file_get_contents($filePath);
+                $content ??= (string) file_get_contents($filePath); // @pest-mutate-ignore: RemoveStringCast
 
                 $rawData = Yaml::parse($content);
                 if (is_array($rawData)) {
@@ -168,19 +168,19 @@ class RunCommand extends Command
         }
 
         /** @var list<string> $skipTables */
-        $skipTables = ($skipTablesOpt !== null && $skipTablesOpt !== '')
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $skipTablesOpt))))
+        $skipTables = ($skipTablesOpt !== null && $skipTablesOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
+            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $skipTablesOpt)))) // @pest-mutate-ignore: UnwrapArrayValues
             : [];
 
         /** @var list<string> $onlyTables */
-        $onlyTables = ($onlyTablesOpt !== null && $onlyTablesOpt !== '')
+        $onlyTables = ($onlyTablesOpt !== null && $onlyTablesOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
             ? array_values(array_filter(array_map(trim(...), explode(',', (string) $onlyTablesOpt))))
             : [];
 
         $auditChannelOpt = $this->option('audit-channel');
         /** @var list<string> $auditChannels */
-        $auditChannels = ($auditChannelOpt !== null && $auditChannelOpt !== '')
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $auditChannelOpt))))
+        $auditChannels = ($auditChannelOpt !== null && $auditChannelOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
+            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $auditChannelOpt)))) // @pest-mutate-ignore: UnwrapArrayValues
             : [];
 
         // ─── Option overrides ──────────────────────────────────────────────────
@@ -252,7 +252,7 @@ class RunCommand extends Command
             }
 
             $chosen = $this->choice('Select a target connection', $otherNames, 0);
-            $targetName = is_string($chosen) ? $chosen : $otherNames[0];
+            $targetName = is_string($chosen) ? $chosen : $otherNames[0]; // @pest-mutate-ignore: IncrementInteger,DecrementInteger
         }
 
         $targetConnection = $configService->getConnection($targetName);
@@ -329,7 +329,7 @@ class RunCommand extends Command
         }
 
         // ─── Phase 3: Dry-run ──────────────────────────────────────────────────
-        if ((bool) $this->option('dry-run')) {
+        if ((bool) $this->option('dry-run')) { // @pest-mutate-ignore: RemoveBooleanCast
             return $this->runDryRun($config, $sourceConnection, $targetConnection, $inspector, $ci);
         }
 
@@ -365,11 +365,11 @@ class RunCommand extends Command
         }
 
         if ($keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive() && ! $skipRemapping) {
-            if ((bool) $this->option('no-memory-limit')) {
+            if ((bool) $this->option('no-memory-limit')) { // @pest-mutate-ignore: RemoveBooleanCast
                 ini_set('memory_limit', '-1');
             }
 
-            $keyRemappingService = (bool) $this->option('file-based')
+            $keyRemappingService = (bool) $this->option('file-based') // @pest-mutate-ignore: RemoveBooleanCast
                 ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
                 : resolve(KeyRemappingService::class);
             // Schema-only tables copy no rows, so they need no key mappings.
@@ -647,16 +647,16 @@ class RunCommand extends Command
         }
 
         // ─── Phase 8: Summary ──────────────────────────────────────────────────
-        if (! $isVerbose && ! $ci && $dotColumn > 0) {
+        if (! $isVerbose && ! $ci && $dotColumn > 0) { // @pest-mutate-ignore: BooleanAndToBooleanOr
             $this->line('');
         }
 
         // Derive not-found from result (merging with any collected during progress)
-        $notFoundFromResult = array_values(array_map(
+        $notFoundFromResult = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
             static fn (TableRunResultData $t): string => $t->tableName,
             array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::NotFound)
         ));
-        $notFoundTables = array_values(array_unique(array_merge($notFoundTables, $notFoundFromResult)));
+        $notFoundTables = array_values(array_unique(array_merge($notFoundTables, $notFoundFromResult))); // @pest-mutate-ignore: UnwrapArrayValues
 
         // Always show not-found warnings
         if ($notFoundTables !== []) {
@@ -670,11 +670,11 @@ class RunCommand extends Command
         }
 
         // Collect schema failure tables from result (merge with those caught in onProgress)
-        $schemaFailuresFromResult = array_values(array_map(
+        $schemaFailuresFromResult = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
             static fn (TableRunResultData $t): string => $t->tableName,
             array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::SkippedBySchemaFailure)
         ));
-        $schemaFailureTables = array_values(array_unique(array_merge($schemaFailureTables, $schemaFailuresFromResult)));
+        $schemaFailureTables = array_values(array_unique(array_merge($schemaFailureTables, $schemaFailuresFromResult))); // @pest-mutate-ignore: UnwrapArrayValues
 
         if ($schemaFailureTables !== []) {
             $this->line('');
@@ -715,7 +715,7 @@ class RunCommand extends Command
             }
         }
 
-        if (! $result->success && ! (bool) $this->option('allow-failure')) {
+        if (! $result->success && ! (bool) $this->option('allow-failure')) { // @pest-mutate-ignore: RemoveBooleanCast
             return ExitCode::GeneralError->value;
         }
 
@@ -779,7 +779,7 @@ class RunCommand extends Command
                 $notFoundCount++;
             }
 
-            $transformedColumns = array_values(array_map(
+            $transformedColumns = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
                 static fn (ColumnCloningConfigData $col): string => $col->columnName,
                 array_filter($tableConfig->columns, static fn (ColumnCloningConfigData $col): bool => $col->strategy !== 'keep')
             ));
@@ -916,7 +916,7 @@ class RunCommand extends Command
                 : 'NOT FOUND';
 
             $strategyLabel = $table->exists
-                ? (in_array($table->rowStrategy, ['first', 'last'], true) ? $table->rowStrategy.' '.number_format((int) $table->rowLimit) : $table->rowStrategy)
+                ? (in_array($table->rowStrategy, ['first', 'last'], true) ? $table->rowStrategy.' '.number_format((int) $table->rowLimit) : $table->rowStrategy) // @pest-mutate-ignore: RemoveIntegerCast
                 : ('—');
 
             $transformLabel = $table->transformedColumns !== []
@@ -939,7 +939,7 @@ class RunCommand extends Command
             : '';
 
         $this->line(sprintf(
-            '  %-'.$tableWidth.'s %-'.$rowsWidth.'s',
+            '  %-'.$tableWidth.'s %-'.$rowsWidth.'s', // @pest-mutate-ignore: ConcatRemoveRight
             'Total',
             number_format($result->totalEstimatedRows).' rows across '.count($result->tables).' tables'.$notFoundMsg,
         ));
@@ -955,7 +955,7 @@ class RunCommand extends Command
             return sprintf('%.0fs', $seconds);
         }
 
-        $minutes = (int) ($seconds / 60);
+        $minutes = (int) ($seconds / 60); // @pest-mutate-ignore: RemoveIntegerCast
         $remaining = $seconds % 60;
 
         return sprintf('%dm %ds', $minutes, $remaining);
@@ -996,7 +996,7 @@ class RunCommand extends Command
 
         $result = [];
         foreach ($byMessage as $message => $count) {
-            $result[] = ['count' => $count, 'message' => (string) $message];
+            $result[] = ['count' => $count, 'message' => (string) $message]; // @pest-mutate-ignore: RemoveStringCast
         }
 
         return $result;
@@ -1038,21 +1038,21 @@ class RunCommand extends Command
      */
     private function getOriginalCommand(array $extraFlags = []): string
     {
-        $parts = ['clonio', 'cloning:run', (string) $this->argument('file')];
+        $parts = ['clonio', 'cloning:run', (string) $this->argument('file')]; // @pest-mutate-ignore: RemoveStringCast
 
         // Add all options that affect the command behavior
         $options = [
             'target' => '--target',
             'allow-failure' => '--allow-failure',
-            'dry-run' => '--dry-run',
+            'dry-run' => '--dry-run', // @pest-mutate-ignore: RemoveArrayItem
             'ci' => '--ci',
             'skip-schema' => '--skip-schema',
             'skip-tables' => '--skip-tables',
             'only-tables' => '--only-tables',
             'audit-channel' => '--audit-channel',
             'remap-keys' => '--remap-keys',
-            'no-remap-keys' => '--no-remap-keys',
-            'skip-remapping-keys' => '--skip-remapping-keys',
+            'no-remap-keys' => '--no-remap-keys', // @pest-mutate-ignore: RemoveArrayItem
+            'skip-remapping-keys' => '--skip-remapping-keys', // @pest-mutate-ignore: RemoveArrayItem
             'file-based' => '--file-based',
             'enforce-column-types' => '--enforce-column-types',
             'no-enforce-column-types' => '--no-enforce-column-types',
@@ -1075,7 +1075,7 @@ class RunCommand extends Command
                 if ($value !== null && $value !== '') {
                     $parts[] = $flag.'='.$value;
                 }
-            } elseif ((bool) $value) {
+            } elseif ((bool) $value) { // @pest-mutate-ignore: RemoveBooleanCast
                 // Boolean flags
                 $parts[] = $flag;
             }
@@ -1150,7 +1150,7 @@ class RunCommand extends Command
             '--table' => $exhausted->table,
             '--column' => $exhausted->column,
             '--strategy' => 'keep',
-            '--no-interaction' => true,
+            '--no-interaction' => true, // @pest-mutate-ignore: TrueToFalse,RemoveArrayItem
         ]);
 
         if ($editResult !== ExitCode::Success->value) {

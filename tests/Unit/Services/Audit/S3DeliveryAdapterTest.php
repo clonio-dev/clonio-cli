@@ -103,3 +103,21 @@ it('decrypts an encrypted secret_key before building the S3 disk', function (): 
         [],
     );
 });
+
+it('defaults bucket, credentials and prefix to empty strings when not configured', function (): void {
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('put')->once()->with('audit.html', 'content');
+
+    Storage::shouldReceive('build')->once()->with([
+        'driver' => 's3',
+        'key' => '',
+        'secret' => '',
+        'region' => 'us-east-1',
+        'bucket' => '',
+        'endpoint' => null,
+        'use_path_style_endpoint' => false,
+        'throw' => true,
+    ])->andReturn($disk);
+
+    (new S3DeliveryAdapter)->deliver(['audit.html' => 'content'], [], []);
+});

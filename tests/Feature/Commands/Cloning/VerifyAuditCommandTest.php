@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\ExitCode;
+use Illuminate\Support\Facades\Artisan;
 
 function makeAuditHtml(string $canonicalJson): string
 {
@@ -169,4 +170,148 @@ it('returns GeneralError(1) when audit file has been tampered with', function ()
 
     @unlink($tmpHtml);
     @unlink($tmpSig);
+});
+
+/**
+ * @return array{0: string, 1: string}
+ */
+function g5_writeAuditPair(string $html, string $sig): array
+{
+    $base = sys_get_temp_dir().'/g5_audit_'.bin2hex(random_bytes(6));
+    file_put_contents($base.'.html', $html);
+    file_put_contents($base.'.sig', $sig);
+
+    return [$base.'.html', $base.'.sig'];
+}
+
+function g5_signAudit(string $canonicalJson, string $key): string
+{
+    return hash_hmac('sha256', hash('sha256', $canonicalJson), $key);
+}
+
+function g5_runVerifyAudit(array $parameters): array
+{
+    $exitCode = Artisan::call('cloning:verify-audit', $parameters);
+
+    return [$exitCode, Artisan::output()];
+}
+
+it('prints the exact success report', function (): void {
+    $this->withoutMockingConsoleOutput();
+    $canonicalJson = json_encode(['clonio_version' => '1.0.0', 'success' => true]) ?: '{}';
+    [$html, $sig] = g5_writeAuditPair(makeAuditHtml($canonicalJson), 'sha256:'.g5_signAudit($canonicalJson, (string) config('app.key')));
+
+    [$exitCode, $output] = g5_runVerifyAudit(['file' => $html]);
+
+    expect($exitCode)->toBe(ExitCode::Success->value)
+        ->and($output)->toBe(
+            "\n"
+            ."  ✓  Audit log verified — signature matches\n"
+            .'     File:      '.basename($html)."\n"
+            .'     SHA-256:   '.hash('sha256', $canonicalJson)."\n"
+            ."\n"
+        );
+
+    @unlink($html);
+    @unlink($sig);
+});
+
+it('prints the exact failure report', function (): void {
+    $this->withoutMockingConsoleOutput();
+    $canonicalJson = json_encode(['clonio_version' => '1.0.0', 'success' => true]) ?: '{}';
+    [$html, $sig] = g5_writeAuditPair(makeAuditHtml($canonicalJson), 'sha256:abc123');
+    $recomputed = g5_signAudit($canonicalJson, (string) config('app.key'));
+
+    [$exitCode, $output] = g5_runVerifyAudit(['file' => $html]);
+
+    expect($exitCode)->toBe(ExitCode::GeneralError->value)
+        ->and($output)->toBe(
+            "\n"
+            ."  ✗  Audit log verification FAILED — document may have been tampered with\n"
+            .'     File:      '.basename($html)."\n"
+            ."     Expected:  abc123  (from .sig)\n"
+            .'     Got:       '.$recomputed."  (recomputed)\n"
+            ."\n"
+        );
+
+    @unlink($html);
+    @unlink($sig);
+});
+
+it('stops right after reporting a missing audit file', function (): void {
+    $this->withoutMockingConsoleOutput();
+    [$html, $sig] = g5_writeAuditPair('<html></html>', 'sha256:abc');
+    @unlink($html);
+
+    [$exitCode, $output] = g5_runVerifyAudit(['file' => $html, '--sig' => $sig]);
+
+    expect($exitCode)->toBe(ExitCode::IoError->value)
+        ->and($output)->toBe('Audit file not found: '.$html."\n");
+
+    @unlink($sig);
+});
+
+it('stops right after reporting a missing signature file', function (): void {
+    $this->withoutMockingConsoleOutput();
+    [$html, $sig] = g5_writeAuditPair(makeAuditHtml('{}'), 'sha256:abc');
+    @unlink($sig);
+
+    [$exitCode, $output] = g5_runVerifyAudit(['file' => $html]);
+
+    expect($exitCode)->toBe(ExitCode::IoError->value)
+        ->and($output)->toBe('Signature file not found: '.$sig."\n");
+
+    @unlink($html);
+});
+
+it('falls back to the default sig path when --sig is empty', function (): void {
+    $canonicalJson = json_encode(['success' => true]) ?: '{}';
+    [$html, $sig] = g5_writeAuditPair(makeAuditHtml($canonicalJson), 'sha256:'.g5_signAudit($canonicalJson, (string) config('app.key')));
+
+    $this->artisan('cloning:verify-audit', ['file' => $html, '--sig' => ''])
+        ->expectsOutputToContain('verified')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($html);
+    @unlink($sig);
+});
+
+it('ignores surrounding whitespace in the signature file', function (): void {
+    $canonicalJson = json_encode(['success' => true]) ?: '{}';
+    [$html, $sig] = g5_writeAuditPair(makeAuditHtml($canonicalJson), '  sha256:'.g5_signAudit($canonicalJson, (string) config('app.key'))."\n");
+
+    $this->artisan('cloning:verify-audit', ['file' => $html])
+        ->expectsOutputToContain('verified')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($html);
+    @unlink($sig);
+});
+
+it('uses an empty HMAC key when app.key is not a string', function (): void {
+    config(['app.key' => null]);
+    $canonicalJson = json_encode(['success' => true]) ?: '{}';
+    [$html, $sig] = g5_writeAuditPair(makeAuditHtml($canonicalJson), 'sha256:'.g5_signAudit($canonicalJson, ''));
+
+    $this->artisan('cloning:verify-audit', ['file' => $html])
+        ->expectsOutputToContain('verified')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($html);
+    @unlink($sig);
+});
+
+it('decodes quote entities in the embedded audit data', function (): void {
+    $canonicalJson = json_encode(['source' => "it's \"prod\" & co"]) ?: '{}';
+    $escaped = htmlspecialchars($canonicalJson, ENT_QUOTES | ENT_HTML5);
+    expect($escaped)->toContain('&quot;')->toContain('&apos;');
+    $htmlContent = '<html><body><script type="application/json" id="audit-data">'.$escaped.'</script></body></html>';
+    [$html, $sig] = g5_writeAuditPair($htmlContent, 'sha256:'.g5_signAudit($canonicalJson, (string) config('app.key')));
+
+    $this->artisan('cloning:verify-audit', ['file' => $html])
+        ->expectsOutputToContain('verified')
+        ->assertExitCode(ExitCode::Success->value);
+
+    @unlink($html);
+    @unlink($sig);
 });

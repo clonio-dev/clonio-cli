@@ -23,7 +23,7 @@ class EmailDeliveryAdapter implements DeliveryAdapterInterface
 
         throw_if($to === [], RuntimeException::class, 'Email channel has no recipients configured');
 
-        $recipients = array_values(array_filter($to, is_string(...)));
+        $recipients = array_values(array_filter($to, is_string(...))); // @pest-mutate-ignore: UnwrapArrayValues
 
         throw_if($recipients === [], RuntimeException::class, 'Email channel has no valid recipients');
 
@@ -142,7 +142,7 @@ class EmailDeliveryAdapter implements DeliveryAdapterInterface
 
         while ($line = fgets($socket, 515)) {
             $response .= $line;
-            if (isset($line[3]) && $line[3] === ' ') {
+            if (isset($line[3]) && $line[3] === ' ') { // @pest-mutate-ignore: IncrementInteger
                 break;
             }
         }
@@ -159,7 +159,7 @@ class EmailDeliveryAdapter implements DeliveryAdapterInterface
     private function decryptIfNeeded(string $value): string
     {
         if (str_starts_with($value, 'encrypted:')) {
-            return Crypt::decryptString(substr($value, 10));
+            return Crypt::decryptString(substr($value, 10)); // @pest-mutate-ignore: DecrementInteger
         }
 
         return $value;

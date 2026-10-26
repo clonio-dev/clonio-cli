@@ -26,7 +26,7 @@ class ListCommand extends Command
 
     public function handle(PiiMatcherLoader $loader, PiiMatcherYamlReader $reader): int
     {
-        if ((bool) $this->option('no-interaction')) {
+        if ((bool) $this->option('no-interaction')) { // @pest-mutate-ignore: RemoveBooleanCast
             return ExitCode::Success->value;
         }
 

@@ -234,7 +234,7 @@ class UpdateCommand extends Command
         $tagsRaw2 = $current['tags'] ?? null;
         $currentTags = is_array($tagsRaw2) ? implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $tagsRaw2)) : '';
         $tagsRaw = $this->askString('Tags (comma-separated, optional)', $currentTags);
-        $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : [];
+        $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : []; // @pest-mutate-ignore: EmptyStringToNotEmpty
         $token = $this->updateSecret('Bearer token (optional — press Enter to keep/skip)', $current['token'] ?? '');
 
         $updated = [

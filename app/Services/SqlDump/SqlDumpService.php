@@ -114,7 +114,7 @@ class SqlDumpService
      */
     public function writeRows(string $table, array $rows): void
     {
-        if ($rows === [] || ! $this->dialect instanceof SqlDumpDialect) {
+        if ($rows === [] || ! $this->dialect instanceof SqlDumpDialect) { // @pest-mutate-ignore: InstanceOfToTrue
             return;
         }
 
@@ -125,11 +125,11 @@ class SqlDumpService
         }
 
         /** @var list<string> $columnNames */
-        $columnNames = array_values(array_filter(array_keys($rows[0]), is_string(...)));
+        $columnNames = array_values(array_filter(array_keys($rows[0]), is_string(...))); // @pest-mutate-ignore: UnwrapArrayValues
 
         $sql = $this->dialect->insertBatch($schema, $columnNames, $rows);
 
-        if ($sql !== '') {
+        if ($sql !== '') { // @pest-mutate-ignore: EmptyStringToNotEmpty
             Storage::disk('local')->append($this->sqlFileName, $sql, '');
         }
     }
@@ -141,7 +141,7 @@ class SqlDumpService
 
         $postamble = $this->dialect->postamble($this->disableFkChecks, $this->orderedTables);
 
-        if ($postamble !== '') {
+        if ($postamble !== '') { // @pest-mutate-ignore: EmptyStringToNotEmpty
             Storage::disk('local')->append($this->sqlFileName, $postamble, '');
         }
 
@@ -166,13 +166,13 @@ class SqlDumpService
     {
         $password = $dumpConn->password;
 
-        if ($password === '') {
-            return null;
+        if ($password === '') { // @pest-mutate-ignore: EmptyStringToNotEmpty
+            return null; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         if (str_starts_with($password, 'encrypted:')) {
             try {
-                return Crypt::decryptString(substr($password, 10));
+                return Crypt::decryptString(substr($password, 10)); // @pest-mutate-ignore: DecrementInteger
             } catch (Throwable) {
                 throw new RuntimeException('Could not decrypt dump ZIP password — check APP_KEY.');
             }

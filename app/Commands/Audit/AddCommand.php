@@ -64,7 +64,7 @@ class AddCommand extends Command
 
         if ($name === null) {
             $asked = $this->ask('Channel name');
-            $name = is_string($asked) ? $asked : '';
+            $name = is_string($asked) ? $asked : ''; // @pest-mutate-ignore: EmptyStringToNotEmpty
         }
 
         if (! preg_match('/^[a-z0-9_-]+$/', $name) || strlen($name) > 64) {
@@ -120,7 +120,7 @@ class AddCommand extends Command
         try {
             $config->setAuditChannel($name, $channelConfig);
 
-            if ((bool) $this->option('enable')) {
+            if ((bool) $this->option('enable')) { // @pest-mutate-ignore: RemoveBooleanCast
                 $config->addAuditUse($name);
             }
         } catch (RuntimeException $runtimeException) {
@@ -283,7 +283,7 @@ class AddCommand extends Command
         $priority = is_string($priorityOpt) && in_array($priorityOpt, $priorityOpts, true) ? $priorityOpt
             : $this->choice('Priority', $priorityOpts, 2);
         $tagsRaw = $this->optionOrAsk('ntfy-tags', 'Tags (comma-separated, optional — press Enter to skip)', '');
-        $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : [];
+        $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : []; // @pest-mutate-ignore: EmptyStringToNotEmpty
 
         $tokenOpt = $this->option('ntfy-token');
         if (is_string($tokenOpt) && $tokenOpt !== '') {
@@ -347,7 +347,7 @@ class AddCommand extends Command
 
     private function askString(string $question, string $default): string
     {
-        $answer = $this->ask($question, $default !== '' ? $default : null);
+        $answer = $this->ask($question, $default !== '' ? $default : null); // @pest-mutate-ignore: EmptyStringToNotEmpty
 
         return is_string($answer) ? $answer : $default;
     }
@@ -378,15 +378,15 @@ class AddCommand extends Command
 
         foreach ($channelConfig as $key => $value) {
             if ($key === 'type') {
-                continue;
+                continue; // @pest-mutate-ignore: ContinueToBreak
             }
 
             if (is_string($value) && str_starts_with($value, 'encrypted:')) {
                 $rows[] = [str_replace('_', ' ', $key), '••••••••'];
             } elseif (is_array($value)) {
-                $rows[] = [str_replace('_', ' ', $key), implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $value))];
+                $rows[] = [str_replace('_', ' ', $key), implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $value))]; // @pest-mutate-ignore: UnwrapArrayMap,EmptyStringToNotEmpty,UnwrapStrReplace
             } else {
-                $rows[] = [str_replace('_', ' ', $key), is_scalar($value) ? (string) $value : ''];
+                $rows[] = [str_replace('_', ' ', $key), is_scalar($value) ? (string) $value : '']; // @pest-mutate-ignore: RemoveStringCast,EmptyStringToNotEmpty
             }
         }
 

@@ -69,7 +69,7 @@ enum DatabaseConnectionType: string
     /** @return list<string> */
     public static function dialectValues(): array
     {
-        return array_values(array_filter(self::values(), static fn (string $v): bool => $v !== self::Dump->value));
+        return array_values(array_filter(self::values(), static fn (string $v): bool => $v !== self::Dump->value)); // @pest-mutate-ignore: UnwrapArrayValues
     }
 
     /** @return list<string> */

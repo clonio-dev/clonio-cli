@@ -58,7 +58,7 @@ class DeleteCommand extends Command
         }
 
         if ($connection->port !== null) {
-            $rows[] = ['Port', (string) $connection->port];
+            $rows[] = ['Port', (string) $connection->port]; // @pest-mutate-ignore: RemoveStringCast
         }
 
         if ($connection->database !== null) {

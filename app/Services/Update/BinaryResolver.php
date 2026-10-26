@@ -31,7 +31,8 @@ class BinaryResolver
             return [$this->binaryPath, $this->detectBinaryFilename()];
         }
 
-        $pharPath = $this->pharPath ?? Phar::running(false);
+        // Outside a PHAR (as in tests) both Phar::running(true|false) return ''.
+        $pharPath = $this->pharPath ?? Phar::running(false); // @pest-mutate-ignore: FalseToTrue
 
         throw_if($pharPath === '', RuntimeException::class, 'Cannot determine the current binary path.');
 

@@ -103,3 +103,88 @@ it('includes not-found tables at the end of sorted list', function (): void {
     $sorted = $resolver->sort($schema, ['ghost_table', 'another_ghost']);
     expect($sorted)->toBe(['ghost_table', 'another_ghost']);
 });
+
+it('keeps resolving dependencies after a table missing from the schema', function (): void {
+    $resolver = new DependencyResolver;
+
+    $sorted = $resolver->sort(makeSchemaForSort(), ['ghost', 'orders', 'users']);
+
+    expect($sorted)->toBe(['ghost', 'users', 'orders']);
+});
+
+it('ignores foreign keys to tables outside the processed set', function (): void {
+    $resolver = new DependencyResolver;
+
+    // orders references users, but users is not part of the set
+    $sorted = $resolver->sort(makeSchemaForSort(), ['orders', 'ghost']);
+
+    expect($sorted)->toBe(['orders', 'ghost']);
+});
+
+it('ignores self-referencing foreign keys when sorting', function (): void {
+    $resolver = new DependencyResolver;
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(name: 'categories', columns: [], foreignKeys: [
+                new ForeignKeyData(columnName: 'parent_id', referencedTable: 'categories', referencedColumn: 'id'),
+            ]),
+            new TableSchemaData(name: 'tags', columns: [], foreignKeys: []),
+        ],
+    );
+
+    expect($resolver->sort($schema, ['categories', 'tags']))->toBe(['categories', 'tags']);
+});
+
+it('appends tables caught in a dependency cycle at the end', function (): void {
+    $resolver = new DependencyResolver;
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(name: 'a', columns: [], foreignKeys: [
+                new ForeignKeyData(columnName: 'b_id', referencedTable: 'b', referencedColumn: 'id'),
+            ]),
+            new TableSchemaData(name: 'b', columns: [], foreignKeys: [
+                new ForeignKeyData(columnName: 'a_id', referencedTable: 'a', referencedColumn: 'id'),
+            ]),
+            new TableSchemaData(name: 'c', columns: [], foreignKeys: []),
+        ],
+    );
+
+    expect($resolver->sort($schema, ['a', 'b', 'c']))->toBe(['c', 'a', 'b']);
+});
+
+it('keeps checking cascade tables after one missing from the schema', function (): void {
+    $resolver = new DependencyResolver;
+
+    $cascade = $resolver->computeCascadeExclusions(makeSchemaForSort(), ['users'], ['ghost', 'orders']);
+
+    expect($cascade)->toBe(['orders']);
+});
+
+it('computes transitive cascades regardless of table order', function (): void {
+    $resolver = new DependencyResolver;
+
+    $cascade = $resolver->computeCascadeExclusions(makeSchemaForSort(), ['users'], ['order_items', 'orders', 'users']);
+
+    expect($cascade)->toBe(['orders', 'order_items']);
+});
+
+it('adds a cascaded table only once when several of its foreign keys hit excluded tables', function (): void {
+    $resolver = new DependencyResolver;
+    $schema = new DatabaseSchemaData(
+        databaseName: 'testdb',
+        tables: [
+            new TableSchemaData(name: 'users', columns: [], foreignKeys: []),
+            new TableSchemaData(name: 'products', columns: [], foreignKeys: []),
+            new TableSchemaData(name: 'reviews', columns: [], foreignKeys: [
+                new ForeignKeyData(columnName: 'user_id', referencedTable: 'users', referencedColumn: 'id'),
+                new ForeignKeyData(columnName: 'product_id', referencedTable: 'products', referencedColumn: 'id'),
+            ]),
+        ],
+    );
+
+    $cascade = $resolver->computeCascadeExclusions($schema, ['users', 'products'], ['users', 'products', 'reviews']);
+
+    expect($cascade)->toBe(['reviews']);
+});

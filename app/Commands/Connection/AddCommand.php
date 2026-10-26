@@ -53,7 +53,7 @@ class AddCommand extends Command
 
         if ($name === null) {
             $asked = $this->ask('Connection name');
-            $name = is_string($asked) ? $asked : '';
+            $name = is_string($asked) ? $asked : ''; // @pest-mutate-ignore: EmptyStringToNotEmpty
         }
 
         if (! preg_match('/^[a-z0-9_-]+$/', $name)) {
@@ -127,14 +127,14 @@ class AddCommand extends Command
             $portValue = is_string($portOption) && $portOption !== '' ? $portOption : null;
 
             if ($portValue === null) {
-                $defaultPort = (string) ($type->defaultPort() ?? '');
+                $defaultPort = (string) ($type->defaultPort() ?? ''); // @pest-mutate-ignore: RemoveStringCast,EmptyStringToNotEmpty
                 $asked = $this->ask('Port', $defaultPort);
                 $portValue = is_string($asked) ? $asked : $defaultPort;
             }
 
             $portInt = filter_var($portValue, FILTER_VALIDATE_INT);
 
-            if ($portInt === false || $portInt < 1 || $portInt > 65535) {
+            if ($portInt === false || $portInt < 1 || $portInt > 65535) { // @pest-mutate-ignore: FalseToTrue
                 $this->error('Invalid port. Must be a number between 1 and 65535.');
 
                 return ExitCode::ValidationError->value;
@@ -241,7 +241,7 @@ class AddCommand extends Command
                 return ExitCode::ValidationError->value;
             }
         } else {
-            if ($sslModeValue === null && $type === DatabaseConnectionType::SqlServer && (bool) $this->option('trust-server-certificate')) {
+            if ($sslModeValue === null && $type === DatabaseConnectionType::SqlServer && (bool) $this->option('trust-server-certificate')) { // @pest-mutate-ignore: RemoveBooleanCast
                 $sslModeValue = SslMode::Require->value;
             }
 
@@ -284,7 +284,7 @@ class AddCommand extends Command
         }
 
         // --- Step 10: Production flag ---
-        $isProduction = (bool) $this->option('production');
+        $isProduction = (bool) $this->option('production'); // @pest-mutate-ignore: RemoveBooleanCast
 
         if (! $isProduction && $this->input->isInteractive()) {
             $isProduction = $this->confirm('Is this a production connection?', false);
@@ -306,7 +306,7 @@ class AddCommand extends Command
         }
 
         if ($port !== null) {
-            $summaryRows[] = ['Port', (string) $port];
+            $summaryRows[] = ['Port', (string) $port]; // @pest-mutate-ignore: RemoveStringCast
         }
 
         if ($dialect instanceof DatabaseConnectionType) {

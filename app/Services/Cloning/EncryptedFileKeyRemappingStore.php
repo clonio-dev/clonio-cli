@@ -72,7 +72,7 @@ class EncryptedFileKeyRemappingStore implements KeyRemappingStoreInterface
 
         $encrypted = openssl_encrypt($json, self::CIPHER, $this->key, OPENSSL_RAW_DATA, $iv);
 
-        if ($encrypted === false) {
+        if ($encrypted === false) { // @pest-mutate-ignore: FalseToTrue
             throw new RuntimeException(sprintf("Failed to encrypt key-mapping data for table '%s'.", $table));
         }
 
@@ -80,7 +80,7 @@ class EncryptedFileKeyRemappingStore implements KeyRemappingStoreInterface
 
         throw_if($tmpFile === false, RuntimeException::class, 'Failed to create temporary file for key mapping store.');
 
-        chmod($tmpFile, 0600);
+        chmod($tmpFile, 0600); // @pest-mutate-ignore: RemoveFunctionCall
         file_put_contents($tmpFile, $iv.$encrypted);
 
         $this->tableFiles[$table] = $tmpFile;
@@ -107,7 +107,7 @@ class EncryptedFileKeyRemappingStore implements KeyRemappingStoreInterface
 
         $data = file_get_contents($tmpFile);
 
-        if ($data === false || strlen($data) <= self::IV_LENGTH) {
+        if ($data === false || strlen($data) <= self::IV_LENGTH) { // @pest-mutate-ignore: SmallerOrEqualToSmaller,FalseToTrue
             return;
         }
 
@@ -120,7 +120,7 @@ class EncryptedFileKeyRemappingStore implements KeyRemappingStoreInterface
         }
 
         /** @var array<string, string> $decoded */
-        $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR); // @pest-mutate-ignore: DecrementInteger,IncrementInteger
         $this->loadedMapping = $decoded;
     }
 

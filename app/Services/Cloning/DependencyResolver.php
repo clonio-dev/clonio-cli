@@ -80,7 +80,7 @@ class DependencyResolver
         }
 
         // Handle tables not reached (cycles or not in schema) — append them at the end
-        $remaining = array_values(array_filter(
+        $remaining = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
             $tables,
             static fn (string $t): bool => ! in_array($t, $sorted, true)
         ));
@@ -120,7 +120,7 @@ class DependencyResolver
 
                 foreach ($tableSchema->foreignKeys as $fk) {
                     if (isset($excluded[$fk->referencedTable])) {
-                        $excluded[$table] = true;
+                        $excluded[$table] = true; // @pest-mutate-ignore: TrueToFalse
                         $cascadeSet[] = $table;
                         $changed = true;
                         break;

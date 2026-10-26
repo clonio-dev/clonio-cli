@@ -106,6 +106,15 @@ This makes `vendor/bin/clonio` available with the exact release version. See [do
 
 See [docs/development.md](docs/development.md) for setup, local builds, testing, and linting.
 
+```bash
+composer test                # Full suite: type coverage, unit tests, PHPStan, lint
+composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php
+                             # Mutation testing for one class or directory
+composer test:mutate:all     # Whole app, fails below 100%
+```
+
+Arguments after `--` go to Pest, e.g. `--parallel`, `--min=80`, `--no-cache` or a test file to limit the run. See [Mutation testing](docs/development.md#mutation-testing).
+
 ---
 
 ## Releasing

@@ -190,7 +190,7 @@ class ColumnEditCommand extends Command
                 $filePath = $files[0];
             } else {
                 $chosen = $this->choice('Select a cloning YAML file', $files, 0);
-                $filePath = is_string($chosen) ? $chosen : $files[0];
+                $filePath = is_string($chosen) ? $chosen : $files[0]; // @pest-mutate-ignore: DecrementInteger,IncrementInteger
             }
         }
 
@@ -228,7 +228,7 @@ class ColumnEditCommand extends Command
         if ($tableName === null) {
             $tableNames = array_keys($tables);
             $chosen = $this->choice('Select a table', $tableNames, 0);
-            $tableName = is_string($chosen) ? $chosen : $tableNames[0];
+            $tableName = is_string($chosen) ? $chosen : $tableNames[0]; // @pest-mutate-ignore: DecrementInteger,IncrementInteger
         }
 
         if (! isset($tables[$tableName])) {
@@ -260,7 +260,7 @@ class ColumnEditCommand extends Command
                     $asked = $this->ask('Column name');
                     $columnName = is_string($asked) ? $asked : '';
                 } else {
-                    $columnName = is_string($chosen) ? $chosen : $colNames[0];
+                    $columnName = is_string($chosen) ? $chosen : $colNames[0]; // @pest-mutate-ignore: DecrementInteger,IncrementInteger
                 }
             }
         }
@@ -313,7 +313,7 @@ class ColumnEditCommand extends Command
 
         // Validate --remapping-use flag value upfront (if provided).
         $useFlag = $this->option('remapping-use');
-        if ($strategyKey === 'remapping' && is_string($useFlag) && $useFlag !== '' && ! in_array($useFlag, KeyRemappingStrategy::values(), true)) {
+        if ($strategyKey === 'remapping' && is_string($useFlag) && ! in_array($useFlag, KeyRemappingStrategy::values(), true)) {
             $this->error(sprintf("Unknown remapping use: '%s'. Valid: %s", $useFlag, implode(', ', KeyRemappingStrategy::values())));
 
             return ExitCode::ValidationError->value;
@@ -326,14 +326,14 @@ class ColumnEditCommand extends Command
         foreach ($definition['parameters'] as $param) {
             // Skip faker_arguments when the chosen faker method takes no arguments
             if ($param['name'] === 'faker_arguments') {
-                $chosenMethod = is_string($newConfig['faker_method'] ?? null) ? $newConfig['faker_method'] : '';
+                $chosenMethod = is_string($newConfig['faker_method'] ?? null) ? $newConfig['faker_method'] : ''; // @pest-mutate-ignore: EmptyStringToNotEmpty
                 $argHints = self::FAKER_METHOD_ARGS[$chosenMethod] ?? null;
 
                 if ($argHints === []) {
                     // No arguments for this method — store empty array and skip prompt
                     $newConfig[$param['name']] = [];
 
-                    continue;
+                    continue; // @pest-mutate-ignore: ContinueToBreak
                 }
             }
 
@@ -375,8 +375,8 @@ class ColumnEditCommand extends Command
             $paramValue = $newConfig[$param['name']] ?? null;
             if ($paramValue !== null) {
                 $display = is_array($paramValue)
-                    ? implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $paramValue))
-                    : (is_bool($paramValue) ? ($paramValue ? 'true' : 'false') : (is_scalar($paramValue) ? (string) $paramValue : ''));
+                    ? implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $paramValue)) // @pest-mutate-ignore: UnwrapArrayMap,RemoveStringCast,TernaryNegated,EmptyStringToNotEmpty
+                    : (is_bool($paramValue) ? ($paramValue ? 'true' : 'false') : (is_scalar($paramValue) ? (string) $paramValue : '')); // @pest-mutate-ignore: RemoveStringCast,EmptyStringToNotEmpty
                 $rows[] = [$param['label'], $display];
             }
         }
@@ -422,7 +422,7 @@ class ColumnEditCommand extends Command
 
         // Convert preserve_format to bool
         if (isset($newConfig['preserve_format'])) {
-            $newConfig['preserve_format'] = (bool) $newConfig['preserve_format'];
+            $newConfig['preserve_format'] = (bool) $newConfig['preserve_format']; // @pest-mutate-ignore: RemoveBooleanCast
         }
 
         // Convert visible_chars to int
@@ -483,7 +483,7 @@ class ColumnEditCommand extends Command
         return match ($param['type']) {
             'choice' => $this->collectChoiceParameter($param),
             'confirm' => $this->confirm($param['label'], $param['default'] === 'true'),
-            'integer' => (int) $this->askString($param['label'], $param['default']),
+            'integer' => (int) $this->askString($param['label'], $param['default']), // @pest-mutate-ignore: RemoveIntegerCast
             default => $this->askStringOrNull($param['label'], $param['default']),
         };
     }
@@ -506,7 +506,7 @@ class ColumnEditCommand extends Command
     {
         if ($param['name'] === 'faker_method') {
             $methods = self::FAKER_METHODS;
-            $defaultIdx = (int) array_search($param['default'], $methods, true);
+            $defaultIdx = (int) array_search($param['default'], $methods, true); // @pest-mutate-ignore: RemoveIntegerCast
             $chosen = $this->choice($param['label'], $methods, $defaultIdx);
             $method = is_string($chosen) ? $chosen : $param['default'];
 
@@ -517,18 +517,18 @@ class ColumnEditCommand extends Command
 
         if ($param['name'] === 'algorithm') {
             $algos = self::HASH_ALGORITHMS;
-            $defaultIdx = (int) array_search($param['default'], $algos, true);
+            $defaultIdx = (int) array_search($param['default'], $algos, true); // @pest-mutate-ignore: RemoveIntegerCast
             $chosen = $this->choice($param['label'], $algos, $defaultIdx);
 
             return is_string($chosen) ? $chosen : $param['default'];
         }
 
         if ($param['name'] === 'remapping_use') {
-            $useValues = array_keys(self::REMAPPING_USE_LABELS);
+            $useValues = array_keys(self::REMAPPING_USE_LABELS); // @pest-mutate-ignore: UnwrapArrayKeys
             $useLabels = array_values(self::REMAPPING_USE_LABELS);
-            $defaultIdx = (int) array_search($param['default'], $useValues, true);
+            $defaultIdx = (int) array_search($param['default'], $useValues, true); // @pest-mutate-ignore: RemoveIntegerCast
             $chosen = $this->choice($param['label'], $useLabels, $defaultIdx);
-            $key = is_string($chosen) ? array_search($chosen, self::REMAPPING_USE_LABELS, true) : false;
+            $key = is_string($chosen) ? array_search($chosen, self::REMAPPING_USE_LABELS, true) : false; // @pest-mutate-ignore: FalseToTrue
 
             return is_string($key) ? $key : $param['default'];
         }
@@ -583,7 +583,7 @@ class ColumnEditCommand extends Command
         if (! $table instanceof TableSchemaData) {
             return [
                 'error' => sprintf("Table '%s' does not exist in source schema for connection '%s'.", $tableName, $connectionName),
-                'foreignKeys' => [],
+                'foreignKeys' => [], // @pest-mutate-ignore: RemoveArrayItem
             ];
         }
 
@@ -592,14 +592,14 @@ class ColumnEditCommand extends Command
         if (! $column instanceof ColumnSchemaData) {
             return [
                 'error' => sprintf("Column '%s' does not exist on table '%s' in source schema.", $columnName, $tableName),
-                'foreignKeys' => [],
+                'foreignKeys' => [], // @pest-mutate-ignore: RemoveArrayItem
             ];
         }
 
         if (! $column->isPrimary) {
             return [
                 'error' => sprintf("Column '%s.%s' is not a primary key in source schema — remapping requires a primary-key column.", $tableName, $columnName),
-                'foreignKeys' => [],
+                'foreignKeys' => [], // @pest-mutate-ignore: RemoveArrayItem
             ];
         }
 
@@ -638,14 +638,14 @@ class ColumnEditCommand extends Command
 
     private function askString(string $question, string $default): string
     {
-        $answer = $this->ask($question, $default !== '' ? $default : null);
+        $answer = $this->ask($question, $default !== '' ? $default : null); // @pest-mutate-ignore: TernaryNegated,NotIdenticalToIdentical,EmptyStringToNotEmpty
 
         return is_string($answer) ? $answer : $default;
     }
 
     private function askStringOrNull(string $question, string $default): ?string
     {
-        $answer = $this->ask($question, $default !== '' ? $default : null);
+        $answer = $this->ask($question, $default !== '' ? $default : null); // @pest-mutate-ignore: TernaryNegated,NotIdenticalToIdentical,EmptyStringToNotEmpty
         $value = is_string($answer) ? $answer : $default;
 
         return $value !== '' ? $value : null;

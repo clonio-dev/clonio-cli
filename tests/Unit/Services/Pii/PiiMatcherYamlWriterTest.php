@@ -119,3 +119,45 @@ it('falls back to empty strings for missing static value and template', function
     expect($content)->toContain("value: ''");
     expect($content)->toContain("template: ''");
 });
+
+it('writes the exact YAML document for a matcher', function (): void {
+    $matcher = new PiiMatcherData(
+        key: 'col',
+        group: 'g',
+        name: 'Col',
+        enabled: false,
+        patterns: ['col'],
+        transformation: keepTransformation('fake', ['fakerMethod' => 'numerify', 'fakerArguments' => ['###']]),
+        isBaseline: false,
+        sensitivity: PiiSensitivity::High,
+    );
+
+    $this->writer->write([new PiiMatcherGroupData('g', 'Group', [$matcher])], 'out.yaml');
+
+    expect(Storage::disk('local')->get('out.yaml'))->toBe(<<<'YAML'
+# yaml-language-server: $schema=https://schema.clonio.dev/pii-matchers/v1.json
+version: '1'
+groups:
+  g:
+    name: Group
+    matchers:
+      col:
+        name: Col
+        sensitivity: high
+        enabled: false
+        patterns: [col]
+        transformation: { strategy: fake, faker_method: numerify, faker_arguments: ['###'] }
+
+YAML);
+});
+
+it('writes an empty groups mapping when there are no groups', function (): void {
+    $this->writer->write([], 'out.yaml');
+
+    expect(Storage::disk('local')->get('out.yaml'))->toBe(<<<'YAML'
+# yaml-language-server: $schema=https://schema.clonio.dev/pii-matchers/v1.json
+version: '1'
+groups: {}
+
+YAML);
+});

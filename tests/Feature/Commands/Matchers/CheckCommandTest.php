@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Cloning\ColumnCloningConfigData;
 use App\Enums\ExitCode;
+use App\Services\Cloning\AnonymizationEngine;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
 
 it('returns match info for email column', function (): void {
@@ -291,4 +294,376 @@ it('reports a load error for an invalid matchers file', function (): void {
     $this->artisan('matchers:check', ['column' => 'email'])
         ->expectsOutputToContain('Error loading matchers')
         ->assertExitCode(ExitCode::Success->value);
+});
+
+function g8_writeCheckFixture(string $path = 'clonio.pii-matchers.yaml'): void
+{
+    Storage::disk('local')->put($path, <<<'YAML'
+version: "1"
+groups:
+  custom:
+    name: "Custom"
+    matchers:
+      hs_md5:
+        name: "Hash Md5"
+        sensitivity: critical
+        patterns: ["zzz", "aaa", "hs_col"]
+        transformation:
+          strategy: hash
+          algorithm: md5
+          salt: "pepper"
+      hs_plain:
+        name: "Hash Plain"
+        sensitivity: low
+        patterns: ["/^hs_plain$/i"]
+        transformation:
+          strategy: hash
+      fk_args:
+        name: "Fake Args"
+        sensitivity: high
+        patterns: ["fk_*"]
+        transformation:
+          strategy: fake
+          faker_method: numerify
+          faker_arguments: ["###"]
+      fk_none:
+        name: "Fake None"
+        patterns: ["/^fakenone$/"]
+        transformation:
+          strategy: fake
+      mk_full:
+        name: "Mask Full"
+        patterns: ["/^mk_full$/"]
+        transformation:
+          strategy: mask
+          visible_chars: 2
+          mask_char: "#"
+          preserve_format: true
+      mk_plain:
+        name: "Mask Plain"
+        patterns: ["/^mk_plain$/"]
+        transformation:
+          strategy: mask
+      st_full:
+        name: "Static Full"
+        patterns: ["/^st_full$/"]
+        transformation:
+          strategy: static
+          value: "FIXED"
+      st_plain:
+        name: "Static Plain"
+        patterns: ["/^st_plain$/"]
+        transformation:
+          strategy: static
+      tp_full:
+        name: "Template Full"
+        patterns: ["/^tp_full$/"]
+        transformation:
+          strategy: template
+          template: "{a}"
+      tp_plain:
+        name: "Template Plain"
+        patterns: ["/^tp_plain$/"]
+        transformation:
+          strategy: template
+      dis:
+        name: "Disabled One"
+        enabled: false
+        sensitivity: critical
+        patterns: ["dis_col"]
+        transformation:
+          strategy: keep
+YAML);
+}
+
+/**
+ * @param  array<string, mixed>  $params
+ * @return array{0: int, 1: string}
+ */
+function g8_check(array $params): array
+{
+    $exitCode = Artisan::call('matchers:check', $params);
+
+    return [$exitCode, Artisan::output()];
+}
+
+/**
+ * @param  list<string>  $lines
+ */
+function g8_lines(array $lines): string
+{
+    return implode("\n", $lines)."\n";
+}
+
+function g8_mockEngine(string $expectedInput, mixed $returns): void
+{
+    $engine = Mockery::mock(AnonymizationEngine::class);
+    $engine->shouldReceive('transform')
+        ->once()
+        ->with($expectedInput, Mockery::type(ColumnCloningConfigData::class))
+        ->andReturn($returns);
+    app()->instance(AnonymizationEngine::class, $engine);
+}
+
+it('renders the exact output for a literal hash matcher with a user value', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+    g8_mockEngine('abc', 'HASHED');
+
+    [$exitCode, $output] = g8_check(['column' => 'hs_col', 'value' => 'abc']);
+
+    expect($exitCode)->toBe(ExitCode::Success->value);
+    expect($output)->toBe(g8_lines([
+        '',
+        '  Column "hs_col" matched:',
+        '',
+        '    Matcher:        hs_md5',
+        '    Group:          custom',
+        '    PII category:   "Hash Md5"',
+        '    Sensitivity:    critical',
+        '    Source:         clonio.pii-matchers.yaml',
+        '    Matched by:     hs_col  (literal)',
+        '',
+        '    Transformation:',
+        '      strategy:       hash',
+        '      algorithm:      md5',
+        '      salt:           "pepper"',
+        '',
+        '    Example:',
+        '      Input:   abc',
+        '      Output:  HASHED',
+        '',
+    ]));
+});
+
+it('renders hash defaults and regex pattern type without a value', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [, $output] = g8_check(['column' => 'hs_plain']);
+
+    expect($output)->toBe(g8_lines([
+        '',
+        '  Column "hs_plain" matched:',
+        '',
+        '    Matcher:        hs_plain',
+        '    Group:          custom',
+        '    PII category:   "Hash Plain"',
+        '    Sensitivity:    low',
+        '    Source:         clonio.pii-matchers.yaml',
+        '    Matched by:     /^hs_plain$/i  (regex)',
+        '',
+        '    Transformation:',
+        '      strategy:       hash',
+        '      algorithm:      sha256',
+        '      salt:           ""',
+        '',
+        '    Example:',
+        '      (pass a value as the 2nd argument to test the transformation)',
+        '',
+    ]));
+});
+
+it('renders fake details with arguments and the faker note', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+    g8_mockEngine('999', '123');
+
+    [, $output] = g8_check(['column' => 'fk_x', 'value' => '999']);
+
+    expect($output)->toBe(g8_lines([
+        '',
+        '  Column "fk_x" matched:',
+        '',
+        '    Matcher:        fk_args',
+        '    Group:          custom',
+        '    PII category:   "Fake Args"',
+        '    Sensitivity:    high',
+        '    Source:         clonio.pii-matchers.yaml',
+        '    Matched by:     fk_*  (glob)',
+        '',
+        '    Transformation:',
+        '      strategy:       fake',
+        '      faker_method:   numerify',
+        '      faker_arguments: ["###"]',
+        '',
+        '    Example:',
+        '      Input:   999',
+        '      Output:  123  (faker generates fresh data — input value is not used)',
+        '',
+    ]));
+});
+
+it('renders fake defaults when no faker method is configured', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [, $output] = g8_check(['column' => 'fakenone']);
+
+    expect($output)->toContain(g8_lines([
+        '      strategy:       fake',
+        '      faker_method:   ',
+        '      faker_arguments: []',
+        '',
+        '    Example:',
+    ]));
+});
+
+it('renders configured mask details', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [, $output] = g8_check(['column' => 'mk_full']);
+
+    expect($output)->toContain(g8_lines([
+        '      strategy:       mask',
+        '      visible_chars:  2',
+        '      mask_char:      "#"',
+        '      preserve_format: true',
+        '',
+    ]));
+});
+
+it('renders mask defaults', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [, $output] = g8_check(['column' => 'mk_plain']);
+
+    expect($output)->toContain(g8_lines([
+        '      strategy:       mask',
+        '      visible_chars:  0',
+        '      mask_char:      "*"',
+        '      preserve_format: false',
+        '',
+    ]));
+});
+
+it('renders static and template values and their defaults', function (string $column, string $line): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [, $output] = g8_check(['column' => $column]);
+
+    expect($output)->toContain("\n".$line."\n\n    Example:\n");
+})->with([
+    'static' => ['st_full', '      value:          "FIXED"'],
+    'static default' => ['st_plain', '      value:          ""'],
+    'template' => ['tp_full', '      template:       "{a}"'],
+    'template default' => ['tp_plain', '      template:       ""'],
+]);
+
+it('renders the exact output for a disabled matcher from the file', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [$exitCode, $output] = g8_check(['column' => 'dis_col']);
+
+    expect($exitCode)->toBe(ExitCode::Success->value);
+    expect($output)->toBe(g8_lines([
+        '',
+        '  Column "dis_col" — matcher found but currently disabled:',
+        '',
+        '    Matcher:        dis',
+        '    Group:          custom',
+        '    PII category:   "Disabled One"',
+        '    Sensitivity:    critical',
+        '    Source:         clonio.pii-matchers.yaml',
+        '',
+        '    This matcher is disabled. Enable it in clonio.pii-matchers.yaml to activate it.',
+        '    The column will be treated as strategy: keep by cloning:dump until enabled.',
+        '',
+    ]));
+});
+
+it('renders the exact output when no matcher is found', function (): void {
+    Storage::fake('local');
+
+    [$exitCode, $output] = g8_check(['column' => 'created_at']);
+
+    expect($exitCode)->toBe(ExitCode::Success->value);
+    expect($output)->toBe(g8_lines([
+        '',
+        '  Column "created_at" — no matcher found',
+        '',
+        '  This column will be treated as strategy: keep by cloning:dump.',
+        '',
+    ]));
+});
+
+it('loads matchers from the --path option', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture('custom.yaml');
+
+    [, $output] = g8_check(['column' => 'hs_col', '--path' => 'custom.yaml']);
+
+    expect($output)->toContain('    Matcher:        hs_md5');
+});
+
+it('falls back to the default file when --path is empty', function (): void {
+    Storage::fake('local');
+    g8_writeCheckFixture();
+
+    [, $output] = g8_check(['column' => 'hs_col', '--path' => '']);
+
+    expect($output)->toContain('    Matcher:        hs_md5');
+});
+
+it('uses the built-in example when the value argument is an empty string', function (): void {
+    Storage::fake('local');
+    g8_mockEngine('john.doe@example.com', 'fake@example.net');
+
+    [, $output] = g8_check(['column' => 'email', 'value' => '']);
+
+    expect($output)->toContain(g8_lines([
+        '    Example:',
+        '      Input:   john.doe@example.com',
+        '      Output:  fake@example.net  (faker generates fresh data — input value is not used)',
+        '',
+    ]));
+    expect($output)->not->toContain('cannot be empty');
+});
+
+it('stops after an invalid user value without rendering matcher details', function (string $value, string $error): void {
+    Storage::fake('local');
+
+    [$exitCode, $output] = g8_check(['column' => 'credit_card', 'value' => $value]);
+
+    expect($exitCode)->toBe(ExitCode::Success->value);
+    expect($output)->toBe(g8_lines(['', $error]));
+})->with([
+    'whitespace' => ['   ', '  Value cannot be empty or whitespace only.'],
+    'too long' => [str_repeat('a', 10001), '  Value is too long (max 10,000 characters).'],
+    'control characters' => ["bad\x01value", '  Value contains invalid control characters.'],
+]);
+
+it('accepts a value of exactly 10,000 characters', function (): void {
+    Storage::fake('local');
+    $value = str_repeat('a', 10000);
+    g8_mockEngine($value, 'X');
+
+    [, $output] = g8_check(['column' => 'password', 'value' => $value]);
+
+    expect($output)->toContain('      Input:   '.$value."\n      Output:  X\n");
+    expect($output)->not->toContain('too long');
+});
+
+it('treats regex metacharacters in glob patterns literally when finding the matched pattern', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('clonio.pii-matchers.yaml', <<<'YAML'
+version: "1"
+groups:
+  custom:
+    name: "Custom"
+    matchers:
+      dotted:
+        name: "Dotted"
+        patterns: ["user.name*", "userxname_first"]
+        transformation:
+          strategy: keep
+YAML);
+
+    [, $output] = g8_check(['column' => 'userxname_first']);
+
+    expect($output)->toContain('    Matched by:     userxname_first  (literal)');
 });

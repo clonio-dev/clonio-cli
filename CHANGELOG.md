@@ -17,6 +17,24 @@ All notable changes to `clonio-cli` will be documented in this file.
 
 **Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.2.0...v1.3.0
 
+## v1.2.0 - 2026-10-19
+
+### What's Changed
+
+* Update CHANGELOG for v1.1.1 release. by @rokde in https://github.com/clonio-dev/clonio-cli/pull/187
+* ci(release): update CHANGELOG via pull request after each release by @rokde in https://github.com/clonio-dev/clonio-cli/pull/188
+* chore(deps): bump the github-actions group with 2 updates by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/192
+* chore(deps): bump symfony/yaml from 8.1.6 to 8.1.8 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/191
+* chore(deps): bump the github-actions group with 4 updates by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/195
+* chore(deps): bump symfony/yaml from 8.1.8 to 8.1.9 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/194
+* feat(cloning): remap_keys config option with --remap-keys/--no-remap-keys overrides by @rokde in https://github.com/clonio-dev/clonio-cli/pull/197
+* ci: fix Composer cache path so dependency downloads are cached by @rokde in https://github.com/clonio-dev/clonio-cli/pull/198
+* fix(cloning): quote and escape generated YAML scalars correctly by @rokde in https://github.com/clonio-dev/clonio-cli/pull/199
+* chore(deps-dev): bump larastan/larastan from 3.12.2 to 3.13.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/193
+* ci: verify the release build on all targets before tagging by @rokde in https://github.com/clonio-dev/clonio-cli/pull/200
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.1.1...v1.2.0
+
 ## v1.1.1 - 2026-09-27
 
 ### What's Changed
