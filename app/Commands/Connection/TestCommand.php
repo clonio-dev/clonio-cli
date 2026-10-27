@@ -34,7 +34,7 @@ class TestCommand extends Command
     public function handle(ConfigService $config, DatabaseConnectionService $connector): int
     {
         $name = $this->argument('name');
-        $ci = (bool) $this->option('ci');
+        $ci = (bool) $this->option('ci'); // @pest-mutate-ignore: RemoveBooleanCast
 
         if (is_string($name) && $name !== '') {
             return $this->testSingle($config, $connector, $name, $ci);

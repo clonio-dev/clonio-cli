@@ -25,6 +25,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Tests\Feature\Commands\Support\FilePermissionOverride;
+
+require_once __DIR__.'/../Support/CommandFunctionOverrides.php';
 
 // ─── Helpers (prefixed g1_ to stay unique across the suite) ──────────────────
 
@@ -454,15 +457,15 @@ it('rejects a dump target when the working directory is not writable', function 
     $previous = (string) getcwd();
     $dir = sys_get_temp_dir().'/g1_ro_'.uniqid();
     mkdir($dir);
-    chmod($dir, 0555);
 
     try {
         chdir($dir);
         $cwd = (string) getcwd();
+        FilePermissionOverride::denyWrite($cwd);
         [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'dump']);
     } finally {
+        FilePermissionOverride::reset();
         chdir($previous);
-        chmod($dir, 0755);
         rmdir($dir);
     }
 

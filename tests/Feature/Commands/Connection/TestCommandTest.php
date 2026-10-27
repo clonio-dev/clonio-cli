@@ -11,6 +11,10 @@ use App\Services\Config\ConfigService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Tests\Feature\Commands\Support\FilePermissionOverride;
+use Tests\Feature\Commands\Support\HrtimeOverride;
+
+require_once __DIR__.'/../Support/CommandFunctionOverrides.php';
 
 function makeMysqlConnection(string $name = 'staging', string $password = 'secret'): ConnectionData
 {
@@ -218,7 +222,7 @@ it('suppresses table output in --ci mode but still outputs errors to stderr', fu
 it('fails when a SQLite file exists but is not readable', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'clonio_unreadable_');
     expect($path)->not->toBeFalse();
-    chmod($path, 0o000);
+    FilePermissionOverride::denyRead($path);
 
     $connection = makeSqliteConnection('local', $path);
 
@@ -228,18 +232,18 @@ it('fails when a SQLite file exists but is not readable', function (): void {
 
     try {
         $this->artisan('connection:test', ['name' => 'local'])
-            ->expectsOutputToContain('File not readable')
+            ->expectsOutputToContain('local: FAILED — File not readable: '.$path)
             ->assertExitCode(ExitCode::ConnectionError->value);
     } finally {
-        chmod($path, 0o644);
+        FilePermissionOverride::reset();
         @unlink($path);
     }
-})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses file permission checks');
+});
 
 it('fails when a SQLite file is readable but not writable', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'clonio_readonly_');
     expect($path)->not->toBeFalse();
-    chmod($path, 0o444);
+    FilePermissionOverride::denyWrite($path);
 
     $connection = makeSqliteConnection('local', $path);
 
@@ -252,16 +256,17 @@ it('fails when a SQLite file is readable but not writable', function (): void {
             ->expectsOutputToContain('File not writable')
             ->assertExitCode(ExitCode::ConnectionError->value);
     } finally {
-        chmod($path, 0o644);
+        FilePermissionOverride::reset();
         @unlink($path);
     }
-})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses file permission checks');
+});
 
 it('fails a dump connection when the working directory is not writable', function (): void {
     $dir = sys_get_temp_dir().'/clonio_ro_dir_'.uniqid();
-    mkdir($dir, 0o555);
+    mkdir($dir);
     $originalCwd = getcwd();
     chdir($dir);
+    FilePermissionOverride::denyWrite((string) getcwd());
 
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getConnection')->with('staging-dump')->andReturn(makeDumpConnection('staging-dump'));
@@ -272,14 +277,15 @@ it('fails a dump connection when the working directory is not writable', functio
             ->expectsOutputToContain('Working directory not writable')
             ->assertExitCode(ExitCode::IoError->value);
     } finally {
+        FilePermissionOverride::reset();
+
         if ($originalCwd !== false) {
             chdir($originalCwd);
         }
 
-        chmod($dir, 0o755);
         rmdir($dir);
     }
-})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses directory permission checks');
+});
 
 it('fails with exit code 2 when APP_KEY is missing and password is encrypted', function (): void {
     // Use a raw 'encrypted:' prefix with garbage — decryption will fail since no APP_KEY
@@ -502,7 +508,7 @@ it('reports an unknown working directory when the cwd has been removed', functio
 
 it('names the unwritable working directory in the dump failure', function (): void {
     $dir = sys_get_temp_dir().'/g4c_ro_'.uniqid();
-    mkdir($dir, 0o555);
+    mkdir($dir);
     $originalCwd = getcwd();
 
     $config = Mockery::mock(ConfigService::class);
@@ -513,16 +519,17 @@ it('names the unwritable working directory in the dump failure', function (): vo
 
     try {
         $cwd = (string) getcwd();
+        FilePermissionOverride::denyWrite($cwd);
         [$exitCode, $output] = g4c_runTest(['name' => 'staging-dump']);
     } finally {
+        FilePermissionOverride::reset();
         chdir((string) $originalCwd);
-        chmod($dir, 0o755);
         rmdir($dir);
     }
 
     expect($exitCode)->toBe(ExitCode::IoError->value)
         ->and($output)->toContain('staging-dump: FAILED — Working directory not writable: '.$cwd.PHP_EOL);
-})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses directory permission checks');
+});
 
 it('names the missing SQLite file in the failure', function (): void {
     $config = Mockery::mock(ConfigService::class);
@@ -537,7 +544,7 @@ it('names the missing SQLite file in the failure', function (): void {
 
 it('names the read-only SQLite file in the failure', function (): void {
     $path = (string) tempnam(sys_get_temp_dir(), 'g4c_ro_');
-    chmod($path, 0o444);
+    FilePermissionOverride::denyWrite($path);
 
     $config = Mockery::mock(ConfigService::class);
     $config->shouldReceive('getConnection')->with('ro')->andReturn(g4c_sqlite('ro', $path));
@@ -546,13 +553,13 @@ it('names the read-only SQLite file in the failure', function (): void {
     try {
         [$exitCode, $output] = g4c_runTest(['name' => 'ro']);
     } finally {
-        chmod($path, 0o644);
+        FilePermissionOverride::reset();
         @unlink($path);
     }
 
     expect($exitCode)->toBe(ExitCode::ConnectionError->value)
         ->and($output)->toContain('ro: FAILED — File not writable: '.$path.PHP_EOL);
-})->skip(fn (): bool => posix_getuid() === 0, 'root bypasses file permission checks');
+});
 
 it('renders the overview table with driver, status and timing columns', function (): void {
     $config = Mockery::mock(ConfigService::class);
@@ -606,3 +613,65 @@ it('reports only OK and purges the dynamic connection after a successful network
         ->and($output)->toContain('staging: OK')
         ->and($output)->not->toContain('FAILED');
 });
+
+it('treats an empty connection name as a request to test all connections', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->once()->andReturn([]);
+    $config->shouldReceive('getConnection')->never();
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test', ['name' => ''])
+        ->expectsOutput('No connections defined.')
+        ->assertExitCode(ExitCode::ConfigError->value);
+});
+
+it('does not query the negotiated cipher for a single connection without -v', function (): void {
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn(makeMysqlConnection('staging'));
+    $this->app->instance(ConfigService::class, $config);
+
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('getPdo')->andReturn(Mockery::mock(PDO::class));
+    DB::shouldReceive('selectOne')->never();
+    DB::shouldReceive('purge');
+
+    $this->artisan('connection:test', ['name' => 'staging'])
+        ->doesntExpectOutputToContain('TLS cipher')
+        ->assertExitCode(ExitCode::Success->value);
+});
+
+it('reports a missing SQLite file for a connection without a database path', function (): void {
+    $connection = new ConnectionData(
+        name: 'nopath', type: DatabaseConnectionType::Sqlite, host: null, port: null, database: null,
+        schema: null, username: null, password: '', isProduction: false,
+    );
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('nopath')->andReturn($connection);
+    $this->app->instance(ConfigService::class, $config);
+
+    [$exitCode, $output] = g4c_runTest(['name' => 'nopath']);
+
+    expect($exitCode)->toBe(ExitCode::ConnectionError->value)
+        ->and($output)->toContain('nopath: FAILED — File not found: '.PHP_EOL);
+});
+
+it('reports the elapsed time rounded to whole milliseconds', function (int $elapsedNs, string $expected): void {
+    $start = 7_000_000_000;
+    HrtimeOverride::queue($start, $start + $elapsedNs);
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('local')->andReturn(g4c_sqlite('local', __FILE__));
+    $this->app->instance(ConfigService::class, $config);
+
+    try {
+        [$exitCode, $output] = g4c_runTest(['name' => 'local']);
+    } finally {
+        HrtimeOverride::reset();
+    }
+
+    expect($exitCode)->toBe(ExitCode::Success->value)
+        ->and($output)->toBe('local: OK ('.$expected.'ms)'.PHP_EOL);
+})->with([
+    'exactly half a millisecond rounds up' => [2_500_000, '3'],
+    'just below half a millisecond rounds down' => [2_499_999, '2'],
+]);
