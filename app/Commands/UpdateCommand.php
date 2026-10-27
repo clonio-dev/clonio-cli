@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Services\Update\BinaryResolver;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use LaravelZero\Framework\Commands\Command;
 use Throwable;
@@ -77,21 +78,21 @@ class UpdateCommand extends Command
 
             $download = $downloadRequest->get(self::DOWNLOAD_BASE.'/'.$targetTag.'/'.$filename);
         } catch (Throwable) {
-            @unlink($tmpPath);
+            File::delete($tmpPath);
             $this->error('Download failed.');
 
             return Command::FAILURE;
         }
 
         if ($download->failed()) {
-            @unlink($tmpPath);
+            File::delete($tmpPath);
             $this->error('Download failed.');
 
             return Command::FAILURE;
         }
 
         if (! file_exists($tmpPath) || filesize($tmpPath) === 0) {
-            @unlink($tmpPath);
+            File::delete($tmpPath);
             $this->error('Download failed.');
 
             return Command::FAILURE;
@@ -100,7 +101,7 @@ class UpdateCommand extends Command
         chmod($tmpPath, 0755);
 
         if (! rename($tmpPath, $currentPath)) {
-            @unlink($tmpPath);
+            File::delete($tmpPath);
             $this->error(sprintf('Could not replace binary at %s. Try running with sudo.', $currentPath));
 
             return Command::FAILURE;

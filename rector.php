@@ -6,6 +6,7 @@ use Rector\Caching\ValueObject\Storage\FileCacheStorage;
 use Rector\CodingStyle\Rector\ClassMethod\MakeInheritedMethodVisibilitySameAsParentRector;
 use Rector\Config\RectorConfig;
 use Rector\Php85\Rector\Property\AddOverrideAttributeToOverriddenPropertiesRector;
+use RectorLaravel\Rector\FuncCall\UnlinkFuncCallToFileFacadeDeleteRector;
 use RectorLaravel\Set\LaravelLevelSetList;
 use RectorLaravel\Set\LaravelSetList;
 
@@ -40,6 +41,10 @@ return RectorConfig::configure()
     ->withSkip([
         AddOverrideAttributeToOverriddenPropertiesRector::class,
         MakeInheritedMethodVisibilitySameAsParentRector::class,
+        // cleanup() runs from shutdown/signal handlers where no facade root is guaranteed
+        UnlinkFuncCallToFileFacadeDeleteRector::class => [
+            __DIR__.'/app/Services/Cloning/EncryptedFileKeyRemappingStore.php',
+        ],
     ])
     ->withPreparedSets(
         deadCode: true,
