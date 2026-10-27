@@ -2,6 +2,30 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.3.1 - 2026-10-27
+
+### What's Changed
+
+* test: reach a 100% mutation score and add composer test:mutate by @rokde in https://github.com/clonio-dev/clonio-cli/pull/209
+* chore(deps): bump illuminate/log from 13.37.0 to 13.38.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/210
+* chore(deps): bump illuminate/http from 13.37.0 to 13.38.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/211
+* chore(deps): bump illuminate/encryption from 13.37.0 to 13.38.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/212
+* chore(deps): bump anthropics/claude-code-action from 1.0.248 to 1.0.255 in the github-actions group by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/215
+* chore(deps-dev): bump larastan/larastan from 3.13.0 to 3.13.1 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/214
+* docs(changelog): update CHANGELOG for v1.2.0 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/216
+* docs(changelog): update CHANGELOG for v1.3.0 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/217
+* fix(tests): make audit test helpers PSR-4 compliant by @rokde in https://github.com/clonio-dev/clonio-cli/pull/218
+* Docker based Development Setup by @GALHP in https://github.com/clonio-dev/clonio-cli/pull/165
+* test: simulate IO errors without relying on file permissions by @rokde in https://github.com/clonio-dev/clonio-cli/pull/219
+* ci: fail the test suite on PSR-4 autoload violations by @rokde in https://github.com/clonio-dev/clonio-cli/pull/220
+* chore(deps-dev): bump driftingly/rector-laravel from 2.6.2 to 2.7.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/213
+
+### New Contributors
+
+* @GALHP made their first contribution in https://github.com/clonio-dev/clonio-cli/pull/165
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.3.0...v1.3.1
+
 ## v1.3.0 - 2026-10-19
 
 ### What's Changed
