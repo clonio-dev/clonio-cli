@@ -77,9 +77,11 @@
             "pint --parallel --test",
             "rector --dry-run"
         ],
+        "test:autoload": "@composer dump-autoload --optimize --strict-psr --no-scripts",
         "test:mutate": "pest --mutate --covered-only",
         "test:mutate:all": "pest --mutate --everything --covered-only --parallel --no-cache --min=100",
         "test": [
+            "@test:autoload",
             "@test:type-coverage",
             "@test:unit",
             "@test:types",
@@ -95,6 +97,7 @@
         }
     },
     "scripts-descriptions": {
+        "test:autoload": "Regenerates the optimized autoloader and fails on PSR-4 violations",
         "test:mutate:all": "Mutation testing for the whole app, fails below a 100% score",
         "test:mutate": "Mutation testing for selected code, e.g. composer test:mutate -- --path=app/Services/Cloning/FrameworkTableCatalog.php"
     },

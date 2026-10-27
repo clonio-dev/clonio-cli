@@ -19,6 +19,7 @@ composer test:unit         # Pest with coverage (min 95%)
 composer test:type-coverage  # Type coverage check (min 99%)
 composer test:types        # PHPStan static analysis (level max)
 composer test:lint         # Pint + Rector dry-run
+composer test:autoload     # Fail on PSR-4 autoload violations (dump-autoload --strict-psr)
 
 # Run a single test file
 ./vendor/bin/pest tests/Unit/BinaryResolverTest.php
@@ -102,6 +103,7 @@ In tests, isolate filesystem operations with `Storage::fake('local')` (no temp d
 - Coverage minimum: 95% (unit), 99% (type coverage)
 - Mutation score: 100% (`composer test:mutate:all`, run locally, not in CI); mark unkillable mutants with `// @pest-mutate-ignore: <Mutator>`
 - All tests extend `Tests\TestCase`
+- PSR-4 everywhere (incl. `tests/`): one class per file, path matching the namespace. Namespaced function overrides go in a functions-only file loaded via `require_once`, with any helper class in its own file (e.g. `tests/Unit/Services/Audit/Support/G7FunctionSpies.php` + `G7FunctionSpy.php`). `composer test:autoload` (part of `composer test`) enforces this.
 
 ## Specs and Docs
 
