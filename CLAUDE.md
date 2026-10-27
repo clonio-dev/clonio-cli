@@ -72,6 +72,7 @@ The CLI repo is the command-line surface; the companion repo is the implementati
 The build workflow (`.github/workflows/build.yml`) triggers on `v*` tags:
 1. Runs the full test suite
 2. Builds 3 standalone binaries in parallel using SPC (`clonio-linux-x86_64`, `clonio-linux-aarch64`, `clonio-macos-aarch64`) — each is a PHAR merged with a PHP micro SAPI
+   - In parallel, builds the Docker image natively per arch (`docker-build`: amd64 on `ubuntu-latest`, arm64 on `ubuntu-24.04-arm`, no QEMU), smoke-tests each, pushes by digest; `docker` merges them into the multi-arch manifest on `ghcr.io/clonio-dev/clonio`
 3. Creates a GitHub release with all binaries and an auto-generated changelog
 
 ### Execution Mode Detection
