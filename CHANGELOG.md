@@ -2,6 +2,22 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.4.0 - 2026-10-27
+
+### What's Changed
+
+* docs(changelog): update CHANGELOG for v1.3.1 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/222
+* ci: build Docker image natively per arch and pin base images by @rokde in https://github.com/clonio-dev/clonio-cli/pull/221
+* perf: keyset pagination for chunked reads by @GALHP in https://github.com/clonio-dev/clonio-cli/pull/167
+* Progress and Performance Tracking by @GALHP in https://github.com/clonio-dev/clonio-cli/pull/166
+* chore(deps-dev): bump larastan/larastan from 3.13.1 to 3.13.2 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/223
+* chore(deps): bump illuminate/encryption from 13.38.0 to 13.39.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/224
+* chore(deps): bump illuminate/log from 13.38.0 to 13.39.0 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/225
+* chore(deps): bump anthropics/claude-code-action from 1.0.255 to 1.0.259 in the github-actions group by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/226
+* ci(dependabot): group illuminate/* composer updates by @rokde in https://github.com/clonio-dev/clonio-cli/pull/232
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.3.1...v1.4.0
+
 ## v1.3.1 - 2026-10-27
 
 ### What's Changed
