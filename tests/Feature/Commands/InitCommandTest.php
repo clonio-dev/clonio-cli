@@ -234,40 +234,45 @@ it('does not overwrite existing audit channels on re-init', function (): void {
 
 it('returns an IO error when a new .env cannot be written', function (): void {
     // No APP_KEY anywhere -> the command tries to create a fresh .env.
-    // Making the disk root read-only forces Storage::put() to fail, which
-    // bubbles up as a RuntimeException and is reported as an IO error.
+    // Forcing Storage::put() to return false (as it would on a failed write)
+    // bubbles up as a RuntimeException and is reported as an IO error. We mock
+    // rather than chmod because root ignores permission bits, and the dev
+    // container runs as root under rootless Docker/Podman.
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
 
-    $root = Storage::path('');
-    chmod($root, 0500);
+    Storage::shouldReceive('exists')->with('.env')->andReturn(false);
+    Storage::shouldReceive('put')
+        ->once()
+        ->with('.env', Mockery::on(fn (string $content): bool => preg_match('/^APP_KEY=base64:.+\n$/', $content) === 1))
+        ->andReturn(false);
 
-    try {
-        $this->artisan('init')
-            ->expectsOutputToContain('permission denied')
-            ->assertExitCode(ExitCode::IoError->value);
-    } finally {
-        chmod($root, 0755);
-    }
+    $this->artisan('init')
+        ->expectsOutputToContain('permission denied')
+        ->assertExitCode(ExitCode::IoError->value);
 });
 
 it('returns an IO error when an existing .env cannot be overwritten', function (): void {
     // An existing .env without an APP_KEY would normally be appended to, but
-    // making the file itself read-only forces the write to fail.
+    // forcing Storage::put() to return false makes the rewrite fail. We mock
+    // rather than chmod because root ignores permission bits, and the dev
+    // container runs as root under rootless Docker/Podman.
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
 
-    Storage::put('.env', "DB_HOST=localhost\n");
-    $path = Storage::path('.env');
-    chmod($path, 0400);
+    Storage::shouldReceive('exists')->with('.env')->andReturn(true);
+    Storage::shouldReceive('get')->with('.env')->andReturn("DB_HOST=localhost\n");
+    Storage::shouldReceive('path')->with('.env')->andReturn('/tmp/clonio-readonly.env');
+    Storage::shouldReceive('put')
+        ->once()
+        ->with('.env', Mockery::on(fn (string $content): bool => str_starts_with($content, "DB_HOST=localhost\nAPP_KEY=base64:")
+            && str_ends_with($content, "\n")
+            && substr_count($content, "\n") === 2))
+        ->andReturn(false);
 
-    try {
-        $this->artisan('init')
-            ->expectsOutputToContain('permission denied')
-            ->assertExitCode(ExitCode::IoError->value);
-    } finally {
-        chmod($path, 0644);
-    }
+    $this->artisan('init')
+        ->expectsOutputToContain('permission denied')
+        ->assertExitCode(ExitCode::IoError->value);
 });
 
 it('returns an IO error when an existing .env cannot be read', function (): void {
@@ -517,16 +522,18 @@ it('prints the ready message followed by a blank line when audit channels exist'
 });
 
 it('reports the exact .env path when a new .env cannot be written', function (): void {
+    // Mock Storage::put() to fail instead of chmod-ing the directory: root
+    // ignores permission bits, and the dev container runs as root under
+    // rootless Docker/Podman.
     g9_forgetAppKey();
 
-    $root = Storage::path('');
-    chmod($root, 0500);
+    Storage::shouldReceive('exists')->with('.env')->andReturn(false);
+    Storage::shouldReceive('put')
+        ->once()
+        ->with('.env', Mockery::on(fn (string $content): bool => preg_match('/^APP_KEY=base64:.+\n$/', $content) === 1))
+        ->andReturn(false);
 
-    try {
-        [$exit, $display] = g9_runInit();
-    } finally {
-        chmod($root, 0755);
-    }
+    [$exit, $display] = g9_runInit();
 
     expect($exit)->toBe(ExitCode::IoError->value)
         ->and($display)->toEndWith(

@@ -1,0 +1,15 @@
+# Local development environment — no PHP toolchain needed on the host.
+# Image: `dev` stage of the Dockerfile. Usage: `make dev-*` (see `make help`)
+# or `docker compose run --rm php <command>`.
+services:
+  php:
+    build:
+      context: .
+      target: dev
+    image: clonio:dev
+    volumes:
+      - .:/app
+      - composer-cache:/var/cache/composer
+
+volumes:
+  composer-cache:

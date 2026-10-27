@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help current preflight patch minor major alpha docker-build docker-build-multiarch docker-test docker-shell
+.PHONY: help current preflight patch minor major alpha docker-build docker-build-multiarch docker-test docker-shell dev-build dev-install dev-shell dev-test dev-lint
 
 DOCKER_IMAGE ?= clonio:local
 # Commit verified by `make preflight`. patch/minor/major tag this exact commit,
@@ -37,6 +37,13 @@ help:
 	printf "    %-26s %s\n" "make docker-build-multiarch" "Build image for linux/amd64 + linux/arm64 (slow, QEMU)"; \
 	printf "    %-26s %s\n" "make docker-test" "Build image then run tests/smoke/run-smoke.sh against it"; \
 	printf "    %-26s %s\n" "make docker-shell" "Drop into a shell inside the image (debug mounts)"; \
+	echo ""; \
+	echo "  Dev environment (Docker, no local PHP needed):"; \
+	printf "    %-26s %s\n" "make dev-build" "Build the dev image (clonio:dev)"; \
+	printf "    %-26s %s\n" "make dev-install" "composer install"; \
+	printf "    %-26s %s\n" "make dev-shell" "Shell in the dev container"; \
+	printf "    %-26s %s\n" "make dev-test" "composer test (full suite, with coverage)"; \
+	printf "    %-26s %s\n" "make dev-lint" "composer lint (Rector + Pint, fixes files in place)"; \
 	echo ""
 
 current:
@@ -166,3 +173,26 @@ docker-test: docker-build
 
 docker-shell: docker-build
 	docker run --rm -it -v "$$(pwd)":/workspace --entrypoint sh $(DOCKER_IMAGE)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dev environment — `dev` stage of the Dockerfile via compose.yaml. Every target
+# uses `run --rm` (not `exec`) so the entrypoint maps the container user to the
+# owner of the repository; no long-running container needed.
+# ──────────────────────────────────────────────────────────────────────────────
+
+DEV_RUN = docker compose run --rm
+
+dev-build:
+	docker compose build php
+
+dev-install:
+	$(DEV_RUN) php composer install
+
+dev-shell:
+	$(DEV_RUN) php sh
+
+dev-test:
+	$(DEV_RUN) -e XDEBUG_MODE=coverage php composer test
+
+dev-lint:
+	$(DEV_RUN) php composer lint

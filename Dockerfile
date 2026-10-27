@@ -4,10 +4,17 @@
 # locally and the multi-arch publish in CI. No static-binary dependency, so the
 # docker job can run in parallel with the platform binary builds.
 #
-# Stage 1 (build) installs composer + git + unzip to resolve vendor; only the
-# /app tree (source + slimmed vendor) is carried into the runtime image.
+# Stages:
+#   build    — installs composer + git + unzip to resolve vendor; only the /app
+#              tree (source + slimmed vendor) is carried into the runtime image.
+#   base     — php:8.5-cli-alpine + the PHP extension set; shared by dev and
+#              runtime so both load exactly the same extensions.
+#   dev      — local development environment (compose.yaml, `make dev-*`):
+#              base + composer, git, xdebug. Source is bind-mounted, not copied.
+#   runtime  — published image. MUST stay the last stage: CI and
+#              `make docker-build` build without --target.
 #
-# Layout inside the final image:
+# Layout inside the runtime image:
 #   /app         — application source + vendor (read-only at runtime)
 #   /workspace   — WORKDIR; user mounts their project here so clonio.json /
 #                  .env / .cloning.yaml resolve against getcwd()
@@ -27,7 +34,7 @@ WORKDIR /app
 # --no-autoloader: defer optimized autoload until after COPY . so app/ is mapped.
 COPY composer.json composer.lock ./
 # --ignore-platform-reqs: composer install only unpacks files; the runtime
-# stage installs gd / pcntl / pdo_mysql / pdo_pgsql / sqlsrv. Skipping the platform
+# image installs gd / pcntl / pdo_mysql / pdo_pgsql / sqlsrv / zip (base stage). Skipping the platform
 # check here keeps the build stage free of PHP extension libraries.
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction --no-cache --ignore-platform-reqs
 
@@ -57,8 +64,8 @@ RUN set -eux; \
         ! -name 'DejaVuinfo.txt' \
         -delete
 
-# ── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM php:8.5-cli-alpine
+# ── Stage 2: base (shared by dev + runtime) ──────────────────────────────────
+FROM php:8.5-cli-alpine AS base
 
 # ca-certificates — Guzzle-based audit adapters (S3, webhook, ntfy) need a CA bundle.
 # tzdata — correct timestamps in audit logs and cloning dumps when TZ is set.
@@ -67,11 +74,42 @@ RUN apk add --no-cache ca-certificates tzdata
 # Bundled in php:8.5-cli-alpine: ctype, curl, fileinfo, filter, iconv, mbstring,
 # openssl, pdo, pdo_sqlite, phar, readline, session, sqlite3, tokenizer, zlib.
 # install-php-extensions pulls in the matching runtime libs (libpng, libpq,
-# Microsoft ODBC, etc.) and removes no-longer-needed build dependencies.
+# libzip, Microsoft ODBC, etc.) and removes no-longer-needed build dependencies.
+# zip — DumpArchiver writes (optionally AES-encrypted) dump archives.
 COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
-RUN ACCEPT_EULA=Y install-php-extensions gd pcntl pdo_mysql pdo_pgsql sqlsrv pdo_sqlsrv \
+RUN ACCEPT_EULA=Y install-php-extensions gd pcntl pdo_mysql pdo_pgsql sqlsrv pdo_sqlsrv zip \
     && rm /usr/local/bin/install-php-extensions \
     && rm -rf /tmp/* /var/cache/apk/* /root/.pearrc
+
+# ── Stage 3: dev ─────────────────────────────────────────────────────────────
+FROM base AS dev
+
+# git — composer VCS installs and `git describe` for the app version.
+# unzip — faster, more reliable composer dist extraction than the zip extension.
+# su-exec — dev-entrypoint drops from root to the owner of the mounted repo.
+RUN apk add --no-cache git unzip su-exec
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
+RUN install-php-extensions xdebug \
+    && rm /usr/local/bin/install-php-extensions \
+    && rm -rf /tmp/* /var/cache/apk/* /root/.pearrc
+
+# PHPStan and type coverage exceed PHP's 128M default; CI (setup-php) runs unlimited too.
+RUN echo 'memory_limit=-1' > "$PHP_INI_DIR/conf.d/zz-dev.ini"
+
+# Xdebug stays loaded but idle; `make dev-test` switches it to coverage mode.
+ENV XDEBUG_MODE=off \
+    COMPOSER_CACHE_DIR=/var/cache/composer
+
+COPY docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint
+
+WORKDIR /app
+ENTRYPOINT ["dev-entrypoint"]
+CMD ["sh"]
+
+# ── Stage 4: runtime (published image — keep last) ───────────────────────────
+FROM base AS runtime
 
 COPY --from=build /app /app
 

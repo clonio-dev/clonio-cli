@@ -3,25 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Audit\StderrDeliveryAdapter;
-
-/**
- * Write filter that swallows everything written to STDERR and records it,
- * so the adapter output can be asserted without polluting the test output.
- */
-final class G7StderrCaptureFilter extends php_user_filter
-{
-    public static string $captured = '';
-
-    public function filter($in, $out, &$consumed, bool $closing): int
-    {
-        while ($bucket = stream_bucket_make_writeable($in)) {
-            self::$captured .= $bucket->data;
-            $consumed += $bucket->datalen;
-        }
-
-        return PSFS_PASS_ON;
-    }
-}
+use Tests\Unit\Services\Audit\Support\G7StderrCaptureFilter;
 
 it('writes every artefact content to standard error in order', function (): void {
     if (! in_array('g7.stderr_capture', stream_get_filters(), true)) {
