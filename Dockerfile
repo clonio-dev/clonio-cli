@@ -21,11 +21,11 @@
 #
 
 # ── Stage 1: build vendor ────────────────────────────────────────────────────
-FROM php:8.5-cli-alpine AS build
+FROM php:8.5-cli-alpine@sha256:e899a75c775804e5466dbd9c96b31f8b6c6ae2ddb053a8466223a0c32992ff8e AS build
 
 RUN apk add --no-cache git unzip
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
@@ -65,7 +65,7 @@ RUN set -eux; \
         -delete
 
 # ── Stage 2: base (shared by dev + runtime) ──────────────────────────────────
-FROM php:8.5-cli-alpine AS base
+FROM php:8.5-cli-alpine@sha256:e899a75c775804e5466dbd9c96b31f8b6c6ae2ddb053a8466223a0c32992ff8e AS base
 
 # ca-certificates — Guzzle-based audit adapters (S3, webhook, ntfy) need a CA bundle.
 # tzdata — correct timestamps in audit logs and cloning dumps when TZ is set.
@@ -76,7 +76,7 @@ RUN apk add --no-cache ca-certificates tzdata
 # install-php-extensions pulls in the matching runtime libs (libpng, libpq,
 # libzip, Microsoft ODBC, etc.) and removes no-longer-needed build dependencies.
 # zip — DumpArchiver writes (optionally AES-encrypted) dump archives.
-COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=mlocati/php-extension-installer:2@sha256:ac4b252c153a9f6de5578ff2c417790aba836bb49855543144606033eceda253 /usr/bin/install-php-extensions /usr/local/bin/
 RUN ACCEPT_EULA=Y install-php-extensions gd pcntl pdo_mysql pdo_pgsql sqlsrv pdo_sqlsrv zip \
     && rm /usr/local/bin/install-php-extensions \
     && rm -rf /tmp/* /var/cache/apk/* /root/.pearrc
@@ -89,8 +89,8 @@ FROM base AS dev
 # su-exec — dev-entrypoint drops from root to the owner of the mounted repo.
 RUN apk add --no-cache git unzip su-exec
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=composer:2@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc /usr/bin/composer /usr/bin/composer
+COPY --from=mlocati/php-extension-installer:2@sha256:ac4b252c153a9f6de5578ff2c417790aba836bb49855543144606033eceda253 /usr/bin/install-php-extensions /usr/local/bin/
 RUN install-php-extensions xdebug \
     && rm /usr/local/bin/install-php-extensions \
     && rm -rf /tmp/* /var/cache/apk/* /root/.pearrc

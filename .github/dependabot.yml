@@ -17,3 +17,16 @@ updates:
       interval: "weekly"
     labels:
       - "dependencies"
+
+  # Bumps the sha256 digests pinned in the Dockerfile (base images, composer,
+  # php-extension-installer). Grouped so one PR refreshes all of them at once.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    groups:
+      docker:
+        patterns:
+          - '*'
