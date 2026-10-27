@@ -17,6 +17,15 @@ updates:
       interval: "weekly"
     labels:
       - "dependencies"
+    # illuminate/* packages release in lockstep; one PR avoids composer.lock
+    # conflicts between per-package PRs. Majors stay separate PRs.
+    groups:
+      illuminate:
+        patterns:
+          - "illuminate/*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # Bumps the sha256 digests pinned in the Dockerfile (base images, composer,
   # php-extension-installer). Grouped so one PR refreshes all of them at once.
