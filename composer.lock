@@ -1652,16 +1652,16 @@
         },
         {
             "name": "illuminate/encryption",
-            "version": "v13.38.0",
+            "version": "v13.39.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/illuminate/encryption.git",
-                "reference": "7c5b760d93d2d07a868c1982a3c77f74245d8df9"
+                "reference": "65bbb62b03b16d57e224de9db53ebf5ace79beb8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/illuminate/encryption/zipball/7c5b760d93d2d07a868c1982a3c77f74245d8df9",
-                "reference": "7c5b760d93d2d07a868c1982a3c77f74245d8df9",
+                "url": "https://api.github.com/repos/illuminate/encryption/zipball/65bbb62b03b16d57e224de9db53ebf5ace79beb8",
+                "reference": "65bbb62b03b16d57e224de9db53ebf5ace79beb8",
                 "shasum": ""
             },
             "require": {
@@ -1699,7 +1699,7 @@
                 "issues": "https://github.com/laravel/framework/issues",
                 "source": "https://github.com/laravel/framework"
             },
-            "time": "2026-10-06T02:42:44+00:00"
+            "time": "2026-10-20T10:26:12+00:00"
         },
         {
             "name": "illuminate/events",
