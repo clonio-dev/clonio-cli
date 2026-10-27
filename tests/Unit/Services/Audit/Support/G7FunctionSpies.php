@@ -8,21 +8,10 @@ declare(strict_types=1);
  * first, so these wrappers see the exact arguments (timeouts, ports, cURL options)
  * and then delegate to the real implementation unchanged.
  *
- * Loaded with require_once from the adapter tests before any test runs.
+ * Calls are recorded in the autoloaded G7FunctionSpy class. This file holds no
+ * class of its own, so it is loaded with require_once from the adapter tests
+ * before any test runs.
  */
-
-namespace Tests\Unit\Services\Audit\Support {
-    final class G7FunctionSpy
-    {
-        /** @var array<string, list<array<int|string, mixed>>> */
-        public static array $calls = [];
-
-        public static function reset(): void
-        {
-            self::$calls = [];
-        }
-    }
-}
 
 namespace App\Services\Audit {
     use CurlHandle;
