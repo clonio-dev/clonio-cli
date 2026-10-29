@@ -245,6 +245,7 @@ tables:
 | `first` | Copy the first N rows (requires `limit`) |
 | `last` | Copy the last N rows (requires `limit`) |
 | `schema` | Create the table, copy no rows (suggested for [framework tables](#framework-tables)) |
+| `skip` | Leave the table out completely |
 
 ## PII detection
 

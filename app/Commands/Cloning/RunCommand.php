@@ -38,9 +38,11 @@ use App\Services\Audit\WebhookDeliveryAdapter;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
+use App\Services\Cloning\DependencyResolver;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\TableConfigResolver;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\CloningProgressDisplay;
@@ -111,6 +113,8 @@ class RunCommand extends Command
         SchemaInspector $inspector,
         CloningRunOrchestrator $orchestrator,
         AuditBuffer $auditBuffer,
+        TableConfigResolver $tableResolver,
+        DependencyResolver $dependencyResolver,
     ): int {
         $ci = (bool) $this->option('ci');
         $verbosity = $this->getOutput()->getVerbosity();
@@ -189,13 +193,33 @@ class RunCommand extends Command
 
         /** @var list<string> $skipTables */
         $skipTables = ($skipTablesOpt !== null && $skipTablesOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $skipTablesOpt)))) // @pest-mutate-ignore: UnwrapArrayValues
+            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $skipTablesOpt)), static fn (string $t): bool => $t !== '')) // @pest-mutate-ignore: UnwrapArrayValues
             : [];
 
         /** @var list<string> $onlyTables */
         $onlyTables = ($onlyTablesOpt !== null && $onlyTablesOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $onlyTablesOpt))))
+            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $onlyTablesOpt)), static fn (string $t): bool => $t !== '')) // @pest-mutate-ignore: UnwrapArrayValues
             : [];
+
+        // Table options take table names only. A mistyped name excludes nothing
+        // or, for --only-tables, everything; a regex that matches nothing would
+        // leave --only-tables empty and so clone every table. So would a value
+        // without any name, such as " , ".
+        foreach (['skip-tables' => [$skipTablesOpt, $skipTables], 'only-tables' => [$onlyTablesOpt, $onlyTables]] as $option => [$value, $references]) {
+            if ($references === [] && $value !== null && $value !== '') {
+                $this->error(sprintf('--%s: no table name given', $option));
+
+                return ExitCode::ValidationError->value;
+            }
+
+            foreach ($references as $reference) {
+                if (TableConfigResolver::isRegex($reference)) {
+                    $this->error(sprintf("--%s: '%s' is a regex; the option takes table names only, put regex in the YAML skip: list", $option, $reference));
+
+                    return ExitCode::ValidationError->value;
+                }
+            }
+        }
 
         $auditChannelOpt = $this->option('audit-channel');
         /** @var list<string> $auditChannels */
@@ -231,10 +255,6 @@ class RunCommand extends Command
                 skipTables: $config->skipTables,
             );
         }
-
-        // Merge YAML-level skipTables with CLI --skip-tables (additive, deduplicated)
-        // Done here so both the dry-run and full-run paths see the merged list.
-        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
@@ -350,7 +370,7 @@ class RunCommand extends Command
 
         // ─── Phase 3: Dry-run ──────────────────────────────────────────────────
         if ((bool) $this->option('dry-run')) { // @pest-mutate-ignore: RemoveBooleanCast
-            return $this->runDryRun($config, $sourceConnection, $targetConnection, $inspector, $ci);
+            return $this->runDryRun($config, $sourceConnection, $targetConnection, $inspector, $tableResolver, $dependencyResolver, $skipTables, $onlyTables, $ci);
         }
 
         // ─── Phase 4-6: Full Run ───────────────────────────────────────────────
@@ -364,6 +384,17 @@ class RunCommand extends Command
 
             return ExitCode::ConnectionError->value;
         }
+
+        // Expand regex table keys against the real source schema. From here on
+        // $config->tables carry concrete table names, so the orchestrator, key
+        // mapping and audit code all keep working against literal names.
+        $resolved = $this->resolveTables($tableResolver, $config, $sourceSchema, $skipTables, $onlyTables);
+
+        if ($resolved === null) {
+            return ExitCode::ConfigError->value;
+        }
+
+        [$config, $skipTables, $onlyTables] = $resolved;
 
         // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
         $keyRemappingService = null;
@@ -804,11 +835,19 @@ class RunCommand extends Command
         return ExitCode::Success->value;
     }
 
+    /**
+     * @param  list<string>  $skipTables
+     * @param  list<string>  $onlyTables
+     */
     private function runDryRun(
         CloningConfigData $config,
         ConnectionData $source,
         ConnectionData $target,
         SchemaInspector $inspector,
+        TableConfigResolver $tableResolver,
+        DependencyResolver $dependencyResolver,
+        array $skipTables,
+        array $onlyTables,
         bool $ci,
     ): int {
         try {
@@ -818,6 +857,22 @@ class RunCommand extends Command
 
             return ExitCode::ConnectionError->value;
         }
+
+        // Expand regex table keys like the full run does, so the estimate covers
+        // the tables they match instead of counting the patterns as not found.
+        $resolved = $this->resolveTables($tableResolver, $config, $schema, $skipTables, $onlyTables);
+
+        if ($resolved === null) {
+            return ExitCode::ConfigError->value;
+        }
+
+        [$config, $skipTables, $onlyTables] = $resolved;
+
+        // Leave out the tables the run would skip, by flag or by cascade, the
+        // way the orchestrator does; they need no row count either.
+        $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
+        [$byFlag, $byCascade] = $dependencyResolver->exclusions($schema, $tableNames, $skipTables, $onlyTables);
+        $excluded = [...$byFlag, ...$byCascade];
 
         $schemaDiff = null;
 
@@ -837,6 +892,19 @@ class RunCommand extends Command
             $tableName = $tableConfig->tableName;
             $exists = $schema->hasTable($tableName);
             $estimatedRows = null;
+
+            if ($exists && in_array($tableName, $excluded, true)) {
+                $dryRunTables[] = new DryRunTableData(
+                    tableName: $tableName,
+                    exists: true,
+                    estimatedRows: 0,
+                    rowStrategy: 'skip',
+                    rowLimit: null,
+                    transformedColumns: [],
+                );
+
+                continue;
+            }
 
             if ($exists) {
                 try {
@@ -887,6 +955,39 @@ class RunCommand extends Command
         }
 
         return ExitCode::Success->value;
+    }
+
+    /**
+     * Resolve the table references of the config against the source schema,
+     * and the names in --skip-tables and --only-tables like literal table keys
+     * (a name that matches nothing stays as written). The config's skip list
+     * (regex entries and rows.strategy: skip, now concrete names) is merged
+     * into --skip-tables, deduplicated. A reference that names no source table
+     * is always reported, --ci included, as it may leave tables unskipped.
+     * Returns null, after reporting it, when a table pattern fails while
+     * matching.
+     *
+     * @param  list<string>  $skipTables
+     * @param  list<string>  $onlyTables
+     * @return array{CloningConfigData, list<string>, list<string>}|null
+     */
+    private function resolveTables(TableConfigResolver $resolver, CloningConfigData $config, DatabaseSchemaData $schema, array $skipTables, array $onlyTables): ?array
+    {
+        $warn = function (string $reference, string $origin): void {
+            $this->line(sprintf("  <comment>Warning: %s '%s' matches no source table</comment>", $origin, $reference));
+        };
+
+        try {
+            $config = $resolver->resolve($config, $schema, $warn);
+            $skipTables = $resolver->resolveReferences($skipTables, $schema, '--skip-tables', $warn);
+            $onlyTables = $resolver->resolveReferences($onlyTables, $schema, '--only-tables', $warn);
+        } catch (RuntimeException $runtimeException) {
+            $this->error($runtimeException->getMessage());
+
+            return null;
+        }
+
+        return [$config, array_values(array_unique(array_merge($skipTables, $config->skipTables))), $onlyTables]; // @pest-mutate-ignore: UnwrapArrayValues
     }
 
     private function countRows(ConnectionData $connection, string $tableName): ?int

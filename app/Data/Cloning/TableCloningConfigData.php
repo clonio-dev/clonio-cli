@@ -6,7 +6,9 @@ namespace App\Data\Cloning;
 
 final readonly class TableCloningConfigData
 {
-    /** @param list<ColumnCloningConfigData> $columns */
+    /**
+     * @param  list<ColumnCloningConfigData>  $columns
+     */
     public function __construct(
         public string $tableName,
         public TableRowConfigData $rows,

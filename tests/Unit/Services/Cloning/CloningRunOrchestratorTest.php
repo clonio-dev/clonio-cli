@@ -103,7 +103,7 @@ function makeOrchestrator(): CloningRunOrchestrator
     $replicator = Mockery::mock(SchemaReplicator::class);
     $replicator->shouldReceive('replicate')->andReturn([]);
 
-    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver = Mockery::mock(DependencyResolver::class)->makePartial();
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
 
@@ -379,7 +379,7 @@ function makeOrchestratorWithSchemaFailures(array $schemaFailures): CloningRunOr
     $replicator->shouldReceive('replicate')->andReturn($schemaFailures);
     $replicator->shouldReceive('correctAutoIncrement')->andReturnNull();
 
-    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver = Mockery::mock(DependencyResolver::class)->makePartial();
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
 
@@ -574,7 +574,7 @@ it('captures per-row skip details when bulk insert fails and row-by-row fallback
             ->shouldReceive('replicate')
             ->andReturn([])
             ->getMock(),
-        Mockery::mock(DependencyResolver::class)
+        Mockery::mock(DependencyResolver::class)->makePartial()
             ->shouldReceive('computeCascadeExclusions')
             ->andReturn([])
             ->shouldReceive('sort')
@@ -641,7 +641,7 @@ it('falls back to null pk snapshot when source schema has no primary key column'
             ->shouldReceive('replicate')
             ->andReturn([])
             ->getMock(),
-        Mockery::mock(DependencyResolver::class)
+        Mockery::mock(DependencyResolver::class)->makePartial()
             ->shouldReceive('computeCascadeExclusions')
             ->andReturn([])
             ->shouldReceive('sort')
@@ -906,7 +906,7 @@ it('does not fire onTableStart for tables excluded by cascade dependency', funct
     $replicator = Mockery::mock(SchemaReplicator::class);
     $replicator->shouldReceive('replicate')->andReturn([]);
 
-    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver = Mockery::mock(DependencyResolver::class)->makePartial();
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn(['users']);
     $resolver->shouldReceive('sort')->andReturnUsing(static fn ($s, array $tables): array => $tables);
 

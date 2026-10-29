@@ -89,6 +89,48 @@ class DependencyResolver
     }
 
     /**
+     * The tables a run leaves out by flag: with --only-tables every table not
+     * named there, and in any case every table to skip. A skip always holds;
+     * --only-tables only narrows the run further.
+     *
+     * @param  list<string>  $tableNames  The configured tables
+     * @param  list<string>  $skipTables
+     * @param  list<string>  $onlyTables
+     * @return list<string>
+     */
+    public static function excludedTables(array $tableNames, array $skipTables, array $onlyTables): array
+    {
+        $notOnly = $onlyTables === []
+            ? []
+            : array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true));
+
+        return array_values(array_unique([...$notOnly, ...$skipTables]));
+    }
+
+    /**
+     * The configured tables a run leaves out, for the run itself and for
+     * --dry-run alike: by flag (see excludedTables()) and, cascading from every
+     * excluded table, the tables with a foreign key dependency on one of them.
+     * A skip entry for a table outside the config still cascades, but is not
+     * listed: the run never meant to copy that table, and a regex skip entry
+     * would otherwise list every source table it matches.
+     *
+     * @param  list<string>  $tableNames  The configured tables
+     * @param  list<string>  $skipTables
+     * @param  list<string>  $onlyTables
+     * @return array{list<string>, list<string>} [by flag, by cascade]
+     */
+    public function exclusions(DatabaseSchemaData $schema, array $tableNames, array $skipTables, array $onlyTables): array
+    {
+        $excluded = self::excludedTables($tableNames, $skipTables, $onlyTables);
+
+        return [
+            array_values(array_intersect($excluded, $tableNames)),
+            $this->computeCascadeExclusions($schema, $excluded, $tableNames),
+        ];
+    }
+
+    /**
      * Given excluded tables, find all tables that have FK dependency on them.
      * Returns the additional tables to exclude (cascade set, not including the original excluded tables).
      *

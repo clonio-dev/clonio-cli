@@ -188,3 +188,25 @@ it('adds a cascaded table only once when several of its foreign keys hit exclude
 
     expect($cascade)->toBe(['reviews']);
 });
+
+it('excludes the tables to skip, and with an only list every table outside it', function (array $skip, array $only, array $expected): void {
+    expect(DependencyResolver::excludedTables(['a', 'b', 'c'], $skip, $only))->toBe($expected);
+})->with([
+    'skip only' => [['b', 'ghost'], [], ['b', 'ghost']],
+    'only' => [[], ['a'], ['b', 'c']],
+    'only and skip' => [['b', 'c'], ['a', 'b'], ['c', 'b']],
+    'duplicate skip' => [['b', 'b', 'c'], [], ['b', 'c']],
+    'nothing' => [[], [], []],
+]);
+
+it('returns the tables excluded by flag and those cascaded from them', function (): void {
+    $exclusions = (new DependencyResolver)->exclusions(makeSchemaForSort(), ['users', 'orders', 'order_items'], ['users'], []);
+
+    expect($exclusions)->toBe([['users'], ['orders', 'order_items']]);
+});
+
+it('lists only configured tables as excluded by flag, but cascades from every skipped table', function (): void {
+    $exclusions = (new DependencyResolver)->exclusions(makeSchemaForSort(), ['orders', 'order_items', 'ghost'], ['tmp', 'users', 'ghost'], []);
+
+    expect($exclusions)->toBe([['ghost'], ['orders', 'order_items']]);
+});

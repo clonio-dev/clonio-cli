@@ -661,7 +661,7 @@ YAML;
     expect($config->skipTables)->toBe([]);
 });
 
-it('ignores non-string entries in the skip list', function (): void {
+it('casts numeric skip entries to table names and ignores empty ones', function (): void {
     Storage::fake('local');
 
     $yaml = <<<'YAML'
@@ -687,10 +687,10 @@ YAML;
 
     $config = (new CloningYamlLoader)->load('test.cloning.yaml');
 
-    expect($config->skipTables)->toBe(['audit_logs']);
+    expect($config->skipTables)->toBe(['audit_logs', '42']);
 });
 
-it('collects tables with rows.strategy skip into skipTables', function (): void {
+it('keeps rows.strategy skip on the table and out of skipTables', function (): void {
     Storage::fake('local');
 
     $yaml = <<<'YAML'
@@ -715,37 +715,10 @@ YAML;
 
     $config = (new CloningYamlLoader)->load('test.cloning.yaml');
 
-    expect($config->skipTables)->toBe(['audit_logs']);
-});
-
-it('deduplicates tables that appear in both skip list and as strategy skip', function (): void {
-    Storage::fake('local');
-
-    $yaml = <<<'YAML'
-version: "1"
-connection: production-db
-options:
-  chunk_size: 1000
-  enforce_column_types: false
-  drop_unknown_tables: false
-  disable_foreign_key_checks: true
-  faker_locale: en_US
-skip:
-  - audit_logs
-tables:
-  users:
-    rows:
-      strategy: full
-  audit_logs:
-    rows:
-      strategy: skip
-YAML;
-
-    Storage::disk('local')->put('test.cloning.yaml', $yaml);
-
-    $config = (new CloningYamlLoader)->load('test.cloning.yaml');
-
-    expect($config->skipTables)->toBe(['audit_logs']);
+    // TableConfigResolver derives the skipped tables from the winning entries,
+    // so a later entry for the same table can still override the skip.
+    expect($config->skipTables)->toBe([])
+        ->and($config->getTable('audit_logs')?->rows->strategy)->toBe('skip');
 });
 
 it('skips a table from the top-level skip list even when its table entry has a non-skip strategy', function (): void {
@@ -1219,4 +1192,38 @@ YAML;
         ->and($fks[1]->table)->toBe('users')
         ->and($fks[1]->column)->toBe('parent_id')
         ->and($fks[1]->selfReferential)->toBeTrue();
+});
+
+it('loads a single-quoted regex table key with its backslashes intact', function (): void {
+    Storage::fake('local');
+
+    $yaml = <<<'YAML'
+version: "1"
+connection: production-db
+options:
+  chunk_size: 1000
+  enforce_column_types: false
+  drop_unknown_tables: false
+  disable_foreign_key_checks: true
+  faker_locale: en_US
+tables:
+  '/^application_logs_archive_\d{2}_\d{4}$/':
+    rows:
+      strategy: last
+      limit: 1
+YAML;
+
+    Storage::disk('local')->put('my.cloning.yaml', $yaml);
+
+    $config = (new CloningYamlLoader)->load('my.cloning.yaml');
+
+    expect($config->tables[0]->tableName)->toBe('/^application_logs_archive_\d{2}_\d{4}$/');
+});
+
+it('rejects a double-quoted regex table key with an unescaped backslash', function (): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('my.cloning.yaml', "version: \"1\"\ntables:\n  \"/^logs_\\d{4}$/\":\n    rows:\n      strategy: full\n");
+
+    expect(fn () => (new CloningYamlLoader)->load('my.cloning.yaml'))
+        ->toThrow(RuntimeException::class, 'Found unknown escape character "\\d"');
 });

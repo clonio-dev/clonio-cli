@@ -87,7 +87,8 @@ The schema-control options together determine how closely the target schema is k
 
 ## Tables
 
-Each key under `tables` is the exact table name in the source database.
+Each key under `tables` is either the exact table name in the source database
+(a **literal**) or a **regex** that matches one or more table names.
 
 ```yaml
 tables:
@@ -107,6 +108,96 @@ tables:
       limit: 100
       sort_by: created_at
 ```
+
+### Matching table names with regex
+
+Wrap a key in `/…/` to treat it as a [PCRE regex](https://www.php.net/manual/en/reference.pcre.pattern.syntax.php)
+(trailing flags allowed, e.g. `/…/i`). At run time, including `--dry-run`, it
+is expanded against the actual tables in the source database, so one entry can
+configure a whole family of tables:
+
+```yaml
+tables:
+  # Every monthly archive table gets the same rule
+  '/^application_logs_archive_\d{2}_\d{4}$/':
+    rows:
+      strategy: last
+      limit: 1
+      clear: delete
+```
+
+> **Warning.** A regex key brings **every** source table it matches into the
+> clone, including tables you have not configured otherwise; their columns are
+> copied as they are. Keep patterns narrow (`'/^app_logs_/'`, not `'/.*/'`)
+> and give every matched table that holds personal data its column rules.
+> `cloning:run --dry-run` lists the tables each pattern matches.
+
+- **Quote regex keys with single quotes.** In double quotes YAML treats `\d`,
+  `\w` and so on as escape sequences and rejects the file; there you would
+  have to write `\\d`.
+- **Keys without a leading `/` are always literal.** There is no glob/`*`
+  wildcard — use a regex instead (`.*` covers what `*` would).
+- **A regex matches as written**, so it is case-sensitive. Add the `i` flag to
+  ignore case: `'/^app_logs_/i'`.
+- **A literal key names the table with exactly that name.** Only when no source
+  table has it does the key match a table that differs in case only, and only
+  if there is exactly one such table (on PostgreSQL `Users` and `users` can
+  both exist; then a key `USERS` matches neither and is reported as *not
+  found*).
+- **When several entries match the same table, the more specific one wins**,
+  whatever their order in the file: a literal key naming the table exactly
+  beats a literal key that matches it only case-insensitively, and both beat
+  any regex. Among regex keys the most restrictive `rows` win: `skip`, then
+  `schema`, then `first`/`last` (the smaller `limit` first), then `full`;
+  between equally restrictive ones the last in the file. A pattern can tighten what another one sets but never
+  loosen it, so a broad pattern cannot copy data that a narrower one withholds;
+  to loosen a regex for one table, add a literal key. Tables in the top-level
+  `skip:` list are always skipped.
+
+  ```yaml
+  tables:
+    '/^app_logs_/':              # default: keep only the newest row
+      rows: {strategy: last, limit: 1}
+    '/^app_logs_debug_/':        # never copy debug logs
+      rows: {strategy: skip}
+    app_logs_critical:           # …but copy this one in full
+      rows: {strategy: full}
+  ```
+
+- **Column rules merge per column across all matching entries**, in the same
+  order: a more specific entry overrides only the columns it names, and the
+  rules of the other entries still apply to all other columns, so no entry can
+  drop an anonymization rule of another. The column rules of a regex only
+  apply to the tables that have the column. To lift a rule, name the column
+  again with `strategy: keep` under a literal key; a regex `keep` does not
+  lift the rule of another regex:
+
+  ```yaml
+  tables:
+    '/^crm_/':                   # every CRM table: 100 rows, email faked
+      rows: {strategy: first, limit: 100}
+      columns:
+        email: {strategy: fake, faker_method: safeEmail}
+    crm_contacts:                # all rows; email stays faked, phone masked too
+      rows: {strategy: full}
+      columns:
+        phone: {strategy: mask, visible_chars: 4}
+  ```
+
+- A literal key that names a table **not** present in the source is still
+  reported as *not found*, also when it sets `strategy: skip`. A regex key,
+  or a `skip:` entry, that matches no table prints a warning (also with
+  `--ci`) and logs a `table_reference_unmatched` event, so a typo cannot
+  silently leave tables out or unskipped.
+- Entries of the top-level `skip:` list can be regex too. Literal names there,
+  and the table names in key remapping, resolve the same way as literal keys.
+- Tables keep the order in which the file first mentions them.
+
+> **Note.** Key remapping needs literal table names: a `strategy: remapping`
+> column under a regex key, or a regex `table` or `foreign_keys[].table` in key
+> remapping, is rejected when the file is validated. The `--skip-tables` /
+> `--only-tables` flags of `cloning:run` take table names only; they resolve
+> like literal keys.
 
 ### `rows`
 

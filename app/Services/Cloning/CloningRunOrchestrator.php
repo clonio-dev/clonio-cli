@@ -41,8 +41,8 @@ class CloningRunOrchestrator
     ) {}
 
     /**
-     * @param  list<string>  $skipTables  Tables to exclude (already validated as mutually exclusive with onlyTables)
-     * @param  list<string>  $onlyTables  If non-empty, only these tables are transferred
+     * @param  list<string>  $skipTables  Tables to exclude, from the YAML and --skip-tables; they stay excluded with onlyTables
+     * @param  list<string>  $onlyTables  If non-empty, only these tables (minus $skipTables) are transferred
      * @param  callable(string, TableRunStatus, int, int, list<SkippedRow>): void  $onProgress
      * @param  (callable(string): void)|null  $onTableStart  Optional. Fires once per table that enters `transferTable()`, regardless of whether the transfer ultimately succeeds (`Transferred`) or fails (`Failed`). Does NOT fire for tables resolved as `SkippedByFlag`, `SkippedByCascade`, `NotFound`, or `SkippedBySchemaFailure`.
      * @param  (callable(int): void)|null  $onStart  Optional. Fires exactly once, before the transfer loop, with the number of tables the loop will iterate. Note: when `$breakOnFailure` aborts early, fewer terminal `onProgress` events fire than this count. Useful for sizing an overall progress bar.
@@ -69,13 +69,8 @@ class CloningRunOrchestrator
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
 
-        // Compute excluded tables
-        $explicitlyExcluded = $onlyTables !== []
-            ? array_values(array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true)))
-            : $skipTables;
-
-        // Compute cascade exclusions
-        $cascadeExclusions = $this->resolver->computeCascadeExclusions($sourceSchema, $explicitlyExcluded, $tableNames);
+        // Compute excluded tables, by flag and by cascade
+        [$explicitlyExcluded, $cascadeExclusions] = $this->resolver->exclusions($sourceSchema, $tableNames, $skipTables, $onlyTables);
 
         // Sort remaining tables
         $remaining = array_values(array_filter(
@@ -145,7 +140,7 @@ class CloningRunOrchestrator
 
         // Add skipped tables to results
         foreach ($explicitlyExcluded as $tableName) {
-            $reason = $onlyTables !== [] ? 'excluded by --only filter' : 'explicitly excluded via --skip';
+            $reason = in_array($tableName, $skipTables, true) ? 'explicitly excluded via --skip' : 'excluded by --only filter';
             $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByFlag, 0, 0, 0.0, $reason);
             Log::info('table_skipped_by_flag', ['table' => $tableName, 'reason' => $reason]);
         }

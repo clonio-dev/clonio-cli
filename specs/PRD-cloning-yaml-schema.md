@@ -78,8 +78,55 @@ alias of `--no-remap-keys`) and set at dump time via `cloning:dump --no-remap-ke
 
 ### 4.3 `tables.<table_name>`
 
+A `tables` key is either a **literal** table name or a **regex** (a key wrapped
+in `/…/`, trailing flags allowed). Regex keys are expanded against the actual
+source tables at run time (also for `--dry-run`), so a single entry can
+configure a whole family of tables:
+
+- A regex key pulls every source table it matches into the clone, including
+  tables without any other configuration, whose columns are copied unchanged;
+  the docs warn against catch-all patterns such as `'/.*/'`.
+- Keys without a leading `/` are always literal — there is no glob/`*` wildcard.
+- Regex keys match as written (case-sensitive unless the `i` flag is set).
+- A literal key names the table with exactly that name; only when no source
+  table has it does it fall back to the single table that matches it
+  case-insensitively. An ambiguous fallback matches nothing (*not found*).
+- When several entries match the same table, the more specific one wins,
+  whatever the file order: an exact literal key beats a case-insensitive
+  literal match, which beats any regex. Among regex keys the most restrictive
+  `rows` win (`skip` > `schema` > `first`/`last` with the smaller `limit` >
+  `full`, the last in file order on a tie): a regex can tighten but never loosen what another regex
+  sets; only a literal key loosens. Tables in the top-level `skip:` list are
+  always skipped. Column rules merge per column across all matching entries in
+  the same order: an entry overrides only the columns it names, so no entry
+  drops another one's anonymization rule. A literal `strategy: keep` lifts a
+  rule explicitly; a regex `keep` does not lift another regex's rule. Column
+  rules of a regex key only apply to the matched tables that have the column.
+- A literal key naming an absent source table is still reported *not found*,
+  also with `strategy: skip`; a regex key or `skip:` entry that matches
+  nothing prints a warning (also with `--ci`) and logs
+  `table_reference_unmatched`.
+- Literal names in the `skip:` list and in key remapping (tables and foreign
+  keys) resolve the same way as literal keys.
+- Resolved tables keep the order in which the file first mentions them.
+- Regex keys must be single-quoted in YAML; double quotes turn `\d` into an
+  invalid escape sequence.
+- Entries of the top-level `skip:` list may be regex as well; each regex must
+  compile.
+- Key remapping needs literal table names: a `strategy: remapping` column under
+  a regex key and a regex table in key remapping (`key_remapping.tables[].table`
+  or any `foreign_keys[].table`) fail validation. The `--skip-tables` /
+  `--only-tables` flags remain literal-only: their names resolve like literal
+  keys, and a `/…/` value is rejected before connecting.
+
 ```yaml
 tables:
+  '/^application_logs_archive_\d{2}_\d{4}$/':   # regex: all monthly archives
+    rows:
+      strategy: last
+      limit: 1
+      clear: delete
+
   users:
     rows:
       strategy: full     # required; full | first | last — no default

@@ -94,10 +94,21 @@ class CloningYamlValidator
             }
         }
 
-        // 7. skip list validation (optional)
+        // 7. skip list validation (optional); entries may be regex like table keys
         $skip = $data['skip'] ?? null;
         if ($skip !== null && ! is_array($skip)) {
             $errors[] = "Field 'skip' must be a list of table name strings";
+        } elseif (is_array($skip)) {
+            foreach ($skip as $index => $entry) {
+                // An unquoted numeric table name parses as int; it names a table like a numeric key.
+                $entry = is_int($entry) ? (string) $entry : $entry;
+
+                if (! is_string($entry)) {
+                    $errors[] = sprintf('skip[%s]: must be a table name string', $index);
+                } elseif (TableConfigResolver::isInvalidPattern($entry)) {
+                    $errors[] = sprintf("skip[%s]: invalid regex pattern '%s'", $index, $entry);
+                }
+            }
         }
 
         return $errors;
@@ -154,6 +165,13 @@ class CloningYamlValidator
         foreach ($tables as $tableName => $tableConfig) {
             $prefix = sprintf("Table '%s'", $tableName);
 
+            // A table key may be a slash-delimited regex; reject it early if it
+            // does not compile so the user hears about it before any DB work.
+            $key = (string) $tableName;
+            if (TableConfigResolver::isInvalidPattern($key)) {
+                $errors[] = sprintf('%s: invalid regex pattern', $prefix);
+            }
+
             if (! is_array($tableConfig)) {
                 $errors[] = sprintf('%s: must be an object', $prefix);
 
@@ -183,7 +201,7 @@ class CloningYamlValidator
                 } else {
                     /** @var array<string, mixed> $typedColumns */
                     $typedColumns = $columns;
-                    $errors = array_merge($errors, $this->validateColumns($prefix, $typedColumns));
+                    $errors = array_merge($errors, $this->validateColumns($prefix, $typedColumns, TableConfigResolver::isRegex($key)));
                 }
             }
         }
@@ -232,9 +250,10 @@ class CloningYamlValidator
 
     /**
      * @param  array<string, mixed>  $columns
+     * @param  bool  $regexTable  The columns belong to a regex table key
      * @return list<string>
      */
-    private function validateColumns(string $tablePrefix, array $columns): array
+    private function validateColumns(string $tablePrefix, array $columns, bool $regexTable): array
     {
         $errors = [];
 
@@ -261,6 +280,14 @@ class CloningYamlValidator
 
             if (! is_string($strategy) || ! in_array($strategy, self::VALID_COLUMN_STRATEGIES, true)) {
                 $errors[] = sprintf('%s: strategy must be one of: %s', $prefix, implode(', ', self::VALID_COLUMN_STRATEGIES));
+
+                continue;
+            }
+
+            // Key mappings are generated per concrete table name; under a regex key
+            // they would be silently skipped and the original keys copied.
+            if ($regexTable && $strategy === 'remapping') {
+                $errors[] = sprintf("%s: 'remapping' needs a literal table name, not a regex key", $prefix);
 
                 continue;
             }
@@ -319,6 +346,12 @@ class CloningYamlValidator
 
             $seenTables[] = $table;
 
+            if (TableConfigResolver::isRegex($table)) {
+                $errors[] = sprintf("%s: table '%s' must be a literal table name, not a regex", $prefix, $table);
+
+                continue;
+            }
+
             if (! in_array($table, $knownTableNames, true)) {
                 $errors[] = sprintf("%s: table '%s' is not defined in the 'tables' section", $prefix, $table);
             }
@@ -359,6 +392,8 @@ class CloningYamlValidator
                     /** @var array<string, mixed> $fk */
                     if (! is_string($fk['table'] ?? null) || $fk['table'] === '') {
                         $errors[] = sprintf("%s: 'table' is required", $fkPrefix);
+                    } elseif (TableConfigResolver::isRegex($fk['table'])) {
+                        $errors[] = sprintf("%s: table '%s' must be a literal table name, not a regex", $fkPrefix, $fk['table']);
                     }
 
                     if (! is_string($fk['column'] ?? null) || $fk['column'] === '') {
@@ -491,6 +526,16 @@ class CloningYamlValidator
                 if (! is_string($use) || ! in_array($use, $validUseValues, true)) {
                     $errors[] = sprintf("%s: 'remapping' requires argument 'use' (one of: %s)", $prefix, implode(', ', $validUseValues));
                     break;
+                }
+
+                // Foreign keys are rewritten per concrete table name; a regex would
+                // never match one, leaving the referencing column unremapped.
+                $foreignKeys = is_array($args['foreign_keys'] ?? null) ? $args['foreign_keys'] : [];
+                foreach ($foreignKeys as $fk) {
+                    $fkTable = is_array($fk) ? ($fk['table'] ?? null) : null;
+                    if (is_string($fkTable) && TableConfigResolver::isRegex($fkTable)) {
+                        $errors[] = sprintf("%s: 'remapping' foreign key table '%s' must be a literal table name, not a regex", $prefix, $fkTable);
+                    }
                 }
 
                 break;

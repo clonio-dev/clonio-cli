@@ -149,7 +149,7 @@ Print the run summary (see §6 for format per verbosity level). If any tables we
 
 ## 5. Table Filtering — `--skip-tables` and `--only-tables`
 
-Both flags accept a comma-separated list of **exact table names**. Glob patterns, regex, and prefix wildcards are not supported. Spaces around commas are trimmed.
+Both flags accept a comma-separated list of **exact table names**. Glob patterns, regex, and prefix wildcards are not supported. Spaces around commas are trimmed. A value without any name (e.g. `,`) is a `ValidationError (4)`, as an empty `--only-tables` list would otherwise transfer every table; an empty value counts as not given.
 
 ```bash
 # Skip two tables
@@ -186,6 +186,8 @@ Tables excluded by flag or cascade:
 - Are skipped during data transfer.
 - Appear in the audit log as `skipped_by_flag` or `skipped_by_cascade`.
 - Are not counted in transferred totals but are shown in the summary.
+
+Only tables configured under `tables:` are reported as `skipped_by_flag`. A skip entry for a table outside the config is not listed (the run never copies it), but tables with an FK dependency on it are still cascaded.
 
 ---
 

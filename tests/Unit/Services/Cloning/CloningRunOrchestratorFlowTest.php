@@ -103,7 +103,7 @@ function g3_orch_make(
     }
 
     if (! $resolver instanceof DependencyResolver) {
-        $resolver = Mockery::mock(DependencyResolver::class);
+        $resolver = Mockery::mock(DependencyResolver::class)->makePartial();
         $resolver->shouldReceive('computeCascadeExclusions')->andReturn([]);
         $resolver->shouldReceive('sort')->andReturnUsing(static fn ($schema, array $tables): array => $tables);
     }
@@ -210,7 +210,7 @@ function g3_orch_events(string $event): array
 
 function g3_orch_resolver(array $cascade = [], ?Closure $sort = null): DependencyResolver
 {
-    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver = Mockery::mock(DependencyResolver::class)->makePartial();
     $resolver->shouldReceive('computeCascadeExclusions')->andReturn($cascade);
     $resolver->shouldReceive('sort')->andReturnUsing($sort ?? static fn ($schema, array $tables): array => $tables);
 
@@ -252,6 +252,22 @@ it('records tables skipped via --skip with zero counts and a log event', functio
         ]);
 });
 
+it('records no result for a skipped table that is not configured', function (): void {
+    g3_orch_db();
+
+    [$result] = g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([g3_orch_table('a')]),
+        new DatabaseSchemaData('src', [g3_orch_schema_table('a'), g3_orch_schema_table('tmp')]),
+        skip: ['tmp'],
+    );
+
+    expect($result->tables)->toHaveCount(1)
+        ->and($result->tables[0]->tableName)->toBe('a')
+        ->and($result->tables[0]->status)->toBe(TableRunStatus::Transferred)
+        ->and(g3_orch_events('table_skipped_by_flag'))->toBe([]);
+});
+
 it('records tables left out by --only with the only-filter reason', function (): void {
     g3_orch_db();
 
@@ -265,6 +281,24 @@ it('records tables left out by --only with the only-filter reason', function ():
     expect($result->tables[0])->toEqual(new TableRunResultData('a', TableRunStatus::SkippedByFlag, 0, 0, 0.0, 'excluded by --only filter'))
         ->and($result->tables[1]->tableName)->toBe('b')
         ->and($result->tables[1]->status)->toBe(TableRunStatus::Transferred);
+});
+
+it('keeps skipping a table that --only names', function (): void {
+    g3_orch_db();
+
+    [$result] = g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([g3_orch_table('a'), g3_orch_table('b'), g3_orch_table('c')]),
+        new DatabaseSchemaData('src', [g3_orch_schema_table('a'), g3_orch_schema_table('b'), g3_orch_schema_table('c')]),
+        skip: ['b'],
+        only: ['a', 'b'],
+    );
+
+    expect($result->tables[0])->toEqual(new TableRunResultData('c', TableRunStatus::SkippedByFlag, 0, 0, 0.0, 'excluded by --only filter'))
+        ->and($result->tables[1])->toEqual(new TableRunResultData('b', TableRunStatus::SkippedByFlag, 0, 0, 0.0, 'explicitly excluded via --skip'))
+        ->and($result->tables[2]->tableName)->toBe('a')
+        ->and($result->tables[2]->status)->toBe(TableRunStatus::Transferred)
+        ->and($result->tables)->toHaveCount(3);
 });
 
 it('records cascade exclusions with zero counts and a log event', function (): void {
@@ -761,7 +795,7 @@ it('writes no rows to a dump for a schema-only table', function (): void {
 
 it('passes a re-indexed list of --only exclusions to the cascade resolver', function (): void {
     $received = null;
-    $resolver = Mockery::mock(DependencyResolver::class);
+    $resolver = Mockery::mock(DependencyResolver::class)->makePartial();
     $resolver->shouldReceive('computeCascadeExclusions')->andReturnUsing(static function ($schema, array $excluded) use (&$received): array {
         $received = $excluded;
 

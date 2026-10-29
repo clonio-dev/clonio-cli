@@ -428,7 +428,7 @@ Resolves the source connection (from the YAML `connection` field) and the target
 
 ### Phase 3 — Dry-run
 
-Only runs when `--dry-run` is set. Fetches both the source and target schemas, computes the schema diff, counts estimated rows per table, and prints a summary. Tables not found in the source are shown as `NOT FOUND`. Exits with code `0` after printing the summary.
+Only runs when `--dry-run` is set. Fetches both the source and target schemas, computes the schema diff, counts estimated rows per table, and prints a summary. Tables not found in the source are shown as `NOT FOUND`. Tables the run would skip (the YAML `skip:` list, `rows.strategy: skip`, `--skip-tables`, tables outside `--only-tables`, and tables cascaded from those) are shown with strategy `skip` and 0 rows, and are not counted. Exits with code `0` after printing the summary.
 
 ### Phase 4 — Schema Replication
 
@@ -482,7 +482,7 @@ Prints the run summary. Tables not found in the source are always listed, regard
 
 ### `--skip-tables` and `--only-tables`
 
-Both flags accept a comma-separated list of exact table names. Glob patterns and regex are not supported. Spaces around commas are trimmed.
+Both flags accept a comma-separated list of table names. Spaces around commas are trimmed. A name matches the table with exactly that name; only when no source table has it does it match the one table that differs in case only, like a literal key in the YAML (see [Matching table names with regex](../cloning-yaml.md#matching-table-names-with-regex)). A name that matches no source table prints a warning, also with `--ci`; with `--only-tables` such a typo then transfers nothing. A value that holds no name at all, such as `--only-tables=,`, is a `ValidationError (4)`; an empty value (`--only-tables=`) counts as not given.
 
 ```bash
 # Skip two tables
@@ -492,7 +492,9 @@ clonio cloning:run prod.cloning.yaml --target staging --skip-tables=audit_logs,s
 clonio cloning:run prod.cloning.yaml --target staging --only-tables=users,orders
 ```
 
-Using both flags together is a `ValidationError (4)`.
+Regex is not accepted on the command line: a value wrapped in `/…/` is a `ValidationError (4)`, raised before any connection is opened. Put patterns in the YAML [`skip:` list](#skipping-tables-in-yaml) instead.
+
+Using both flags together is a `ValidationError (4)`. Tables skipped in the YAML (the `skip:` list or `rows.strategy: skip`) stay skipped with `--only-tables`; the flag only narrows the run further.
 
 ### FK-Dependent Cascade
 
@@ -539,6 +541,8 @@ tables:
 
 YAML-level skips and `--skip-tables` are **additive**: both lists are merged at runtime. The same cascade rules apply — tables with FK dependencies on a skipped table are also skipped automatically.
 
+Only tables configured under `tables:` are reported as skipped, in the summary and in the audit log. A skip entry for a table outside `tables:` (e.g. a regex in `skip:` that matches many source tables) is not listed, as the run never copies that table anyway, but the tables with FK dependencies on it are still skipped.
+
 ## Table Run Statuses
 
 Each table in a run is recorded with one of the following statuses in the audit and process logs:
@@ -546,7 +550,7 @@ Each table in a run is recorded with one of the following statuses in the audit 
 | Status | Meaning |
 |--------|---------|
 | `transferred` | Table was transferred successfully |
-| `skipped_by_flag` | Table was excluded via `--skip-tables` or `--only-tables` |
+| `skipped_by_flag` | Configured table was excluded via `--skip-tables`, `--only-tables` or a YAML skip |
 | `skipped_by_cascade` | Table was excluded because it has a FK dependency on a skipped table |
 | `skipped_by_schema_failure` | Table's schema could not be created in the target database (native DDL and fallback both failed); the data transfer step was skipped. Overall `success` is `false`. |
 | `not_found` | Table is listed in the YAML but does not exist in the source database |
@@ -634,7 +638,7 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `1` | Run failed — one or more tables had unrecoverable transfer errors |
 | `2` | Config error — `clonio.json` missing, or `APP_KEY` not set |
 | `3` | Connection error — source or target unreachable |
-| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, or CI without `--target` |
+| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, a regex or no table name in either flag, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |
 
 ## Audit & Process Logs

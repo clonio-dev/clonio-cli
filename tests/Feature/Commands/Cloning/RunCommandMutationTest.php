@@ -13,6 +13,7 @@ use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
+use App\Data\Schema\ForeignKeyData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\DatabaseConnectionType;
 use App\Exceptions\KeyRemappingExhaustedException;
@@ -280,6 +281,55 @@ it('rejects --skip-tables combined with --only-tables before running', function 
         ->and($out)->toBe("--skip-tables and --only-tables are mutually exclusive.\n")
         ->and($called)->toBeFalse();
 });
+
+it('rejects a regex in a table option before connecting', function (string $option): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    $called = false;
+    g1_bind(run: function () use (&$called): RunResultData {
+        $called = true;
+
+        return g1_result();
+    });
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => 'users,/^tmp_/']);
+
+    expect($code)->toBe(4)
+        ->and($out)->toBe($option.": '/^tmp_/' is a regex; the option takes table names only, put regex in the YAML skip: list\n")
+        ->and($called)->toBeFalse();
+})->with(['--skip-tables', '--only-tables']);
+
+it('rejects a table option without a table name before connecting', function (string $option, string $value): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    $called = false;
+    g1_bind(run: function () use (&$called): RunResultData {
+        $called = true;
+
+        return g1_result();
+    });
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => $value]);
+
+    expect($code)->toBe(4)
+        ->and($out)->toBe($option.": no table name given\n")
+        ->and($called)->toBeFalse();
+})->with(['--skip-tables', '--only-tables'])->with([',', ' , ']);
+
+it('keeps a table named 0 in a table option', function (string $option, int $index): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    $args = null;
+    g1_bind(run: function (array $a) use (&$args) {
+        $args = $a;
+
+        return g1_result();
+    });
+
+    [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => '0']);
+
+    expect($code)->toBe(0)->and($args[$index])->toBe(['0']);
+})->with([
+    'skip' => ['--skip-tables', 5],
+    'only' => ['--only-tables', 6],
+]);
 
 it('casts non-string table option values to strings', function (string $option, int $index): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
@@ -1061,6 +1111,101 @@ it('estimates rows per strategy in a dry run', function (): void {
     );
 });
 
+it('shows the tables the run would skip as skipped in a dry run, without counting them', function (array $options, array $counted, array $rows): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml(
+        "  users:\n    rows:\n      strategy: full\n    columns:\n      email:\n        strategy: \"null\"\n"
+        ."  orders:\n    rows:\n      strategy: full\n"
+        ."  logs_2025:\n    rows:\n      strategy: skip\n"
+        ."  tmp_cache:\n    rows:\n      strategy: full\n"
+        ."  items:\n    rows:\n      strategy: full\n"
+        ."skip:\n  - '/^tmp_/'\n"
+    ));
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => $c->name === 'production-db'
+        ? g1_schema([
+            g1_table('users'),
+            new TableSchemaData('orders', [], [new ForeignKeyData('cache_id', 'tmp_cache', 'id')]),
+            g1_table('logs_2025'),
+            g1_table('tmp_cache'),
+            g1_table('items'),
+        ])
+        : throw new RuntimeException('target down'));
+    g1_db(array_combine(
+        array_map(static fn (string $t): string => sprintf('SELECT COUNT(*) as count FROM `%s`', $t), $counted),
+        array_map(static fn (string $t): array => [(object) ['count' => 5]], $counted),
+    ), 2 + count($counted));
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true, ...$options]);
+
+    expect($code)->toBe(0)->and($out)->toBe(
+        "\n  Dry-run: production-db\n\n"
+        .g1_row('Table', 'Rows (est.)', 'Strategy', 'Transformations')
+        .g1_sep()
+        .implode('', array_map(static fn (array $row): string => g1_row(...$row), $rows))
+        .g1_sep()
+        .sprintf("  Total                    %d rows across 5 tables\n", 5 * count($counted))
+        ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
+    );
+})->with([
+    // tmp_cache by the skip: list, logs_2025 by strategy, orders by cascade from tmp_cache
+    'yaml skips' => [[], ['users', 'items'], [
+        ['users', '5', 'full', 'email'], ['orders', '0', 'skip', '—'], ['logs_2025', '0', 'skip', '—'], ['tmp_cache', '0', 'skip', '—'], ['items', '5', 'full', '—'],
+    ]],
+    '--skip-tables' => [['--skip-tables' => 'ITEMS'], ['users'], [
+        ['users', '5', 'full', 'email'], ['orders', '0', 'skip', '—'], ['logs_2025', '0', 'skip', '—'], ['tmp_cache', '0', 'skip', '—'], ['items', '0', 'skip', '—'],
+    ]],
+    '--only-tables keeps the yaml skips' => [['--only-tables' => 'USERS,logs_2025,items'], ['users', 'items'], [
+        ['users', '5', 'full', 'email'], ['orders', '0', 'skip', '—'], ['logs_2025', '0', 'skip', '—'], ['tmp_cache', '0', 'skip', '—'], ['items', '5', 'full', '—'],
+    ]],
+]);
+
+it('expands regex table keys in a dry run', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml(
+        "  '/^logs_\\d{4}$/':\n    rows:\n      strategy: last\n      limit: 2\n"
+        ."  '/^tmp_/':\n    rows:\n      strategy: full\n"
+    ));
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => $c->name === 'production-db'
+        ? g1_schema([g1_table('logs_2025'), g1_table('logs_2026'), g1_table('users')])
+        : throw new RuntimeException('target down'));
+    g1_db([
+        'SELECT COUNT(*) as count FROM `logs_2025`' => [(object) ['count' => 5]],
+        'SELECT COUNT(*) as count FROM `logs_2026`' => [(object) ['count' => 1]],
+    ], 4);
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    // Each matched table gets its own estimate; '/^tmp_/' matches nothing: a warning, not "not found".
+    expect($code)->toBe(0)->and($out)->toBe(
+        "  Warning: table key '/^tmp_/' matches no source table\n"
+        ."\n  Dry-run: production-db\n\n"
+        .g1_row('Table', 'Rows (est.)', 'Strategy', 'Transformations')
+        .g1_sep()
+        .g1_row('logs_2025', '2', 'last 2', '—')
+        .g1_row('logs_2026', '1', 'last 2', '—')
+        .g1_sep()
+        ."  Total                    3 rows across 2 tables\n"
+        ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
+    );
+});
+
+it('stops with a config error when a table pattern fails while matching', function (bool $dryRun): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  '/^a/u':\n    rows:\n      strategy: full\n"));
+    $called = false;
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table("\xff")]), run: function () use (&$called): RunResultData {
+        $called = true;
+
+        return g1_result();
+    });
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--dry-run' => $dryRun]);
+
+    expect($code)->toBe(2)
+        ->and($out)->toBe("Table pattern '/^a/u' failed on table '\xff': Malformed UTF-8 characters, possibly incorrectly encoded\n")
+        ->and($called)->toBeFalse();
+})->with([
+    'run' => [false],
+    'dry run' => [true],
+]);
+
 it('quotes the table name per source driver when counting rows', function (DatabaseConnectionType $type, string $quoted): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n"));
     g1_bind(connections: [
@@ -1281,7 +1426,7 @@ it('patches the column and prints the re-run command after interactive confirmat
 
 it('suggests --no-memory-limit with the full original command line', function (): void {
     Storage::disk('local')->put('t.yaml', g1_remap_yaml());
-    g1_bind();
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users'), g1_table('a'), g1_table('b')]));
     $opened = 0;
     $connector = Mockery::mock(DatabaseConnectionService::class);
     $connector->shouldReceive('open')->andReturnUsing(function () use (&$opened): string {
@@ -1315,7 +1460,7 @@ it('suggests --no-memory-limit with the full original command line', function ()
 
 it('omits empty value options from the memory hint', function (): void {
     Storage::disk('local')->put('t.yaml', g1_remap_yaml());
-    g1_bind();
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users'), g1_table('c')]));
     $remapping = Mockery::mock(KeyRemappingService::class);
     $remapping->shouldReceive('generateMappings')->andThrow(new RuntimeException('Out of memory'));
     app()->instance(KeyRemappingService::class, $remapping);
