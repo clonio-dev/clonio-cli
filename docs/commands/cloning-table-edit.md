@@ -25,10 +25,12 @@ If `file` is omitted, the command searches for `.cloning.yaml` files in the curr
 | Strategy | Description |
 |----------|-------------|
 | `full` | Copy every row from the source. |
-| `first` | Copy the first N rows after sorting (`limit` required, `sort_by` optional). |
-| `last` | Copy the last N rows after sorting (`limit` required, `sort_by` optional). |
+| `first` | Copy the first N rows after sorting (`limit` required, `sort_by` optional; defaults to the primary key). |
+| `last` | Copy the last N rows after sorting (`limit` required, `sort_by` optional; defaults to the primary key). |
 | `schema` | Create the table on the target, copy no rows. `clear` still applies. |
 | `skip` | Skip this table — no data transferred. |
+
+Tables without a primary key need `sort_by` for `first` / `last`; otherwise `cloning:run` fails the table. See [`rows`](../cloning-yaml.md#rows).
 
 ## Clear modes
 
