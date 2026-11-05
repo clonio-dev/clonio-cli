@@ -116,7 +116,7 @@ Controls which rows are transferred and whether the target table is cleared firs
 |-------|:--------:|--------|-------------|
 | `strategy` | yes | `full` \| `first` \| `last` \| `schema` \| `skip` | Row selection strategy. |
 | `limit` | when `first`/`last` | integer ≥ 1 | Number of rows to transfer. |
-| `sort_by` | no | column name | Column to order by for `first`/`last`. Defaults to the primary key. |
+| `sort_by` | no | column name | Column to order by for `first`/`last`. Defaults to the primary key (all key columns, in key order). Required for tables without a primary key. A column that does not exist on the source table fails the table before any row is read. |
 | `clear` | no | `false` \| `truncate` \| `delete` | Whether to empty the target table before inserting. Default: `false`. |
 
 #### Row strategies

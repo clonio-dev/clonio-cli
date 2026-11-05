@@ -242,7 +242,22 @@ class CloningRunOrchestrator
                 ? $this->primaryKeyColumns($sourceTable)
                 : [];
 
-            $keyColumns = $this->keysetColumns($tableConfig, $source->type, $sourceTable, $pkColumns, $selectColumns);
+            [$sortColumns, $sortError] = $this->sortColumns($tableConfig, $sourceTable, $pkColumns);
+
+            if ($sortError !== null) {
+                $success = false;
+                Log::error('table_transfer_failed', ['table' => $tableName, 'reason' => $sortError]);
+                $tableResults[] = new TableRunResultData($tableName, TableRunStatus::Failed, 0, 0, microtime(true) - $tableStart, $sortError, $notes);
+                ($onProgress)($tableName, TableRunStatus::Failed, 0, 0, []);
+
+                if ($breakOnFailure) {
+                    break;
+                }
+
+                continue;
+            }
+
+            $keyColumns = $this->keysetColumns($sortColumns, $source->type, $sourceTable, $pkColumns, $selectColumns);
 
             [$rows, $skipped, $failed, $reason, $skippedRows] = $dumpSink instanceof SqlDumpService
                 ? $this->dumpTable(
@@ -255,6 +270,7 @@ class CloningRunOrchestrator
                     $config->keyRemapping,
                     $selectColumns,
                     $keyColumns,
+                    $sortColumns,
                 )
                 : $this->transferTable(
                     $config->options,
@@ -267,6 +283,7 @@ class CloningRunOrchestrator
                     $config->keyRemapping,
                     $selectColumns,
                     $keyColumns,
+                    $sortColumns,
                     $trackRowTotals,
                     $onTableProgress,
                 );
@@ -346,6 +363,7 @@ class CloningRunOrchestrator
      * @param  list<string>  $pkColumns
      * @param  list<string>|null  $selectColumns  Explicit source columns to copy; null copies all
      * @param  list<string>  $keyColumns  Columns to seek by (keysetColumns()); empty reads with LIMIT/OFFSET
+     * @param  list<string>  $sortColumns  Columns 'first' / 'last' order by (sortColumns())
      * @param  (callable(string, StatsTableTransferData): void)|null  $onTableProgress
      * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
@@ -360,6 +378,7 @@ class CloningRunOrchestrator
         ?KeyRemappingConfigData $keyRemappingConfig,
         ?array $selectColumns,
         array $keyColumns,
+        array $sortColumns,
         bool $trackRowTotals,
         ?callable $onTableProgress,
     ): array {
@@ -426,7 +445,7 @@ class CloningRunOrchestrator
 
             do {
                 $tOverall = microtime(true);
-                [$sql, $bindings] = $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $keyColumns, $cursor, $selectColumns);
+                [$sql, $bindings] = $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $keyColumns, $sortColumns, $cursor, $selectColumns);
                 /** @var list<object> $chunk */
                 $chunk = DB::connection($sourceConn)->select($sql, $bindings);
                 $selectSeconds = microtime(true) - $tOverall;
@@ -527,6 +546,7 @@ class CloningRunOrchestrator
      *
      * @param  list<string>|null  $selectColumns  Explicit source columns to copy; null copies all
      * @param  list<string>  $keyColumns  Columns to seek by (keysetColumns()); empty reads with LIMIT/OFFSET
+     * @param  list<string>  $sortColumns  Columns 'first' / 'last' order by (sortColumns())
      * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
     private function dumpTable(
@@ -539,6 +559,7 @@ class CloningRunOrchestrator
         ?KeyRemappingConfigData $keyRemappingConfig = null,
         ?array $selectColumns = null,
         array $keyColumns = [],
+        array $sortColumns = [],
     ): array {
         if ($tableConfig->rows->strategy === 'schema') {
             return [0, 0, false, null, []];
@@ -555,7 +576,7 @@ class CloningRunOrchestrator
 
         try {
             do {
-                [$sql, $bindings] = $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $keyColumns, $cursor, $selectColumns);
+                [$sql, $bindings] = $this->buildChunkQuery($tableConfig, $source, $offset, $chunkSize, $keyColumns, $sortColumns, $cursor, $selectColumns);
                 /** @var list<object> $chunk */
                 $chunk = DB::connection($sourceConn)->select($sql, $bindings);
 
@@ -717,6 +738,42 @@ class CloningRunOrchestrator
     }
 
     /**
+     * The columns 'first' / 'last' order by, and an error that fails the table
+     * instead. `rows.sort_by` names one column; it must exist on the source
+     * table, matched case-insensitively when no column has the exact name, so
+     * the query never orders by a column the table lacks. Without `sort_by`
+     * the rows are ordered by the primary key in key order; a table without a
+     * primary key needs `sort_by`. `full` and `schema` copy rows unordered.
+     *
+     * @param  list<string>  $primaryKey  In key order (primaryKeyColumns())
+     * @return array{list<string>, ?string} [sortColumns, error]
+     */
+    private function sortColumns(TableCloningConfigData $config, ?TableSchemaData $table, array $primaryKey): array
+    {
+        $rows = $config->rows;
+
+        if ($rows->strategy !== 'first' && $rows->strategy !== 'last') {
+            return [[], null];
+        }
+
+        if ($rows->sortBy === null) {
+            return $primaryKey === []
+                ? [[], sprintf("Table %s has no primary key to order its '%s' rows by; set rows.sort_by", $config->tableName, $rows->strategy)]
+                : [$primaryKey, null];
+        }
+
+        $sortBy = $rows->sortBy;
+        $names = array_map(static fn (ColumnSchemaData $c): string => $c->name, $table->columns ?? []);
+        $name = in_array($sortBy, $names, true)
+            ? $sortBy
+            : array_find($names, static fn (string $n): bool => strcasecmp($n, $sortBy) === 0);
+
+        return $name === null
+            ? [[], sprintf('Column %s set as rows.sort_by does not exist in table %s', $sortBy, $config->tableName)]
+            : [[$name], null];
+    }
+
+    /**
      * The columns to seek by when reading this table in chunks, or [] to read it
      * with LIMIT/OFFSET instead. Keyset (seek) pagination needs a total order on
      * columns whose last value can be bound back unchanged: the strategy's sort
@@ -725,22 +782,22 @@ class CloningRunOrchestrator
      *  - on SQL Server,
      *  - without a primary key,
      *  - for a composite primary key whose key order the driver does not report,
-     *  - when a key column is nullable, unknown to the source schema (e.g. a casing
-     *    mismatch in `sort_by`) or not selected: a NULL cursor value would make the
-     *    next seek match no row and silently end the table early,
+     *  - when a key column is nullable or not selected: a NULL cursor value would
+     *    make the next seek match no row and silently end the table early,
      *  - when a key column's type does not round-trip (isSeekableType()).
      *
+     * @param  list<string>  $sortColumns  Columns 'first' / 'last' order by (sortColumns()); empty for 'full'
      * @param  list<string>  $primaryKey  In key order (primaryKeyColumns())
      * @param  list<string>|null  $selectColumns
      * @return list<string>
      */
-    private function keysetColumns(TableCloningConfigData $config, DatabaseConnectionType $type, ?TableSchemaData $table, array $primaryKey, ?array $selectColumns): array
+    private function keysetColumns(array $sortColumns, DatabaseConnectionType $type, ?TableSchemaData $table, array $primaryKey, ?array $selectColumns): array
     {
         if (! $table instanceof TableSchemaData || $type === DatabaseConnectionType::SqlServer || $primaryKey === []) { // @pest-mutate-ignore: InstanceOfToTrue
             return [];
         }
 
-        $keys = $config->rows->strategy === 'full' ? [] : [$config->rows->sortBy ?? 'id'];
+        $keys = $sortColumns;
         foreach ($primaryKey as $pk) {
             if (! in_array($pk, $keys, true)) {
                 $keys[] = $pk;
@@ -750,7 +807,9 @@ class CloningRunOrchestrator
         foreach ($keys as $key) {
             $column = array_find($table->columns, static fn (ColumnSchemaData $c): bool => $c->name === $key);
 
-            if (! $column instanceof ColumnSchemaData
+            // Sort and key columns come from the source schema (sortColumns()), so a
+            // column is always found; the check only narrows the type.
+            if (! $column instanceof ColumnSchemaData // @pest-mutate-ignore: InstanceOfToTrue
                 || $column->nullable
                 || ($selectColumns !== null && ! in_array($key, $selectColumns, true))
                 || ! $this->isSeekableType($column->type, $type)
@@ -796,11 +855,12 @@ class CloningRunOrchestrator
      * skipping a growing OFFSET; without, it falls back to offsetChunkQuery().
      *
      * @param  list<string>  $keyColumns
+     * @param  list<string>  $sortColumns  Columns 'first' / 'last' order by (sortColumns())
      * @param  list<mixed>|null  $cursor
      * @param  list<string>|null  $columns  Explicit column list; null selects all columns
      * @return array{string, list<mixed>}
      */
-    private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit, array $keyColumns, ?array $cursor, ?array $columns = null): array
+    private function buildChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit, array $keyColumns, array $sortColumns, ?array $cursor, ?array $columns = null): array
     {
         $rows = $config->rows;
         $select = $columns === null
@@ -818,7 +878,7 @@ class CloningRunOrchestrator
         }
 
         if ($keyColumns === []) {
-            return [$this->offsetChunkQuery($config, $source, $offset, $limit, $select, $direction), []];
+            return [$this->offsetChunkQuery($config, $source, $sortColumns, $offset, $limit, $select, $direction), []];
         }
 
         $quotedTable = $this->quoteTable($config->tableName, $source->type);
@@ -907,8 +967,10 @@ class CloningRunOrchestrator
     /**
      * Legacy LIMIT/OFFSET (or OFFSET/FETCH) chunk query — used when keyset does
      * not apply. `$limit` is already capped at the row limit.
+     *
+     * @param  list<string>  $sortColumns  Columns 'first' / 'last' order by (sortColumns())
      */
-    private function offsetChunkQuery(TableCloningConfigData $config, ConnectionData $source, int $offset, int $limit, string $select, string $direction): string
+    private function offsetChunkQuery(TableCloningConfigData $config, ConnectionData $source, array $sortColumns, int $offset, int $limit, string $select, string $direction): string
     {
         $table = $config->tableName;
         $rows = $config->rows;
@@ -922,12 +984,15 @@ class CloningRunOrchestrator
             };
         }
 
-        $sortCol = $rows->sortBy ?? 'id';
+        $orderBy = implode(', ', array_map(
+            fn (string $c): string => $this->quoteTable($c, $source->type).' '.$direction,
+            $sortColumns,
+        ));
 
         return match ($driver) {
-            'pgsql', 'sqlite' => sprintf('SELECT %s FROM "%s" ORDER BY "%s" %s LIMIT %d OFFSET %d', $select, $table, $sortCol, $direction, $limit, $offset),
-            'sqlsrv' => sprintf('SELECT %s FROM [%s] ORDER BY [%s] %s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY', $select, $table, $sortCol, $direction, $offset, $limit),
-            default => sprintf('SELECT %s FROM `%s` ORDER BY `%s` %s LIMIT %d OFFSET %d', $select, $table, $sortCol, $direction, $limit, $offset),
+            'pgsql', 'sqlite' => sprintf('SELECT %s FROM "%s" ORDER BY %s LIMIT %d OFFSET %d', $select, $table, $orderBy, $limit, $offset),
+            'sqlsrv' => sprintf('SELECT %s FROM [%s] ORDER BY %s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY', $select, $table, $orderBy, $offset, $limit),
+            default => sprintf('SELECT %s FROM `%s` ORDER BY %s LIMIT %d OFFSET %d', $select, $table, $orderBy, $limit, $offset),
         };
     }
 

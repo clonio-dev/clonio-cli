@@ -1100,18 +1100,129 @@ it('falls back to LIMIT/OFFSET when keyset pagination cannot see every row', fun
         DatabaseConnectionType::Mysql,
         'SELECT * FROM `users` ORDER BY `created_at` ASC LIMIT 2 OFFSET 0',
     ],
-    'sort column unknown to the schema' => [
+]);
+
+// ─── Sort order of 'first' / 'last' ───────────────────────────────────────────
+
+it('orders by the primary key when no sort_by is set, whatever the key column is named', function (string $strategy, string $direction): void {
+    $log = g3_orch_db([[(object) ['uuid' => 'a']]]);
+
+    [$result] = g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([new TableCloningConfigData('users', new TableRowConfigData($strategy, 10, null), [])], chunkSize: 2),
+        new DatabaseSchemaData('src', [g3_orch_schema_table('users', [
+            new ColumnSchemaData('id', 'int', false, null, false),
+            new ColumnSchemaData('uuid', 'char', false, null, true),
+        ])]),
+    );
+
+    expect($log->selects)->toBe(["SELECT * FROM `users` ORDER BY `uuid` {$direction} LIMIT 2"])
+        ->and($result->tables[0]->status)->toBe(TableRunStatus::Transferred);
+})->with([
+    'first' => ['first', 'ASC'],
+    'last' => ['last', 'DESC'],
+]);
+
+it('orders by every primary key column in key order when no sort_by is set', function (): void {
+    $log = g3_orch_db([[(object) ['user_id' => 7, 'role_id' => 1]]]);
+
+    g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([new TableCloningConfigData('role_user', new TableRowConfigData('last', 10, null), [])], chunkSize: 2),
+        new DatabaseSchemaData('src', [g3_orch_schema_table('role_user', [
+            new ColumnSchemaData('user_id', 'bigint', false, null, true, primaryKeyPosition: 2),
+            new ColumnSchemaData('role_id', 'bigint', false, null, true, primaryKeyPosition: 1),
+        ])]),
+        source: g3_orch_conn('source', DatabaseConnectionType::SqlServer),
+    );
+
+    expect($log->selects)->toBe(['SELECT * FROM [role_user] ORDER BY [role_id] DESC, [user_id] DESC OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY']);
+});
+
+it('resolves sort_by to the source column name when only its casing differs', function (): void {
+    $log = g3_orch_db([[(object) ['id' => 1, 'created_at' => 'a']]]);
+
+    g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([new TableCloningConfigData('users', new TableRowConfigData('first', 10, 'CREATED_AT'), [])], chunkSize: 2),
         g3_keyset_schema(),
-        new TableRowConfigData('first', 10, 'CREATED_AT'),
-        DatabaseConnectionType::Mysql,
-        'SELECT * FROM `users` ORDER BY `CREATED_AT` ASC LIMIT 2 OFFSET 0',
-    ],
-    'default sort column missing' => [
-        new DatabaseSchemaData('src', [g3_orch_schema_table('users', [new ColumnSchemaData('uuid', 'char', false, null, true)])]),
+    );
+
+    expect($log->selects)->toBe(['SELECT * FROM `users` ORDER BY `created_at` ASC, `id` ASC LIMIT 2']);
+});
+
+it('prefers the exact sort_by column over one that differs only in casing', function (): void {
+    $log = g3_orch_db([[(object) ['id' => 1]]]);
+
+    g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([new TableCloningConfigData('users', new TableRowConfigData('first', 10, 'Name'), [])], chunkSize: 2),
+        new DatabaseSchemaData('src', [g3_orch_schema_table('users', [
+            new ColumnSchemaData('id', 'int', false, null, true),
+            new ColumnSchemaData('name', 'varchar', false, null, false),
+            new ColumnSchemaData('Name', 'varchar', false, null, false),
+        ])]),
+        source: g3_orch_conn('source', DatabaseConnectionType::PostgreSQL),
+    );
+
+    expect($log->selects)->toBe(['SELECT * FROM "users" ORDER BY "Name" ASC LIMIT 2 OFFSET 0']);
+});
+
+it('fails the table without reading it when its sort order cannot be determined', function (DatabaseSchemaData $schema, TableRowConfigData $rows, string $reason, ?SqlDumpService $dumpSink): void {
+    $log = g3_orch_db([[(object) ['id' => 1]]]);
+
+    [$result, $progress] = g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([new TableCloningConfigData('users', $rows, [])], chunkSize: 2),
+        $schema,
+        dumpSink: $dumpSink,
+    );
+
+    expect($log->selects)->toBe([])
+        ->and($result->success)->toBeFalse()
+        ->and($result->tables[0]->status)->toBe(TableRunStatus::Failed)
+        ->and($result->tables[0]->failureReason)->toBe($reason)
+        ->and($result->tables[0]->rowsTransferred)->toBe(0)
+        ->and($result->tables[0]->rowsSkipped)->toBe(0)
+        ->and($result->tables[0]->durationSeconds)->toBeGreaterThanOrEqual(0.0)->toBeLessThan(60.0)
+        ->and($progress)->toBe([['users', TableRunStatus::Failed, 0, 0, []]])
+        ->and(g3_orch_events('table_transfer_failed'))->toBe([
+            ['level' => 'error', 'event' => 'table_transfer_failed', 'table' => 'users', 'reason' => $reason],
+        ]);
+})->with([
+    'no primary key and no sort_by' => [
+        new DatabaseSchemaData('src', [g3_orch_schema_table('users', [new ColumnSchemaData('id', 'int', false, null, false)])]),
         new TableRowConfigData('last', 10, null),
-        DatabaseConnectionType::Mysql,
-        'SELECT * FROM `users` ORDER BY `id` DESC LIMIT 2 OFFSET 0',
+        "Table users has no primary key to order its 'last' rows by; set rows.sort_by",
     ],
+    'sort_by column missing' => [
+        g3_keyset_schema(),
+        new TableRowConfigData('first', 10, 'updated_at'),
+        'Column updated_at set as rows.sort_by does not exist in table users',
+    ],
+])->with([
+    'transfer' => [null],
+    'dump' => fn (): SqlDumpService => g3_orch_dump_sink(),
+]);
+
+it('stops the run at a table whose sort order cannot be determined when breaking on failure', function (bool $breakOnFailure, int $tables): void {
+    g3_orch_db([[(object) ['id' => 1]]]);
+
+    [$result] = g3_orch_run(
+        g3_orch_make(),
+        g3_orch_config([
+            new TableCloningConfigData('users', new TableRowConfigData('first', 10, 'updated_at'), []),
+            g3_orch_table('orders'),
+        ]),
+        new DatabaseSchemaData('src', [g3_orch_schema_table('users'), g3_orch_schema_table('orders')]),
+        breakOnFailure: $breakOnFailure,
+    );
+
+    expect($result->tables)->toHaveCount($tables)
+        ->and($result->tables[0]->status)->toBe(TableRunStatus::Failed);
+})->with([
+    'break' => [true, 1],
+    'continue' => [false, 2],
 ]);
 
 it('falls back to LIMIT/OFFSET when a key column is not selected', function (): void {
