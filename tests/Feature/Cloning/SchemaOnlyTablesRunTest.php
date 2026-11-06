@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
@@ -65,15 +66,15 @@ function schemaOnlyConfig(ClearMode $cacheClear = ClearMode::None): CloningConfi
 function runSchemaOnly(ConnectionData $source, ConnectionData $target, bool $skipSchema, ClearMode $cacheClear = ClearMode::None, ?SqlDumpService $sink = null): RunResultData
 {
     return resolve(CloningRunOrchestrator::class)->run(
-        config: schemaOnlyConfig($cacheClear),
-        source: $source,
-        target: $target,
-        sourceSchema: resolve(SchemaInspector::class)->inspect($source),
-        skipSchema: $skipSchema,
-        skipTables: [],
-        onlyTables: [],
-        onProgress: function (): void {},
-        dumpSink: $sink,
+        schemaOnlyConfig($cacheClear),
+        $source,
+        $target,
+        resolve(SchemaInspector::class)->inspect($source),
+        function (): void {},
+        new CloningRunSettingsData(
+            skipSchema: $skipSchema,
+            dumpSink: $sink,
+        ),
     );
 }
 

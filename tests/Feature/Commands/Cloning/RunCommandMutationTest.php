@@ -245,8 +245,8 @@ it('accepts an empty --skip-tables together with --only-tables', function (): vo
     [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--skip-tables' => '', '--only-tables' => ' users , ,orders']);
 
     expect($code)->toBe(0)
-        ->and($args[5])->toBe([])
-        ->and($args[6])->toBe(['users', 'orders']);
+        ->and($args[5]->skipTables)->toBe([])
+        ->and($args[5]->onlyTables)->toBe(['users', 'orders']);
 });
 
 it('accepts an empty --only-tables together with --skip-tables', function (): void {
@@ -261,8 +261,8 @@ it('accepts an empty --only-tables together with --skip-tables', function (): vo
     [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--only-tables' => '', '--skip-tables' => ' users , ,orders']);
 
     expect($code)->toBe(0)
-        ->and($args[5])->toBe(['users', 'orders'])
-        ->and($args[6])->toBe([]);
+        ->and($args[5]->skipTables)->toBe(['users', 'orders'])
+        ->and($args[5]->onlyTables)->toBe([]);
 });
 
 it('rejects --skip-tables combined with --only-tables before running', function (): void {
@@ -281,7 +281,7 @@ it('rejects --skip-tables combined with --only-tables before running', function 
         ->and($called)->toBeFalse();
 });
 
-it('casts non-string table option values to strings', function (string $option, int $index): void {
+it('casts non-string table option values to strings', function (string $option, string $property): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n  \"7\":\n    rows:\n      strategy: full\n"));
     $args = null;
     g1_bind(run: function (array $a) use (&$args) {
@@ -292,10 +292,10 @@ it('casts non-string table option values to strings', function (string $option, 
 
     [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => 7]);
 
-    expect($code)->toBe(0)->and($args[$index])->toBe(['7']);
+    expect($code)->toBe(0)->and($args[5]->{$property})->toBe(['7']);
 })->with([
-    'skip' => ['--skip-tables', 5],
-    'only' => ['--only-tables', 6],
+    'skip' => ['--skip-tables', 'skipTables'],
+    'only' => ['--only-tables', 'onlyTables'],
 ]);
 
 it('warns about each filter name that matches no configured table and keeps running', function (string $flag, string $value): void {
@@ -353,7 +353,7 @@ it('merges YAML skip entries with --skip-tables without duplicates', function ()
 
     [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--skip-tables' => 'orders']);
 
-    expect($code)->toBe(0)->and($args[5])->toBe(['orders', 'logs']);
+    expect($code)->toBe(0)->and($args[5]->skipTables)->toBe(['orders', 'logs']);
 });
 
 it('rejects a name option whose value holds no name', function (string $option, string $value): void {
@@ -379,7 +379,7 @@ it('rejects a name option whose value holds no name', function (string $option, 
     'audit comma' => ['--audit-channel', ','],
 ]);
 
-it('keeps a table named 0', function (string $option, int $index): void {
+it('keeps a table named 0', function (string $option, string $property): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     $args = null;
     g1_bind(run: function (array $a) use (&$args) {
@@ -390,14 +390,14 @@ it('keeps a table named 0', function (string $option, int $index): void {
 
     [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => '0, users']);
 
-    expect($code)->toBe(0)->and($args[$index])->toBe(['0', 'users']);
+    expect($code)->toBe(0)->and($args[5]->{$property})->toBe(['0', 'users']);
 })->with([
-    'skip' => ['--skip-tables', 5],
-    'only' => ['--only-tables', 6],
+    'skip' => ['--skip-tables', 'skipTables'],
+    'only' => ['--only-tables', 'onlyTables'],
 ]);
 
 // Issue #241: table names resolve like the database resolves them.
-it('resolves flag names that differ only in case to the source table', function (string $option, int $index): void {
+it('resolves flag names that differ only in case to the source table', function (string $option, string $property): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     $args = null;
     g1_bind(
@@ -411,10 +411,10 @@ it('resolves flag names that differ only in case to the source table', function 
 
     [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => 'USERS,orders,ghosts']);
 
-    expect($code)->toBe(0)->and($args[$index])->toBe(['users', 'Orders', 'ghosts']);
+    expect($code)->toBe(0)->and($args[5]->{$property})->toBe(['users', 'Orders', 'ghosts']);
 })->with([
-    'skip' => ['--skip-tables', 5],
-    'only' => ['--only-tables', 6],
+    'skip' => ['--skip-tables', 'skipTables'],
+    'only' => ['--only-tables', 'onlyTables'],
 ]);
 
 it('resolves tables keys and skip entries that differ only in case to the source table', function (): void {
@@ -434,7 +434,7 @@ it('resolves tables keys and skip entries that differ only in case to the source
     expect($code)->toBe(0)
         ->and($args[0]->tables[0]->tableName)->toBe('users')
         ->and($args[0]->skipTables)->toBe(['audit_logs'])
-        ->and($args[5])->toBe(['audit_logs']);
+        ->and($args[5]->skipTables)->toBe(['audit_logs']);
 });
 
 // Issue #246: key_remapping references resolve like tables: keys.
@@ -552,7 +552,7 @@ it('expands pattern tables: keys and skip: entries to the matching source tables
         ->and($args[0]->tables[1]->rows->limit)->toBe(5)
         ->and(count($args[0]->tables[1]->columns))->toBe(1)
         ->and($args[0]->tables[2]->columns)->toBe([])
-        ->and($args[5])->toBe(['users', 'logs_2025']);
+        ->and($args[5]->skipTables)->toBe(['users', 'logs_2025']);
     Log::shouldNotHaveReceived('warning', ['table_pattern_unmatched', Mockery::any()]);
 });
 
@@ -969,10 +969,10 @@ it('passes boolean flags and no table-start callback in normal mode', function (
         ->and($out)->toBe(g1_summary())
         ->and($inspections)->toBe(1)
         ->and($args[3]->databaseName)->toBe('appdb')
-        ->and($args[4])->toBe($expected)
-        ->and($args[9])->toBe($expected)
-        ->and($args[10])->toBeNull()
-        ->and($args[11])->toBeNull();
+        ->and($args[5]->skipSchema)->toBe($expected)
+        ->and($args[5]->breakOnFailure)->toBe($expected)
+        ->and($args[5]->onTableStart)->toBeNull()
+        ->and($args[5]->dumpSink)->toBeNull();
 })->with([
     'defaults' => [[], false],
     'non-bool values' => [['--skip-schema' => 1, '--break-on-failure' => 1], true],
@@ -1016,7 +1016,7 @@ it('wraps progress dots after seventy tables', function (int $tables, string $do
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a) use ($tables): RunResultData {
         for ($i = 0; $i < $tables; $i++) {
-            $a[7]('t'.$i, TableRunStatus::Transferred, 1, 0, []);
+            ($a[4])('t'.$i, TableRunStatus::Transferred, 1, 0, []);
         }
 
         return g1_result();
@@ -1035,21 +1035,21 @@ it('wraps progress dots after seventy tables', function (int $tables, string $do
 it('renders verbose per-table progress with skip groups', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a): RunResultData {
-        $a[10]('users');
-        $a[7]('users', TableRunStatus::Transferred, 1234, 0, []);
-        $a[10]('orders');
-        $a[7]('orders', TableRunStatus::Transferred, 1234, 1, [new SkippedRow('orders', 0, 0, null, 'dup')]);
-        $a[10]('items');
+        ($a[5]->onTableStart)('users');
+        ($a[4])('users', TableRunStatus::Transferred, 1234, 0, []);
+        ($a[5]->onTableStart)('orders');
+        ($a[4])('orders', TableRunStatus::Transferred, 1234, 1, [new SkippedRow('orders', 0, 0, null, 'dup')]);
+        ($a[5]->onTableStart)('items');
         $rows = [new SkippedRow('items', 0, 0, null, 'A')];
         foreach (range('B', 'K') as $msg) {
             $rows[] = new SkippedRow('items', 0, 0, null, $msg);
             $rows[] = new SkippedRow('items', 0, 1, null, $msg);
         }
-        $a[7]('items', TableRunStatus::Failed, 0, 0, $rows);
-        $a[10]('bad');
-        $a[7]('bad', TableRunStatus::Failed, 0, 0, []);
-        $a[7]('ghost', TableRunStatus::NotFound, 0, 0, []);
-        $a[7]('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        ($a[4])('items', TableRunStatus::Failed, 0, 0, $rows);
+        ($a[5]->onTableStart)('bad');
+        ($a[4])('bad', TableRunStatus::Failed, 0, 0, []);
+        ($a[4])('ghost', TableRunStatus::NotFound, 0, 0, []);
+        ($a[4])('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
         return g1_result();
     });
@@ -1084,12 +1084,12 @@ it('renders verbose per-table progress with skip groups', function (): void {
 it('renders normal-mode indicators and the run summary', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a): RunResultData {
-        $a[7]('users', TableRunStatus::Transferred, 5, 0, []);
-        $a[7]('orders', TableRunStatus::Transferred, 5, 1, []);
-        $a[7]('items', TableRunStatus::Failed, 0, 0, []);
-        $a[7]('ghost', TableRunStatus::NotFound, 0, 0, []);
-        $a[7]('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
-        $a[7]('flagged', TableRunStatus::SkippedByFlag, 0, 0, []);
+        ($a[4])('users', TableRunStatus::Transferred, 5, 0, []);
+        ($a[4])('orders', TableRunStatus::Transferred, 5, 1, []);
+        ($a[4])('items', TableRunStatus::Failed, 0, 0, []);
+        ($a[4])('ghost', TableRunStatus::NotFound, 0, 0, []);
+        ($a[4])('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        ($a[4])('flagged', TableRunStatus::SkippedByFlag, 0, 0, []);
 
         return g1_result([
             g1_tr('users', notes: ['n1', 'n2']),
@@ -1115,8 +1115,8 @@ it('renders normal-mode indicators and the run summary', function (): void {
 it('deduplicates tables reported by progress and result', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a): RunResultData {
-        $a[7]('ghost', TableRunStatus::NotFound, 0, 0, []);
-        $a[7]('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        ($a[4])('ghost', TableRunStatus::NotFound, 0, 0, []);
+        ($a[4])('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
         return g1_result([
             g1_tr('ghost', TableRunStatus::NotFound),
@@ -1137,7 +1137,7 @@ it('deduplicates tables reported by progress and result', function (): void {
 it('prints nothing for tables skipped by flag', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a): RunResultData {
-        $a[7]('flagged', TableRunStatus::SkippedByFlag, 0, 0, []);
+        ($a[4])('flagged', TableRunStatus::SkippedByFlag, 0, 0, []);
 
         return g1_result([g1_tr('flagged', TableRunStatus::SkippedByFlag)]);
     });
@@ -1698,10 +1698,10 @@ it('omits empty value options from the memory hint', function (): void {
 it('collects not-found and schema-failure tables reported during progress in CI mode', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a): RunResultData {
-        $a[7]('users', TableRunStatus::Transferred, 5, 0, []);
-        $a[7]('ghost', TableRunStatus::NotFound, 0, 0, []);
-        $a[7]('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
-        $a[7]('items', TableRunStatus::Failed, 0, 0, []);
+        ($a[4])('users', TableRunStatus::Transferred, 5, 0, []);
+        ($a[4])('ghost', TableRunStatus::NotFound, 0, 0, []);
+        ($a[4])('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        ($a[4])('items', TableRunStatus::Failed, 0, 0, []);
 
         return g1_result([g1_tr('users')], rows: 5);
     });
@@ -1821,30 +1821,30 @@ it('drives live progress bars on a decorated console and logs above them', funct
     $screens = [];
     g1_bind(run: function (array $a) use (&$captured, &$screens, $stream): RunResultData {
         $captured = $a;
-        $a[12](5); // onStart
+        ($a[5]->onStart)(5); // onStart
 
-        $a[10]('users'); // onTableStart
+        ($a[5]->onTableStart)('users'); // onTableStart
         $users = new StatsTableTransferData;
         $users->setTotalRows(20, estimated: true);
         $users->setStatus(TableRunPhase::Loop);
         $users->recordLoop(new StatsLoopData(10, 0.25, 0.25, 0.5, 1.0, 9, 1));
-        $a[14]('users', $users); // onTableProgress
+        ($a[5]->onTableProgress)('users', $users); // onTableProgress
         Log::warning('row_skipped', ['table' => 'users']); // shown as the skip group instead
         Log::warning('table_column_note', ['table' => 'users']);
-        $a[7]('users', TableRunStatus::Transferred, 9, 1, [new SkippedRow('users', 0, 0, null, 'dup')]);
+        ($a[4])('users', TableRunStatus::Transferred, 9, 1, [new SkippedRow('users', 0, 0, null, 'dup')]);
         $screens['users'] = g1_screen($stream);
 
-        $a[10]('items');
-        $a[7]('items', TableRunStatus::Transferred, 1500, 0, []);
-        $a[7]('ghost', TableRunStatus::NotFound, 0, 0, []);
-        $a[7]('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        ($a[5]->onTableStart)('items');
+        ($a[4])('items', TableRunStatus::Transferred, 1500, 0, []);
+        ($a[4])('ghost', TableRunStatus::NotFound, 0, 0, []);
+        ($a[4])('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
-        $a[10]('orders');
+        ($a[5]->onTableStart)('orders');
         $orders = new StatsTableTransferData;
         $orders->setStatus(TableRunPhase::Loop);
         $orders->recordLoop(new StatsLoopData(5, 0.25, 0.25, 0.5, 1.0, 5, 0));
-        $a[14]('orders', $orders);
-        $a[7]('orders', TableRunStatus::Failed, 0, 0, []);
+        ($a[5]->onTableProgress)('orders', $orders);
+        ($a[4])('orders', TableRunStatus::Failed, 0, 0, []);
         $screens['orders'] = g1_screen($stream);
 
         return g1_result();
@@ -1860,7 +1860,7 @@ it('drives live progress bars on a decorated console and logs above them', funct
     $bars = static fn (array $screen): array => array_slice($screen, 4);
 
     expect($code)->toBe(0)
-        ->and($captured[13])->toBeTrue() // trackRowTotals
+        ->and($captured[5]->trackRowTotals)->toBeTrue() // trackRowTotals
         ->and($final[0])->toStartWith('  Validating YAML ')
         ->and($bars($screens['users']))->toBe([
             '  WARNING: table_column_note {"table":"users"}',
@@ -1895,10 +1895,10 @@ it('keeps the step renderer when live bars are not possible', function (bool $de
     $captured = [];
     g1_bind(run: function (array $a) use (&$captured): RunResultData {
         $captured = $a;
-        if ($a[10] !== null) {
-            $a[10]('users');
+        if ($a[5]->onTableStart !== null) {
+            ($a[5]->onTableStart)('users');
         }
-        $a[7]('users', TableRunStatus::Transferred, 3, 0, []);
+        ($a[4])('users', TableRunStatus::Transferred, 3, 0, []);
 
         return g1_result();
     });
@@ -1907,9 +1907,9 @@ it('keeps the step renderer when live bars are not possible', function (bool $de
     $screen = implode("\n", g1_screen($stream));
 
     expect($code)->toBe(0)
-        ->and($captured[12])->toBeNull() // onStart
-        ->and($captured[13])->toBeFalse() // trackRowTotals
-        ->and($captured[14])->toBeNull() // onTableProgress
+        ->and($captured[5]->onStart)->toBeNull() // onStart
+        ->and($captured[5]->trackRowTotals)->toBeFalse() // trackRowTotals
+        ->and($captured[5]->onTableProgress)->toBeNull() // onTableProgress
         ->and($screen)->toContain($expectedLine)
         ->and($screen)->not->toContain('tables  [');
 })->with([
@@ -1921,8 +1921,8 @@ it('shows no live bars on a decorated console without -v', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     $stream = fopen('php://memory', 'w+');
     g1_bind(run: function (array $a): RunResultData {
-        expect($a[12])->toBeNull();
-        $a[7]('users', TableRunStatus::Transferred, 3, 0, []);
+        expect($a[5]->onStart)->toBeNull();
+        ($a[4])('users', TableRunStatus::Transferred, 3, 0, []);
 
         return g1_result();
     });
@@ -1934,7 +1934,7 @@ it('shows no live bars on a decorated console without -v', function (): void {
 it('needs a console output with sections for live bars', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind(run: function (array $a): RunResultData {
-        expect($a[12])->toBeNull();
+        expect($a[5]->onStart)->toBeNull();
 
         return g1_result();
     });
@@ -1949,14 +1949,14 @@ it('prints the timing summary only at -vvv and only for tables with timings', fu
     $captured = [];
     g1_bind(run: function (array $a) use (&$captured): RunResultData {
         $captured = $a;
-        $a[10]('users');
-        $a[7]('users', TableRunStatus::Failed, 0, 0, []); // never reported progress
+        ($a[5]->onTableStart)('users');
+        ($a[4])('users', TableRunStatus::Failed, 0, 0, []); // never reported progress
 
-        $a[10]('orders');
+        ($a[5]->onTableStart)('orders');
         $orders = new StatsTableTransferData;
         $orders->recordLoop(new StatsLoopData(2, 0.25, 0.25, 0.5, 1.0, 2, 0));
-        $a[14]('orders', $orders);
-        $a[7]('orders', TableRunStatus::Transferred, 2, 0, []);
+        ($a[5]->onTableProgress)('orders', $orders);
+        ($a[4])('orders', TableRunStatus::Transferred, 2, 0, []);
 
         return g1_result();
     });
@@ -1964,8 +1964,8 @@ it('prints the timing summary only at -vvv and only for tables with timings', fu
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '-vvv' => true]);
 
     expect($code)->toBe(0)
-        ->and($captured[13])->toBeFalse()
-        ->and($captured[14])->toBeInstanceOf(Closure::class)
+        ->and($captured[5]->trackRowTotals)->toBeFalse()
+        ->and($captured[5]->onTableProgress)->toBeInstanceOf(Closure::class)
         ->and($out)->toContain("    users ✗\n    orders ...\n    orders (2 rows) ✓\n      ── timing summary ──\n")
         ->and(substr_count($out, 'timing summary'))->toBe(1);
 });
@@ -1981,7 +1981,7 @@ it('passes no table progress callback in CI, even at -vvv', function (): void {
 
     g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '-vvv' => true]);
 
-    expect($captured[14])->toBeNull();
+    expect($captured[5]->onTableProgress)->toBeNull();
 });
 
 it('keeps logging to stderr when stderr is not the terminal the bars run on', function (): void {
@@ -1989,10 +1989,10 @@ it('keeps logging to stderr when stderr is not the terminal the bars run on', fu
     $stream = fopen('php://memory', 'w+');
     $levelDuringRun = null;
     g1_bind(run: function (array $a) use (&$levelDuringRun): RunResultData {
-        $a[12](1);
+        ($a[5]->onStart)(1);
         $levelDuringRun = g1_stderr_handler()->getLevel();
-        $a[10]('users');
-        $a[7]('users', TableRunStatus::Transferred, 3, 0, []);
+        ($a[5]->onTableStart)('users');
+        ($a[4])('users', TableRunStatus::Transferred, 3, 0, []);
 
         return g1_result();
     });
@@ -2009,8 +2009,8 @@ it('clears the bars and hands logging back when the transfer throws', function (
     $stream = fopen('php://memory', 'w+');
     $levelBefore = g1_stderr_handler()->getLevel();
     g1_bind(run: function (array $a): RunResultData {
-        $a[12](2);
-        $a[10]('users');
+        ($a[5]->onStart)(2);
+        ($a[5]->onTableStart)('users');
         expect(g1_stderr_handler()->getLevel())->toBe(Level::Emergency);
 
         throw new RuntimeException('target connection lost');
@@ -2031,9 +2031,9 @@ it('shows where the run stopped when it ends before every table is done', functi
     Storage::disk('local')->put('t.yaml', g1_yaml());
     $stream = fopen('php://memory', 'w+');
     g1_bind(run: function (array $a): RunResultData {
-        $a[12](3);
-        $a[10]('users');
-        $a[7]('users', TableRunStatus::Failed, 0, 0, []); // --break-on-failure stops here
+        ($a[5]->onStart)(3);
+        ($a[5]->onTableStart)('users');
+        ($a[4])('users', TableRunStatus::Failed, 0, 0, []); // --break-on-failure stops here
 
         return g1_result(success: false);
     });

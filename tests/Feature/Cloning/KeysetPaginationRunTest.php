@@ -76,19 +76,16 @@ function runKeyset(string $sourcePath, string $targetPath, string $table, TableR
     });
 
     $result = resolve(CloningRunOrchestrator::class)->run(
-        config: new CloningConfigData(
+        new CloningConfigData(
             version: '1',
             connectionName: 'source',
             options: new CloningOptionsData(4, false, false, false, false, 'en_US'),
             tables: [new TableCloningConfigData($table, $rows, [])],
         ),
-        source: $source,
-        target: keysetConnection('target', $targetPath),
-        sourceSchema: resolve(SchemaInspector::class)->inspect($source),
-        skipSchema: false,
-        skipTables: [],
-        onlyTables: [],
-        onProgress: function (): void {},
+        $source,
+        keysetConnection('target', $targetPath),
+        resolve(SchemaInspector::class)->inspect($source),
+        function (): void {},
     );
 
     return [$result, $queries];

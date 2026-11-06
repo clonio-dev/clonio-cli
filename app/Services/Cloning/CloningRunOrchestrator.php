@@ -6,6 +6,7 @@ namespace App\Services\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\RunResultData;
@@ -25,6 +26,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
 use App\Services\SqlDump\SqlDumpService;
+use Closure;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -42,46 +44,31 @@ class CloningRunOrchestrator
     ) {}
 
     /**
-     * @param  list<string>  $skipTables  Tables to exclude (already validated as mutually exclusive with onlyTables)
-     * @param  list<string>  $onlyTables  If non-empty, only these tables are transferred
      * @param  callable(string, TableRunStatus, int, int, list<SkippedRow>): void  $onProgress
-     * @param  (callable(string): void)|null  $onTableStart  Optional. Fires once per table that enters `transferTable()`, regardless of whether the transfer ultimately succeeds (`Transferred`) or fails (`Failed`). Does NOT fire for tables resolved as `SkippedByFlag`, `SkippedByCascade`, `NotFound`, or `SkippedBySchemaFailure`.
-     * @param  (callable(int): void)|null  $onStart  Optional. Fires exactly once, before the transfer loop, with the number of tables the loop will iterate. Note: when `$breakOnFailure` aborts early, fewer terminal `onProgress` events fire than this count. Useful for sizing an overall progress bar.
-     * @param  bool  $trackRowTotals  When true, look up the expected row total per table (respecting the row limit) to size per-table progress: a catalog-statistics estimate on server databases, so the production source is never scanned, and `COUNT(*)` on SQLite. Off by default so non-interactive runs don't pay for a lookup nobody consumes.
-     * @param  (callable(string, StatsTableTransferData): void)|null  $onTableProgress  Optional. Fires while a table transfers: when each one-shot phase starts (row total, FK checks, clear) and after every chunk. The same live object is passed for the whole table and holds its final figures once the table's terminal `onProgress` event fires.
      */
     public function run(
         CloningConfigData $config,
         ConnectionData $source,
         ConnectionData $target,
         DatabaseSchemaData $sourceSchema,
-        bool $skipSchema,
-        array $skipTables,
-        array $onlyTables,
         callable $onProgress,
-        ?KeyRemappingService $keyRemapping = null,
-        bool $breakOnFailure = false,
-        ?callable $onTableStart = null,
-        ?SqlDumpService $dumpSink = null,
-        ?callable $onStart = null,
-        bool $trackRowTotals = false,
-        ?callable $onTableProgress = null,
+        CloningRunSettingsData $settings = new CloningRunSettingsData,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
 
         // Tables the config skips never copy rows, whatever the caller passes in
-        // $skipTables. --only-tables can narrow a run, but never widen it.
+        // the settings' skipTables. --only-tables can narrow a run, but never widen it.
         $configSkipped = array_map(
             static fn (TableCloningConfigData $t): string => $t->tableName,
             array_filter($config->tables, static fn (TableCloningConfigData $t): bool => $t->rows->strategy === 'skip'),
         );
-        $skipExcluded = array_values(array_unique(array_merge($skipTables, $configSkipped))); // @pest-mutate-ignore: UnwrapArrayValues
+        $skipExcluded = array_values(array_unique(array_merge($settings->skipTables, $configSkipped))); // @pest-mutate-ignore: UnwrapArrayValues
 
         // Compute excluded tables
-        $explicitlyExcluded = $onlyTables !== []
+        $explicitlyExcluded = $settings->onlyTables !== []
             ? array_values(array_unique(array_merge( // @pest-mutate-ignore: UnwrapArrayValues
-                array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true)),
+                array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $settings->onlyTables, true)),
                 $skipExcluded,
             )))
             : $skipExcluded;
@@ -99,27 +86,27 @@ class CloningRunOrchestrator
 
         // Announce the number of tables that will be attempted (each emits a
         // terminal onProgress event) so callers can size an overall progress bar.
-        if ($onStart !== null) {
-            $onStart(count($sortedTables));
+        if ($settings->onStart instanceof Closure) {
+            ($settings->onStart)(count($sortedTables));
         }
 
         // Replicate schema if not skipping
         /** @var array<string, string> $schemaFailures */
         $schemaFailures = [];
 
-        if ($dumpSink instanceof SqlDumpService) {
+        if ($settings->dumpSink instanceof SqlDumpService) {
             // Dump target: write header + DDL to the .sql file instead of a live PDO.
-            $dumpSink->begin(
+            $settings->dumpSink->begin(
                 $target,
                 $source,
                 $sourceSchema,
                 $sortedTables,
                 $config->options,
                 new DateTimeImmutable('now'),
-                ! $skipSchema,
+                ! $settings->skipSchema,
             );
             Log::info('dump_schema_written', ['tables' => $sortedTables]);
-        } elseif (! $skipSchema) {
+        } elseif (! $settings->skipSchema) {
             $schemaFailures = $this->replicator->replicate(
                 $source,
                 $target,
@@ -142,7 +129,7 @@ class CloningRunOrchestrator
 
         // Inspect the target after replication so generated columns that exist
         // only there (e.g. created by the app's own migrations) are known too.
-        $targetSchema = $dumpSink instanceof SqlDumpService ? null : $this->inspectTarget($target);
+        $targetSchema = $settings->dumpSink instanceof SqlDumpService ? null : $this->inspectTarget($target);
 
         // Single engine per run: shared per-run random salt across all tables
         // preserves intra-run hash joinability while defeating cross-run linkability.
@@ -190,7 +177,7 @@ class CloningRunOrchestrator
                 $success = false;
                 ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
-                if ($breakOnFailure) {
+                if ($settings->breakOnFailure) {
                     break;
                 }
 
@@ -207,8 +194,8 @@ class CloningRunOrchestrator
             }
 
             // Past this point a table will enter transferTable() — keep new pre-skip statuses above.
-            if ($onTableStart !== null) {
-                $onTableStart($tableName);
+            if ($settings->onTableStart instanceof Closure) {
+                ($settings->onTableStart)($tableName);
             }
 
             $tableStart = microtime(true);
@@ -223,7 +210,7 @@ class CloningRunOrchestrator
                     $tableConfig,
                     $sourceTable,
                     $targetTable,
-                    $dumpSink instanceof SqlDumpService,
+                    $settings->dumpSink instanceof SqlDumpService,
                 );
 
             if (! $schemaOnly && $sourceTable instanceof TableSchemaData) { // @pest-mutate-ignore: InstanceOfToTrue
@@ -262,7 +249,7 @@ class CloningRunOrchestrator
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::Failed, 0, 0, microtime(true) - $tableStart, $sortError, $notes);
                 ($onProgress)($tableName, TableRunStatus::Failed, 0, 0, []);
 
-                if ($breakOnFailure) {
+                if ($settings->breakOnFailure) {
                     break;
                 }
 
@@ -271,14 +258,14 @@ class CloningRunOrchestrator
 
             $keyColumns = $this->keysetColumns($sortColumns, $source->type, $sourceTable, $pkColumns, $selectColumns);
 
-            [$rows, $skipped, $failed, $reason, $skippedRows] = $dumpSink instanceof SqlDumpService
+            [$rows, $skipped, $failed, $reason, $skippedRows] = $settings->dumpSink instanceof SqlDumpService
                 ? $this->dumpTable(
                     $config->options,
                     $tableConfig,
                     $source,
                     $engine,
-                    $dumpSink,
-                    $keyRemapping,
+                    $settings->dumpSink,
+                    $settings->keyRemapping,
                     $config->keyRemapping,
                     $selectColumns,
                     $keyColumns,
@@ -291,13 +278,13 @@ class CloningRunOrchestrator
                     $target,
                     $pkColumns,
                     $engine,
-                    $keyRemapping,
+                    $settings->keyRemapping,
                     $config->keyRemapping,
                     $selectColumns,
                     $keyColumns,
                     $sortColumns,
-                    $trackRowTotals,
-                    $onTableProgress,
+                    $settings->trackRowTotals,
+                    $settings->onTableProgress,
                 );
 
             $tableDuration = microtime(true) - $tableStart;
@@ -316,11 +303,11 @@ class CloningRunOrchestrator
             $totalSkipped += $skipped;
             ($onProgress)($tableName, $status, $rows, $skipped, $skippedRows);
 
-            if ($failed && $breakOnFailure) {
+            if ($failed && $settings->breakOnFailure) {
                 break;
             }
 
-            if (! $failed && ! $dumpSink instanceof SqlDumpService && $sourceTable instanceof TableSchemaData) { // @pest-mutate-ignore: InstanceOfToTrue
+            if (! $failed && ! $settings->dumpSink instanceof SqlDumpService && $sourceTable instanceof TableSchemaData) { // @pest-mutate-ignore: InstanceOfToTrue
                 $pkColumn = $this->findIntegerPkColumn($target, $sourceTable);
                 if ($pkColumn !== null) {
                     try {
