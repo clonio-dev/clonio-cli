@@ -31,3 +31,14 @@ it('ignores a negative row count in the processed rows', function (): void {
     expect($aggregate->rowsProcessed)->toBe(0);
     expect($aggregate->smoothedPace)->toBeNull();
 });
+
+it('exposes the smoothed pace per million rows', function (): void {
+    $aggregate = new StatsPhaseAggregateData;
+
+    expect($aggregate->smoothedPacePerMillion)->toBeNull();
+
+    $aggregate->record(1.0, 2);  // 0.5 s/row
+    $aggregate->record(3.0, 2);  // 1.5 s/row
+
+    expect($aggregate->smoothedPacePerMillion)->toEqualWithDelta(700_000.0, 1e-6);
+});

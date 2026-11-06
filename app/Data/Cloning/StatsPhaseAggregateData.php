@@ -60,6 +60,13 @@ final class StatsPhaseAggregateData
             : null;
     }
 
+    /** Smoothed seconds per 1,000,000 rows, or null before the first sample with rows. */
+    public ?float $smoothedPacePerMillion {
+        get => $this->smoothedPace !== null
+            ? $this->smoothedPace * 1_000_000.0
+            : null;
+    }
+
     public ?float $latestPace {
         get => $this->last !== null && $this->lastRows !== null && $this->lastRows > 0
             ? $this->last / $this->lastRows
