@@ -2,6 +2,15 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.7.0 - 2026-11-06
+
+### What's Changed
+
+* docs(changelog): note flag negation behaviour change in v1.6.0 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/267
+* feat(cloning): support polymorphic relations in key remapping by @rokde in https://github.com/clonio-dev/clonio-cli/pull/268
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.6.0...v1.7.0
+
 ## v1.6.0 - 2026-11-06
 
 ### Behaviour change
