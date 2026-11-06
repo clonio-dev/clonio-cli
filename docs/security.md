@@ -58,7 +58,7 @@ Run the transfer that reads production as a single CI step:
 - **Ephemeral runner.** Use a runner that is created for the job and destroyed afterwards (hosted runners, or self-hosted runners in ephemeral mode). Nothing from the job survives it.
 - **No Clonio in running environments.** Do not install Clonio, `clonio.json` or a `.env` with `APP_KEY` in the production or acceptance containers. An attacker who gets into a running container must not find credentials for the other environment there.
 - **Secrets from the CI secret store.** Provide the database passwords and `APP_KEY` as CI secrets. `clonio.json` refers to them with `env:` references.
-- **Read-only user on a replica.** Read from a replica, not from the primary, with a user that may only `SELECT` (see [Database permissions](#database-permissions)). A leaked credential then cannot change or delete production data.
+- **Read-only user on a replica.** Read from a replica, not from the primary, with a user that may only `SELECT` (see [Database permissions](#database-permissions)). A leaked credential then cannot change or delete production data — but it can still read all of it. Read-only access limits the damage; it does not make a leaked credential harmless, so keep it out of files and away from every environment except the CI job.
 - **Restricted network access.** Allow the replica to accept connections only from the CI runners.
 - **Production flag.** Mark the source with `--production`, so `cloning:run` never offers it as a target.
 - **External audit channel.** Deliver the audit log to a channel outside the runner (S3, e-mail, a webhook), because the runner's disk is gone after the job.
@@ -102,6 +102,8 @@ If you prefer to commit `clonio.json`, make sure it contains only `env:` referen
 ### Acceptance → test and dev
 
 Test and dev environments receive data from acceptance, never from production. The data there is already anonymized, so a compromised test system or developer machine cannot expose personal data — provided the anonymization of the production transfer is complete (see above).
+
+Local clones on developer machines follow the same rule: copy them from acceptance, so they only ever hold anonymized data. Never clone production to a laptop, not even "just once" for debugging.
 
 Here Clonio may also run inside a container, on a long-lived CI runner or on a developer machine. `env:` references are still the better choice, so that credentials for acceptance do not end up in a file.
 
