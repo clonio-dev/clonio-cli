@@ -229,8 +229,8 @@ class TestCommand extends Command
     {
         try {
             $connector->resolvePassword($connection);
-        } catch (RuntimeException) {
-            return [false, 'Could not decrypt password — check APP_KEY.', $this->elapsedMs($start), ExitCode::ConfigError, null];
+        } catch (RuntimeException $runtimeException) {
+            return [false, $runtimeException->getMessage(), $this->elapsedMs($start), ExitCode::ConfigError, null];
         }
 
         try {

@@ -10,7 +10,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Enums\SslMode;
 use App\Services\Database\Tls\CertificateFiles;
 use App\Services\Database\Tls\ConnectionErrorHint;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
 use Illuminate\Support\Facades\DB;
 use Pdo\Mysql;
 use RuntimeException;
@@ -36,23 +36,14 @@ class DatabaseConnectionService
     }
 
     /**
-     * Returns the plain-text password, decrypting the 'encrypted:' prefix if present.
+     * Returns the plain-text password: decrypted for `encrypted:`, read from the
+     * environment for `env:NAME`, as is otherwise.
      *
-     * @throws RuntimeException if decryption fails (e.g. missing or wrong APP_KEY)
+     * @throws RuntimeException if the password cannot be decrypted or the environment variable is not set
      */
     public function resolvePassword(ConnectionData $connection): string
     {
-        $password = $connection->password;
-
-        if (! str_starts_with($password, 'encrypted:')) {
-            return $password;
-        }
-
-        try {
-            return Crypt::decryptString(substr($password, 10)); // @pest-mutate-ignore: DecrementInteger
-        } catch (Throwable) {
-            throw new RuntimeException('Could not decrypt password — check APP_KEY.');
-        }
+        return Secret::resolve($connection->password, 'password');
     }
 
     /**

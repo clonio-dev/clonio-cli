@@ -6,7 +6,7 @@ namespace App\Services\Audit;
 
 use App\Contracts\DeliveryAdapterInterface;
 use App\Enums\AuditChannelType;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
 use RuntimeException;
 
 class WebhookDeliveryAdapter implements DeliveryAdapterInterface
@@ -17,7 +17,7 @@ class WebhookDeliveryAdapter implements DeliveryAdapterInterface
 
     public function deliver(array $artefacts, array $channelConfig, array $templateVars): void
     {
-        $webhookUrl = $this->decryptIfNeeded(is_string($channelConfig['webhook_url'] ?? null) ? $channelConfig['webhook_url'] : '');
+        $webhookUrl = Secret::resolve(is_string($channelConfig['webhook_url'] ?? null) ? $channelConfig['webhook_url'] : '', 'webhook URL');
 
         throw_if($webhookUrl === '', RuntimeException::class, 'Webhook URL is empty');
 
@@ -94,14 +94,5 @@ class WebhookDeliveryAdapter implements DeliveryAdapterInterface
         if ($httpCode < 200 || $httpCode >= 300) {
             throw new RuntimeException(sprintf('Webhook POST failed (HTTP %d): %s', $httpCode, is_string($response) ? $response : $error));
         }
-    }
-
-    private function decryptIfNeeded(string $value): string
-    {
-        if (str_starts_with($value, 'encrypted:')) {
-            return Crypt::decryptString(substr($value, 10)); // @pest-mutate-ignore: DecrementInteger
-        }
-
-        return $value;
     }
 }

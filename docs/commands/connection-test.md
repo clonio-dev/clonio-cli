@@ -79,9 +79,14 @@ staging: FAILED — SQLSTATE[HY000] [3159] Connections using insecure transport 
 The server requires TLS. Run "clonio connection:update staging" and set transport security to "require" or "verify".
 ```
 
-### Password decryption
+### Password resolution
 
-Passwords stored with the `encrypted:` prefix are decrypted using the application `APP_KEY` before the connection attempt. If decryption fails (e.g. `APP_KEY` is missing or incorrect), the command exits with code `2` without attempting a network connection.
+Before the connection attempt, Clonio resolves the stored password:
+
+- `env:NAME` — read from the environment variable `NAME`. If it is not set, the command exits with code `2`: `staging: FAILED — Could not read password — environment variable NAME is not set.`
+- `encrypted:…` — decrypted with `APP_KEY`. If decryption fails (e.g. `APP_KEY` is missing or wrong), the command exits with code `2`: `staging: FAILED — Could not decrypt password — check APP_KEY.`
+
+In both cases no network connection is attempted.
 
 ## Options
 
@@ -94,7 +99,7 @@ Passwords stored with the `encrypted:` prefix are decrypted using the applicatio
 | Code | Meaning |
 |------|---------|
 | `0` | All tested connections succeeded |
-| `2` | Configuration error: named connection not found, no connections defined, or `APP_KEY` required for decryption is missing/invalid |
+| `2` | Configuration error: named connection not found, no connections defined, referenced environment variable not set, or `APP_KEY` required for decryption is missing/invalid |
 | `3` | One or more connections failed to connect |
 
 ## CI Integration

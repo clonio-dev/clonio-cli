@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace App\Commands\Connection;
 
+use App\Commands\Concerns\PromptsForSecret;
 use App\Commands\Connection\Concerns\PromptsForSsl;
 use App\Data\ConnectionData;
 use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
 use App\Enums\SslMode;
+use App\Exceptions\SecretEncryptionException;
 use App\Services\Config\ConfigService;
-use Illuminate\Support\Facades\Crypt;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 
 class UpdateCommand extends Command
 {
+    use PromptsForSecret;
     use PromptsForSsl;
 
     /**
@@ -45,7 +47,13 @@ class UpdateCommand extends Command
             return ExitCode::ConfigError->value;
         }
 
-        $updated = $this->promptForFields($current);
+        try {
+            $updated = $this->promptForFields($current);
+        } catch (SecretEncryptionException) {
+            $this->error('Failed to encrypt password. Ensure APP_KEY is set in your environment.');
+
+            return ExitCode::ConfigError->value;
+        }
 
         // Only re-check the certificate files on disk when the ssl block actually changed
         // (M4): an unrelated field update (e.g. password) shouldn't fail because a
@@ -184,12 +192,11 @@ class UpdateCommand extends Command
             $schema = $typeChanged ? $this->askString('Schema', 'public') : $this->askString('Schema', $current->schema ?? 'public');
         }
 
-        $passwordInput = $this->askString('Password (press Enter to keep current)', '');
-        if ($passwordInput === '') {
-            $password = $current->password;
-        } else {
-            $password = Crypt::encryptString($passwordInput);
-        }
+        $password = $this->promptForSecret(
+            'password',
+            $this->secretEnvName($newName, 'password'),
+            'Keep the current password',
+        ) ?? $current->password;
 
         $ssl = $newType->requiresNetworkConfig() ? $this->promptForSsl($current, $newType) : null;
 

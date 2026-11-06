@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Audit;
 
+use App\Commands\Concerns\PromptsForSecret;
 use App\Enums\AuditChannelType;
 use App\Enums\ExitCode;
 use App\Services\Config\ConfigService;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 use Throwable;
 
 class AddCommand extends Command
 {
+    use PromptsForSecret;
+
     /**
      * @var string
      */
@@ -24,21 +27,21 @@ class AddCommand extends Command
         {--s3-endpoint=             : (s3) S3-compatible endpoint URL}
         {--s3-bucket=               : (s3) Bucket name}
         {--s3-access-key=           : (s3) Access key ID}
-        {--s3-secret-key=           : (s3) Secret access key — stored encrypted}
+        {--s3-secret-key=           : (s3) Secret access key, or env:NAME — stored encrypted}
         {--s3-region=               : (s3) Region string}
         {--s3-path-prefix=          : (s3) Key prefix template}
         {--mail-host=               : (email) SMTP host}
         {--mail-port=               : (email) SMTP port}
         {--mail-encryption=         : (email) SMTP encryption — tls|ssl|none}
         {--mail-username=           : (email) SMTP username}
-        {--mail-password=           : (email) SMTP password — stored encrypted}
+        {--mail-password=           : (email) SMTP password, or env:NAME — stored encrypted}
         {--mail-from-address=       : (email) Sender address}
         {--mail-from-name=          : (email) Sender display name}
         {--mail-to=                 : (email) Comma-separated recipient addresses}
-        {--webhook-url=             : (ms_teams|slack) Incoming webhook URL — stored encrypted}
+        {--webhook-url=             : (ms_teams|slack) Incoming webhook URL, or env:NAME — stored encrypted}
         {--ntfy-url=                : (ntfy) ntfy server base URL}
         {--ntfy-topic=              : (ntfy) ntfy topic}
-        {--ntfy-token=              : (ntfy) ntfy bearer token — stored encrypted}
+        {--ntfy-token=              : (ntfy) ntfy bearer token, or env:NAME — stored encrypted}
         {--ntfy-priority=           : (ntfy) Notification priority — min|low|default|high|max}
         {--ntfy-tags=               : (ntfy) Comma-separated tag strings}
         {--enable                   : Add this channel to audit.use (active delivery list)}';
@@ -97,7 +100,7 @@ class AddCommand extends Command
 
         // ─── Step 3: Type-specific fields ─────────────────────────────────────
         try {
-            $channelConfig = $this->promptTypeFields($type, $config);
+            $channelConfig = $this->promptTypeFields($name, $type, $config);
         } catch (Throwable $throwable) {
             $this->error($throwable->getMessage());
 
@@ -137,15 +140,15 @@ class AddCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function promptTypeFields(AuditChannelType $type, ConfigService $config): array
+    private function promptTypeFields(string $name, AuditChannelType $type, ConfigService $config): array
     {
         return match ($type) {
             AuditChannelType::Local => $this->promptLocalFields(),
-            AuditChannelType::S3 => $this->promptS3Fields(),
-            AuditChannelType::Email => $this->promptEmailFields(),
-            AuditChannelType::MsTeams => $this->promptWebhookFields('Teams', 'Create an incoming webhook in Teams under Apps → Incoming Webhook.'),
-            AuditChannelType::Slack => $this->promptWebhookFields('Slack', 'Create an incoming webhook at api.slack.com → Your Apps → Incoming Webhooks.'),
-            AuditChannelType::Ntfy => $this->promptNtfyFields(),
+            AuditChannelType::S3 => $this->promptS3Fields($name),
+            AuditChannelType::Email => $this->promptEmailFields($name),
+            AuditChannelType::MsTeams => $this->promptWebhookFields($name, 'Teams', 'Create an incoming webhook in Teams under Apps → Incoming Webhook.'),
+            AuditChannelType::Slack => $this->promptWebhookFields($name, 'Slack', 'Create an incoming webhook at api.slack.com → Your Apps → Incoming Webhooks.'),
+            AuditChannelType::Ntfy => $this->promptNtfyFields($name),
             AuditChannelType::Stack => $this->promptStackFields($config),
             AuditChannelType::Stdout, AuditChannelType::Stderr => [],
         };
@@ -182,13 +185,14 @@ class AddCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function promptS3Fields(): array
+    private function promptS3Fields(string $name): array
     {
         $endpoint = $this->optionOrAsk('s3-endpoint', 'Endpoint URL', '');
         $bucket = $this->optionOrAsk('s3-bucket', 'Bucket name', '');
         $region = $this->optionOrAsk('s3-region', 'Region', '');
         $accessKey = $this->optionOrAsk('s3-access-key', 'Access key', '');
-        $secretKey = $this->secretOrOption('s3-secret-key', 'Secret key');
+        // Never null without a skip choice; the cast only narrows the type.
+        $secretKey = (string) $this->secretOrOption('s3-secret-key', 'S3 secret key', $this->secretEnvName('audit', $name, 'secret_key')); // @pest-mutate-ignore: RemoveStringCast
         $pathPrefix = $this->optionOrAsk('s3-path-prefix', 'Path prefix ('.self::TEMPLATE_HINT.')', 'clonio/{year}/{month}/{source}/');
 
         $config = [
@@ -196,7 +200,7 @@ class AddCommand extends Command
             'bucket' => $bucket,
             'region' => $region,
             'access_key' => $accessKey,
-            'secret_key' => 'encrypted:'.Crypt::encryptString($secretKey),
+            'secret_key' => $secretKey,
             'path_prefix' => $pathPrefix,
         ];
 
@@ -210,7 +214,7 @@ class AddCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function promptEmailFields(): array
+    private function promptEmailFields(string $name): array
     {
         $host = $this->optionOrAsk('mail-host', 'SMTP host', '');
         $portRaw = $this->optionOrAsk('mail-port', 'SMTP port', '587');
@@ -220,7 +224,8 @@ class AddCommand extends Command
         $encryption = is_string($encOpt) && in_array($encOpt, $encOptions, true) ? $encOpt
             : $this->choice('Encryption', $encOptions, 0);
         $username = $this->optionOrAsk('mail-username', 'SMTP username', '');
-        $password = $this->secretOrOption('mail-password', 'SMTP password');
+        // Never null without a skip choice; the cast only narrows the type.
+        $password = (string) $this->secretOrOption('mail-password', 'SMTP password', $this->secretEnvName('audit', $name, 'password')); // @pest-mutate-ignore: RemoveStringCast
         $fromAddress = $this->optionOrAsk('mail-from-address', 'From address', '');
         $fromName = $this->optionOrAsk('mail-from-name', 'From name', '');
         $toRaw = $this->optionOrAsk('mail-to', 'Recipients (comma-separated emails)', '');
@@ -231,7 +236,7 @@ class AddCommand extends Command
             'port' => $port,
             'encryption' => $encryption,
             'username' => $username,
-            'password' => 'encrypted:'.Crypt::encryptString($password),
+            'password' => $password,
             'from_address' => $fromAddress,
             'from_name' => $fromName,
             'to' => $to,
@@ -247,20 +252,14 @@ class AddCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function promptWebhookFields(string $providerLabel, string $hint): array
+    private function promptWebhookFields(string $name, string $providerLabel, string $hint): array
     {
         $this->line(sprintf('  <comment>%s</comment>', $hint));
-        $webhookUrlOpt = $this->option('webhook-url');
-        if (is_string($webhookUrlOpt) && $webhookUrlOpt !== '') {
-            $this->warn('Passing webhook URL via CLI flag may expose it in shell history.');
-            $webhookUrl = $webhookUrlOpt;
-        } else {
-            $asked = $this->secret($providerLabel.' webhook URL');
-            $webhookUrl = is_string($asked) ? $asked : '';
-        }
+        // Never null without a skip choice; the cast only narrows the type.
+        $webhookUrl = (string) $this->secretOrOption('webhook-url', $providerLabel.' webhook URL', $this->secretEnvName('audit', $name, 'webhook_url')); // @pest-mutate-ignore: RemoveStringCast
 
         $config = [
-            'webhook_url' => 'encrypted:'.Crypt::encryptString($webhookUrl),
+            'webhook_url' => $webhookUrl,
         ];
 
         if ($this->confirm('Override retry settings?', false)) {
@@ -273,7 +272,7 @@ class AddCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function promptNtfyFields(): array
+    private function promptNtfyFields(string $name): array
     {
         $this->line('  <comment>Topics are public by default on ntfy.sh. Use a hard-to-guess topic or self-hosted server for sensitive environments.</comment>');
         $url = $this->optionOrAsk('ntfy-url', 'ntfy server URL', 'https://ntfy.sh');
@@ -285,14 +284,7 @@ class AddCommand extends Command
         $tagsRaw = $this->optionOrAsk('ntfy-tags', 'Tags (comma-separated, optional — press Enter to skip)', '');
         $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : []; // @pest-mutate-ignore: EmptyStringToNotEmpty
 
-        $tokenOpt = $this->option('ntfy-token');
-        if (is_string($tokenOpt) && $tokenOpt !== '') {
-            $this->warn('Passing token via CLI flag may expose it in shell history.');
-            $token = $tokenOpt;
-        } else {
-            $asked = $this->secret('Bearer token (optional — press Enter to skip)');
-            $token = is_string($asked) && $asked !== '' ? $asked : null;
-        }
+        $token = $this->secretOrOption('ntfy-token', 'ntfy bearer token', $this->secretEnvName('audit', $name, 'token'), 'No bearer token');
 
         $config = [
             'url' => $url,
@@ -305,7 +297,7 @@ class AddCommand extends Command
         }
 
         if ($token !== null) {
-            $config['token'] = 'encrypted:'.Crypt::encryptString($token);
+            $config['token'] = $token;
         }
 
         if ($this->confirm('Override retry settings?', false)) {
@@ -352,18 +344,32 @@ class AddCommand extends Command
         return is_string($answer) ? $answer : $default;
     }
 
-    private function secretOrOption(string $option, string $label): string
+    /**
+     * Warns that a secret passed as a flag may end up in shell history, unless
+     * the flag is an `env:NAME` reference, which holds no secret.
+     */
+    private function warnAboutShellHistory(string $value, string $warning): void
+    {
+        if (! str_starts_with($value, Secret::ENV_PREFIX)) {
+            $this->warn($warning);
+        }
+    }
+
+    /**
+     * Returns the value to store for a secret: from the --option flag when
+     * given, otherwise from the env-first prompt. Null means "no secret" and
+     * is only possible when $skipChoice is given.
+     */
+    private function secretOrOption(string $option, string $label, string $suggestedEnvName, ?string $skipChoice = null): ?string
     {
         $opt = $this->option($option);
         if (is_string($opt) && $opt !== '') {
-            $this->warn(sprintf('Passing --%s via CLI flag may expose it in shell history.', $option));
+            $this->warnAboutShellHistory($opt, sprintf('Passing --%s via CLI flag may expose it in shell history. Use --%s=env:NAME instead.', $option, $option));
 
-            return $opt;
+            return Secret::protect($opt);
         }
 
-        $asked = $this->secret($label);
-
-        return is_string($asked) ? $asked : '';
+        return $this->promptForSecret($label, $suggestedEnvName, $skipChoice);
     }
 
     /**
@@ -381,7 +387,7 @@ class AddCommand extends Command
                 continue; // @pest-mutate-ignore: ContinueToBreak
             }
 
-            if (is_string($value) && str_starts_with($value, 'encrypted:')) {
+            if (is_string($value) && Secret::isEncrypted($value)) {
                 $rows[] = [str_replace('_', ' ', $key), '••••••••'];
             } elseif (is_array($value)) {
                 $rows[] = [str_replace('_', ' ', $key), implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $value))]; // @pest-mutate-ignore: UnwrapArrayMap,EmptyStringToNotEmpty,UnwrapStrReplace

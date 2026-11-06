@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Audit;
 
 use App\Contracts\DeliveryAdapterInterface;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
 use RuntimeException;
 
 class NtfyDeliveryAdapter implements DeliveryAdapterInterface
@@ -15,7 +15,7 @@ class NtfyDeliveryAdapter implements DeliveryAdapterInterface
         $url = $this->buildUrl($channelConfig);
         $priority = is_string($channelConfig['priority'] ?? null) ? $channelConfig['priority'] : 'default';
         $tags = is_array($channelConfig['tags'] ?? null) ? $channelConfig['tags'] : [];
-        $token = isset($channelConfig['token']) ? $this->decryptIfNeeded(is_string($channelConfig['token']) ? $channelConfig['token'] : '') : null;
+        $token = isset($channelConfig['token']) ? Secret::resolve(is_string($channelConfig['token']) ? $channelConfig['token'] : '', 'ntfy token') : null;
 
         $source = $templateVars['source'] ?? 'unknown';
         $target = $templateVars['target'] ?? 'unknown';
@@ -66,14 +66,5 @@ class NtfyDeliveryAdapter implements DeliveryAdapterInterface
         $topic = is_string($channelConfig['topic'] ?? null) ? $channelConfig['topic'] : '';
 
         return $base.'/'.$topic;
-    }
-
-    private function decryptIfNeeded(string $value): string
-    {
-        if (str_starts_with($value, 'encrypted:')) {
-            return Crypt::decryptString(substr($value, 10)); // @pest-mutate-ignore: DecrementInteger
-        }
-
-        return $value;
     }
 }
