@@ -9,6 +9,11 @@ All notable changes to `clonio-cli` will be documented in this file.
 * docs(changelog): update CHANGELOG for v1.4.1 by @github-actions[bot] in https://github.com/clonio-dev/clonio-cli/pull/256
 * ci(changelog): commit CHANGELOG straight to main via release GitHub App by @rokde in https://github.com/clonio-dev/clonio-cli/pull/257
 * feat(cloning): accept regex table patterns in tables: keys and skip: entries by @rokde in https://github.com/clonio-dev/clonio-cli/pull/258
+  * Co-authored by [GALHP](https://github.com/GALHP), based on https://github.com/clonio-dev/clonio-cli/pull/168 — thank you!
+
+### Contributors
+
+* [GALHP](https://github.com/GALHP) proposed regex table names in https://github.com/clonio-dev/clonio-cli/issues/164 and implemented the first version in https://github.com/clonio-dev/clonio-cli/pull/168
 
 **Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.4.1...v1.5.0
 
