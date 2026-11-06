@@ -11,14 +11,9 @@ use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\RunOptionsData;
-use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
-use App\Data\Cloning\TableRunResultData;
-use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\DatabaseSchemaData;
-use App\Data\Schema\SchemaDiffData;
-use App\Data\SqlDump\DumpResultData;
 use App\Enums\AuditChannelType;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
@@ -49,7 +44,9 @@ use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\CloningProgressDisplay;
 use App\Services\Output\Run\DotRunObserver;
+use App\Services\Output\Run\DryRunRenderer;
 use App\Services\Output\Run\ProgressRunObserver;
+use App\Services\Output\Run\RunSummaryRenderer;
 use App\Services\Output\Run\StepRunObserver;
 use App\Services\Output\VerboseStepRenderer;
 use App\Services\Schema\SchemaDiffService;
@@ -624,75 +621,13 @@ class RunCommand extends Command
         }
 
         // ─── Phase 8: Summary ──────────────────────────────────────────────────
-        $notFoundTables = $this->tablesWithStatus($result, TableRunStatus::NotFound);
-        $schemaFailureTables = $this->tablesWithStatus($result, TableRunStatus::SkippedBySchemaFailure);
-
-        // Always show not-found warnings
-        if ($notFoundTables !== []) {
-            $this->line('');
-            $this->line(sprintf(
-                '  <comment>Warning: %d table%s not found in source (%s)</comment>',
-                count($notFoundTables),
-                count($notFoundTables) === 1 ? '' : 's',
-                implode(', ', $notFoundTables),
-            ));
-        }
-
-        if ($schemaFailureTables !== []) {
-            $this->line('');
-            $this->line(sprintf(
-                '  <error>Error: %d table%s skipped due to schema replication failure (%s)</error>',
-                count($schemaFailureTables),
-                count($schemaFailureTables) === 1 ? '' : 's',
-                implode(', ', $schemaFailureTables),
-            ));
-        }
-
-        foreach ($result->tables as $tableResult) {
-            foreach ($tableResult->notes as $note) {
-                $this->line(sprintf('  <comment>Note: %s: %s</comment>', $tableResult->tableName, $note));
-            }
-        }
-
-        $transferredCount = count(array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::Transferred));
-        $totalCount = count($result->tables);
-        $duration = $this->formatDuration($result->durationSeconds);
-
-        if (! $ci) {
-            $this->line('');
-            $this->line(sprintf('  Tables: %d/%d  Rows: %d  Duration: %s', $transferredCount, $totalCount, $result->totalRows, $duration));
-            $this->line('');
-        }
-
-        if ($dumpResult instanceof DumpResultData) {
-            $this->line(sprintf(
-                '  Dump: %s  (%s%s)',
-                $dumpResult->zipFileName,
-                $this->formatBytes($dumpResult->zipBytes),
-                $dumpResult->encrypted ? ', AES-256' : '',
-            ));
-
-            if (! $ci) {
-                $this->line('');
-            }
-        }
+        new RunSummaryRenderer($this->output)->render($result, $dumpResult, $ci);
 
         if (! $result->success && ! $options->allowFailure) {
             return ExitCode::GeneralError->value;
         }
 
         return ExitCode::Success->value;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function tablesWithStatus(RunResultData $result, TableRunStatus $status): array
-    {
-        return array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
-            static fn (TableRunResultData $t): string => $t->tableName,
-            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === $status),
-        ));
     }
 
     /**
@@ -827,147 +762,10 @@ class RunCommand extends Command
         );
 
         if (! $ci) {
-            $this->renderDryRunTable($dryRunResult, $config->connectionName, $schemaDiff);
+            new DryRunRenderer($this->output)->render($dryRunResult, $config->connectionName, $schemaDiff);
         }
 
         return ExitCode::Success->value;
-    }
-
-    private function renderSchemaDiff(SchemaDiffData $diff): void
-    {
-        if ($diff->isIdentical()) {
-            $this->line('  Schema diff: target matches source');
-            $this->line('');
-
-            return;
-        }
-
-        $this->line('  Schema diff: source → target');
-        $this->line('');
-
-        if ($diff->missingTables !== []) {
-            $this->line(sprintf('  Missing tables (%d):   %s', count($diff->missingTables), implode(', ', $diff->missingTables)));
-        }
-
-        if ($diff->extraTables !== []) {
-            $this->line(sprintf('  Extra tables (%d):     %s', count($diff->extraTables), implode(', ', $diff->extraTables)));
-        }
-
-        foreach ($diff->modifiedTables as $tableDiff) {
-            $parts = [];
-
-            if ($tableDiff->missingColumns !== []) {
-                $parts[] = sprintf('+%d col%s (%s)', count($tableDiff->missingColumns), count($tableDiff->missingColumns) === 1 ? '' : 's', implode(', ', $tableDiff->missingColumns));
-            }
-
-            if ($tableDiff->extraColumns !== []) {
-                $parts[] = sprintf('-%d col%s (%s)', count($tableDiff->extraColumns), count($tableDiff->extraColumns) === 1 ? '' : 's', implode(', ', $tableDiff->extraColumns));
-            }
-
-            foreach ($tableDiff->modifiedColumns as $colDiff) {
-                $parts[] = sprintf('~%s (%s → %s%s)', $colDiff->name, $colDiff->sourceType, $colDiff->targetType, $colDiff->sourceNullable !== $colDiff->targetNullable ? ', nullable changed' : '');
-            }
-
-            $this->line(sprintf('  Modified table:        %s: %s', $tableDiff->tableName, implode(', ', $parts)));
-        }
-
-        $this->line('');
-    }
-
-    private function renderDryRunTable(DryRunResultData $result, string $sourceName, ?SchemaDiffData $schemaDiff = null): void
-    {
-        $this->line('');
-        $this->line(sprintf('  Dry-run: %s', $sourceName));
-        $this->line('');
-
-        if ($schemaDiff instanceof SchemaDiffData) {
-            $this->renderSchemaDiff($schemaDiff);
-        }
-
-        $tableWidth = 24;
-        $rowsWidth = 14;
-        $strategyWidth = 10;
-
-        $header = sprintf(
-            '  %-'.$tableWidth.'s %-'.$rowsWidth.'s %-'.$strategyWidth.'s %s',
-            'Table',
-            'Rows (est.)',
-            'Strategy',
-            'Transformations'
-        );
-
-        $separator = '  '.str_repeat('─', $tableWidth + $rowsWidth + $strategyWidth + 20);
-
-        $this->line($header);
-        $this->line($separator);
-
-        foreach ($result->tables as $table) {
-            $rowsLabel = $table->exists
-                ? ($table->estimatedRows !== null ? ($table->estimated ? '~' : '').number_format($table->estimatedRows) : '?')
-                : 'NOT FOUND';
-
-            $strategyLabel = $table->exists
-                ? (in_array($table->rowStrategy, ['first', 'last'], true) ? $table->rowStrategy.' '.number_format((int) $table->rowLimit) : $table->rowStrategy) // @pest-mutate-ignore: RemoveIntegerCast
-                : ('—');
-
-            $transformLabel = $table->transformedColumns !== []
-                ? implode(', ', $table->transformedColumns)
-                : '—';
-
-            $this->line(sprintf(
-                '  %-'.$tableWidth.'s %-'.$rowsWidth.'s %-'.$strategyWidth.'s %s',
-                $table->tableName,
-                $rowsLabel,
-                $strategyLabel,
-                $transformLabel,
-            ));
-        }
-
-        $this->line($separator);
-
-        $notFoundMsg = $result->notFoundCount > 0
-            ? sprintf(', %d not found, will be skipped', $result->notFoundCount)
-            : '';
-
-        $this->line(sprintf(
-            '  %-'.$tableWidth.'s %-'.$rowsWidth.'s', // @pest-mutate-ignore: ConcatRemoveRight
-            'Total',
-            (array_any($result->tables, static fn (DryRunTableData $t): bool => $t->estimated) ? '~' : '').number_format($result->totalEstimatedRows).' rows across '.count($result->tables).' tables'.$notFoundMsg,
-        ));
-
-        $this->line('');
-        $this->line('  No data will be transferred. Run without --dry-run to execute.');
-        $this->line('');
-    }
-
-    private function formatDuration(float $seconds): string
-    {
-        if ($seconds < 60) {
-            return sprintf('%.0fs', $seconds);
-        }
-
-        $minutes = (int) ($seconds / 60); // @pest-mutate-ignore: RemoveIntegerCast
-        $remaining = $seconds % 60;
-
-        return sprintf('%dm %ds', $minutes, $remaining);
-    }
-
-    private function formatBytes(int $bytes): string
-    {
-        if ($bytes < 1024) {
-            return $bytes.' B';
-        }
-
-        $units = ['KB', 'MB', 'GB'];
-        $value = $bytes / 1024;
-        $unit = 0;
-
-        while ($value >= 1024 && $unit < count($units) - 1) {
-            $value /= 1024;
-            $unit++;
-        }
-
-        return sprintf('%.1f %s', $value, $units[$unit]);
     }
 
     /**

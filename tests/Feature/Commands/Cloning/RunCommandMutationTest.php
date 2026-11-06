@@ -1534,36 +1534,6 @@ it('prints nothing for a dry run in CI mode', function (): void {
     expect($code)->toBe(0)->and($out)->toBe('');
 });
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
-
-it('formats durations', function (float $seconds, string $expected): void {
-    $command = app(RunCommand::class);
-
-    expect((fn (float $s): string => $this->formatDuration($s))->call($command, $seconds))->toBe($expected);
-})->with([
-    [0.0, '0s'],
-    [59.0, '59s'],
-    [59.4, '59s'],
-    [60.0, '1m 0s'],
-    [75.4, '1m 15s'],
-    [3600.0, '60m 0s'],
-]);
-
-it('formats byte counts', function (int $bytes, string $expected): void {
-    $command = app(RunCommand::class);
-
-    expect((fn (int $b): string => $this->formatBytes($b))->call($command, $bytes))->toBe($expected);
-})->with([
-    [0, '0 B'],
-    [1023, '1023 B'],
-    [1024, '1.0 KB'],
-    [1536, '1.5 KB'],
-    [1048575, '1024.0 KB'],
-    [1048576, '1.0 MB'],
-    [1073741824, '1.0 GB'],
-    [1099511627776, '1024.0 GB'],
-]);
-
 // ─── Key remapping exhaustion & memory hints ──────────────────────────────────
 
 function g1_bind_exhausted(): void
