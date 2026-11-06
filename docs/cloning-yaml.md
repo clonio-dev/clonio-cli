@@ -149,6 +149,12 @@ Unlike `skip`, `schema` does not cascade: tables that reference a schema-only ta
 | `truncate` | `TRUNCATE TABLE …` | Fastest. On SQLite, falls back to `DELETE FROM`. Runs after FK checks are disabled. |
 | `delete` | `DELETE FROM …` | Safer on targets with FK constraints enforced at the statement level. |
 
+### PostgreSQL partitioned tables
+
+Clonio treats a partitioned table as one table. Reading it returns the rows of all its partitions, so the partitions themselves are not listed: `cloning:dump` leaves them out, and a `tables:` entry for a partition (e.g. `events_2026`) is reported as `not_found`. Configure the parent table (`events`) instead. Its `rows` and `columns` rules apply to the rows of every partition.
+
+When Clonio creates the table on the target, it creates a plain, non-partitioned table with the parent's columns. To keep partitioning on the target, create the partitioned table and its partitions there yourself (for example with your migrations) and keep the default `recreate_tables: false`: an existing target table is kept as it is. Rows inserted into the parent are then routed to the matching partition.
+
 ### `columns`
 
 Lists the columns that need transformation. **Columns not listed are implicitly kept as-is** — you don't need to enumerate every column in a table.
