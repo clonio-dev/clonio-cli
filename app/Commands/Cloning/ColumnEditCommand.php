@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Commands\Cloning;
 
+use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\ConnectionData;
 use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\ExitCode;
 use App\Enums\KeyRemappingStrategy;
+use App\Services\Cloning\PolymorphicRelationDetector;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
@@ -167,6 +169,7 @@ class ColumnEditCommand extends Command
         ConfigService $configService,
         DatabaseConnectionService $connector,
         SchemaInspector $inspector,
+        PolymorphicRelationDetector $polymorphicDetector,
     ): int {
         // ─── Resolve file ──────────────────────────────────────────────────
         $fileArg = $this->argument('file');
@@ -344,7 +347,7 @@ class ColumnEditCommand extends Command
         }
 
         // ─── Remapping: resolve source schema, validate PK, detect FKs ─────
-        /** @var list<array{table: string, column: string, self_referential: bool}> $remappingForeignKeys */
+        /** @var list<array{table: string, column: string, self_referential: bool, type_column?: string, type_value?: string}> $remappingForeignKeys */
         $remappingForeignKeys = [];
 
         if ($strategyKey === 'remapping') {
@@ -356,6 +359,7 @@ class ColumnEditCommand extends Command
                 configService: $configService,
                 connector: $connector,
                 inspector: $inspector,
+                polymorphicDetector: $polymorphicDetector,
             );
 
             if ($remappingContext['error'] !== null) {
@@ -386,9 +390,10 @@ class ColumnEditCommand extends Command
                 ? '— none —'
                 : implode(', ', array_map(
                     static fn (array $fk): string => sprintf(
-                        '%s.%s%s',
+                        '%s.%s%s%s',
                         $fk['table'],
                         $fk['column'],
+                        isset($fk['type_column'], $fk['type_value']) ? sprintf(' [%s = %s]', $fk['type_column'], $fk['type_value']) : '',
                         $fk['self_referential'] ? ' (self)' : '',
                     ),
                     $remappingForeignKeys,
@@ -540,7 +545,7 @@ class ColumnEditCommand extends Command
      * Resolve source schema for a remapping column: validate the column is a primary key and
      * auto-detect reverse foreign keys (other tables whose FKs reference this PK).
      *
-     * @return array{error: ?string, foreignKeys: list<array{table: string, column: string, self_referential: bool}>}
+     * @return array{error: ?string, foreignKeys: list<array{table: string, column: string, self_referential: bool, type_column?: string, type_value?: string}>}
      */
     private function resolveRemappingContext(
         string $connectionName,
@@ -549,6 +554,7 @@ class ColumnEditCommand extends Command
         ConfigService $configService,
         DatabaseConnectionService $connector,
         SchemaInspector $inspector,
+        PolymorphicRelationDetector $polymorphicDetector,
     ): array {
         if ($connectionName === '') {
             $this->warn('  Source connection unknown (YAML missing top-level "connection") — writing foreign_keys: [] and skipping primary-key validation.');
@@ -603,13 +609,16 @@ class ColumnEditCommand extends Command
             ];
         }
 
-        return ['error' => null, 'foreignKeys' => $this->detectReverseForeignKeys($schema, $tableName, $columnName)];
+        return ['error' => null, 'foreignKeys' => [
+            ...$this->detectReverseForeignKeys($schema, $tableName, $columnName),
+            ...$this->detectPolymorphicForeignKeys($polymorphicDetector, $connection, $schema, $tableName, $columnName),
+        ]];
     }
 
     /**
      * Scan every table for FK columns referencing <tableName>.<columnName>.
      *
-     * @return list<array{table: string, column: string, self_referential: bool}>
+     * @return list<array{table: string, column: string, self_referential: bool, type_column?: string, type_value?: string}>
      */
     private function detectReverseForeignKeys(DatabaseSchemaData $schema, string $tableName, string $columnName): array
     {
@@ -634,6 +643,40 @@ class ColumnEditCommand extends Command
         }
 
         return $foreignKeys;
+    }
+
+    /**
+     * Polymorphic foreign keys (`<name>_type` + `<name>_id`) whose type
+     * values name <tableName>. A failed read is a warning, not an error.
+     *
+     * @return list<array{table: string, column: string, self_referential: bool, type_column: string, type_value: string}>
+     */
+    private function detectPolymorphicForeignKeys(
+        PolymorphicRelationDetector $detector,
+        ConnectionData $connection,
+        DatabaseSchemaData $schema,
+        string $tableName,
+        string $columnName,
+    ): array {
+        try {
+            $detection = $detector->detect($connection, $schema, [$tableName => $columnName]);
+        } catch (Throwable $throwable) {
+            $this->warn(sprintf('  Could not read polymorphic type values (%s) — no polymorphic foreign keys added.', $throwable->getMessage()));
+
+            return [];
+        }
+
+        return array_map(
+            static fn (KeyRemappingForeignKeyData $fk): array => [
+                'table' => $fk->table,
+                'column' => $fk->column,
+                'self_referential' => $fk->selfReferential,
+                // Detected foreign keys always carry both type fields.
+                'type_column' => (string) $fk->typeColumn, // @pest-mutate-ignore: RemoveStringCast
+                'type_value' => (string) $fk->typeValue, // @pest-mutate-ignore: RemoveStringCast
+            ],
+            $detection->foreignKeysByTable[$tableName] ?? [],
+        );
     }
 
     private function askString(string $question, string $default): string

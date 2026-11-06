@@ -480,6 +480,8 @@ companies:
               type_value: App\Models\Company
 ```
 
+`cloning:dump` and `cloning:column:edit --strategy=remapping` add these entries for `<name>_type` + `<name>_id` column pairs, see [cloning:dump](commands/cloning-dump.md#polymorphic-relations).
+
 Rows with a type that no entry names keep their source value. `cloning:run` exits with code `4` when the same FK column is listed under more than one remapped table without `type_column` (it would be rewritten twice), when two entries share a `type_value`, or when `type_column` does not exist in the source table.
 
 See [cloning-run.md — Key Remapping](commands/cloning-run.md#key-remapping) for a full worked example and the legacy `key_remapping:` top-level section format.

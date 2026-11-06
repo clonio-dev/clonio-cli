@@ -109,6 +109,7 @@ The command opens the source connection declared at the YAML top-level (`connect
 
 1. **Validates** that the chosen column is a primary key on the source table. If it is not, the command exits with code `4` and the YAML is left untouched.
 2. **Auto-detects** every foreign key in the source database that references `<table>.<column>`. The detected list is written into the `arguments[].foreign_keys` block — overwriting any prior list. Self-references (FK on the same table) are emitted with `self_referential: true`.
+3. **Auto-detects** polymorphic relations (`<name>_type` + `<name>_id`) whose type values name `<table>`, the same way as [`cloning:dump`](cloning-dump.md#polymorphic-relations), and adds them with `type_column` and `type_value`. If the type values cannot be read, the command warns and keeps the other foreign keys.
 
 The output structure mirrors `cloning:dump`:
 

@@ -147,6 +147,34 @@ In `--ci` mode the suggestion is applied without asking. Use `--no-framework-tab
 
 Names are matched case-insensitively. Schema-only tables stay in the YAML even with `--only-pii`.
 
+### Polymorphic relations
+
+Database constraints cannot describe a polymorphic relation such as Laravel's `addressable_type` + `addressable_id`, so `cloning:dump` looks for them by name: a string `<name>_type` column next to an integer `<name>_id` column without a foreign key constraint. For each pair it reads the distinct type values from the source (up to 100 per column) and maps each value to a remapped table:
+
+- the value itself as a table name (`users` → `users`), or
+- the plural snake case of its class basename (`App\Models\User` → `users`, `company` → `companies`, `TeamMember` → `team_members`).
+
+Each match becomes a foreign key entry with `type_column` and `type_value` under that table's primary key:
+
+```yaml
+users:
+  columns:
+    id:
+      strategy: remapping
+      arguments:
+        - use: random_integer
+        - foreign_keys: [{table: addresses, column: addressable_id, self_referential: false, type_column: addressable_type, type_value: "App\\Models\\User"}]
+```
+
+Type values that match no remapped table are listed as a warning. Add their entries by hand, otherwise those rows keep their source ids:
+
+```
+  Polymorphic type values without a remapped table — add their foreign_keys entries by hand:
+    addresses.addressable_type = 'team'
+```
+
+If the type values cannot be read, the command warns and writes the config without polymorphic entries. `--ci` suppresses both warnings. With `--only-pii` no key remapping is generated, so no type values are read.
+
 ### Setting transfer options at dump time
 
 After inspecting the schema, Clonio prompts for five transfer options that control how `cloning:run` synchronizes the target schema and transfers data. In interactive mode you answer yes/no at the prompt; defaults match the recommended safe settings:
