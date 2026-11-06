@@ -2,6 +2,16 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.5.1 - 2026-11-06
+
+### What's Changed
+
+* docs(changelog): credit GALHP as contributor in v1.5.0 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/259
+* chore(deps): update composer dependencies by @rokde in https://github.com/clonio-dev/clonio-cli/pull/260
+* fix(cloning): steady progress pace, remove log handler by identity by @rokde in https://github.com/clonio-dev/clonio-cli/pull/262
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.5.0...v1.5.1
+
 ## v1.5.0 - 2026-11-06
 
 ### What's Changed
@@ -10,6 +20,7 @@ All notable changes to `clonio-cli` will be documented in this file.
 * ci(changelog): commit CHANGELOG straight to main via release GitHub App by @rokde in https://github.com/clonio-dev/clonio-cli/pull/257
 * feat(cloning): accept regex table patterns in tables: keys and skip: entries by @rokde in https://github.com/clonio-dev/clonio-cli/pull/258
   * Co-authored by [GALHP](https://github.com/GALHP), based on https://github.com/clonio-dev/clonio-cli/pull/168 — thank you!
+  
 
 ### Contributors
 
