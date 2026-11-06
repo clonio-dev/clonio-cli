@@ -138,9 +138,15 @@ class SchemaInspector
     {
         $dbName = $connection->database ?? '';
 
+        // Ordinary ('r') and partitioned ('p') tables, without their partitions:
+        // reading a partitioned table already returns the rows of every partition,
+        // so listing the partitions too would copy those rows twice.
         /** @var list<stdClass> $tableRows */
         $tableRows = DB::connection($connName)->select(
-            'SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename'
+            "SELECT c.relname AS tablename FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+            ORDER BY c.relname"
         );
 
         $tables = [];

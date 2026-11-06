@@ -132,6 +132,32 @@ it('maps PostgreSQL information_schema rows into schema data', function (): void
         ->and($items->foreignKeys[0]->referencedTable)->toBe('categories');
 });
 
+it('lists PostgreSQL partitioned tables without their partitions', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('c');
+
+    $queries = [];
+    DB::shouldReceive('connection')->with('c')->andReturnSelf();
+    DB::shouldReceive('select')->andReturnUsing(function (string $sql) use (&$queries): array {
+        $queries[] = $sql;
+
+        return count($queries) === 1 ? [(object) ['tablename' => 'events']] : [];
+    });
+    DB::shouldReceive('purge')->with('c');
+
+    $conn = new ConnectionData('p', DatabaseConnectionType::PostgreSQL, 'h', 5432, 'cat', 'public', 'postgres', '', false);
+    $schema = (new SchemaInspector($connector))->inspect($conn);
+
+    expect($schema->tables)->toHaveCount(1)
+        ->and($schema->hasTable('events'))->toBeTrue()
+        ->and($queries[0])->toBe(
+            "SELECT c.relname AS tablename FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+            ORDER BY c.relname"
+        );
+});
+
 // ── SQL Server: DB facade mocked (incl. MAX → null length) ──────────────────
 
 it('maps SQL Server information_schema rows, treating MAX length as null', function (): void {
