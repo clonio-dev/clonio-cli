@@ -63,6 +63,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use LaravelZero\Framework\Commands\Command;
+use Monolog\Handler\HandlerInterface;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
 use Monolog\Logger as Monolog;
@@ -1164,14 +1165,20 @@ class RunCommand extends Command
             return static function (): void {};
         }
 
-        $monolog->pushHandler(new ConsoleOutputHandler($section, $silenced[0][1], ignoredMessages: ['row_skipped']));
+        $pushed = new ConsoleOutputHandler($section, $silenced[0][1], ignoredMessages: ['row_skipped']);
+        $monolog->pushHandler($pushed);
 
         foreach ($silenced as [$handler]) {
             $handler->setLevel(Level::Emergency);
         }
 
-        return static function () use ($monolog, $silenced): void {
-            $monolog->popHandler();
+        return static function () use ($monolog, $pushed, $silenced): void {
+            // Remove exactly the handler pushed above, even when another one was
+            // pushed after it. setHandlers() wants a list; keys do not matter.
+            $monolog->setHandlers(array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
+                $monolog->getHandlers(),
+                static fn (HandlerInterface $handler): bool => $handler !== $pushed,
+            )));
 
             foreach ($silenced as [$handler, $level]) {
                 $handler->setLevel($level);

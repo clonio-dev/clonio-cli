@@ -325,3 +325,34 @@ it('shows a pace below one second per million rows in milliseconds', function ()
 
     expect(sectionText($table))->toContain(' · 500.0 ms/M');
 });
+
+it('shows the smoothed pace, so a slow chunk does not make the figure jump', function (): void {
+    [$display, $table] = makeProgressDisplay();
+    $display->startTable('users');
+
+    $stats = new StatsTableTransferData;
+    $stats->setTotalRows(10);
+    $stats->setStatus(TableRunPhase::Insert);
+    $stats->recordLoop(progressLoop(rows: 2, seconds: 1.0)); // 0.5 s/row
+    $stats->recordLoop(progressLoop(rows: 2, seconds: 3.0)); // 1.5 s/row
+    $display->advanceTable($stats);
+
+    // 0.2 × 1.5 + 0.8 × 0.5 = 0.7 s/row, not the latest chunk's 1.5 s/row.
+    expect(sectionText($table))->toContain(' · 700000.0 s/M')
+        ->not->toContain('1500000.0 s/M');
+});
+
+it('shows smoothed paces in the per-phase breakdown', function (): void {
+    [$display, $table] = makeProgressDisplay(phaseDetail: true);
+    $display->startTable('users');
+
+    $stats = new StatsTableTransferData;
+    $stats->setTotalRows(10);
+    $stats->setStatus(TableRunPhase::Insert);
+    $stats->recordLoop(progressLoop(rows: 2, seconds: 0.000008));
+    $stats->recordLoop(progressLoop(rows: 2, seconds: 0.000016));
+    $display->advanceTable($stats);
+
+    // Each phase doubles in the second chunk: smoothed = 0.2 × 2x + 0.8 × x = 1.2x.
+    expect(sectionText($table))->toContain('all 4.8 s/M · sel 1.2 s/M · tr 1.2 s/M · ins 2.4 s/M');
+});

@@ -100,3 +100,24 @@ it('leaves logging alone when the stack has no plain stderr handler', function (
     $restore();
     expect($monolog->getHandlers())->toHaveCount(1);
 });
+
+it('removes only its own handler on restore, even when another was pushed after it', function (): void {
+    $stderr = new StreamHandler('php://stderr', Level::Warning);
+    $base = new TestHandler;
+    $monolog = new Monolog('clonio', [$stderr, $base]);
+    Log::shouldReceive('driver')->andReturn(new Logger($monolog));
+    $section = new BufferedOutput;
+
+    $restore = redirectRunLogs($section);
+    $later = new TestHandler;
+    $monolog->pushHandler($later);
+
+    $restore();
+
+    expect($monolog->getHandlers())->toBe([$later, $stderr, $base])
+        ->and($stderr->getLevel())->toBe(Level::Warning);
+
+    $monolog->warning('auto_increment_correction_failed');
+    expect($section->fetch())->toBe('')
+        ->and($later->hasWarningRecords())->toBeTrue();
+});

@@ -221,15 +221,16 @@ final class CloningProgressDisplay
     }
 
     /**
-     * ETA plus the overall pace, expanded to the per-phase pace breakdown when
-     * `$phaseDetail` is set.
+     * ETA plus the smoothed overall pace, expanded to the per-phase pace
+     * breakdown when `$phaseDetail` is set. Smoothed paces keep the figures
+     * steady between chunks.
      */
     private function formatProgress(StatsTableTransferData $stats, bool $withEta = true): string
     {
         $parts = $withEta && $stats->estimatedSecondsRemaining !== null
             ? ['ETA '.$this->formatEta($stats->estimatedSecondsRemaining)]
             : [];
-        $overall = trim(self::formatThroughput($stats->loopAggregate->latestPacePerMillion));
+        $overall = trim(self::formatThroughput($stats->loopAggregate->smoothedPacePerMillion));
 
         if (! $this->phaseDetail) {
             if ($overall !== '—') {
@@ -240,9 +241,9 @@ final class CloningProgressDisplay
         }
 
         $parts[] = 'all '.$overall;
-        $parts[] = 'sel '.trim(self::formatThroughput($stats->selectAggregate->latestPacePerMillion));
-        $parts[] = 'tr '.trim(self::formatThroughput($stats->transformAggregate->latestPacePerMillion));
-        $parts[] = 'ins '.trim(self::formatThroughput($stats->insertAggregate->latestPacePerMillion));
+        $parts[] = 'sel '.trim(self::formatThroughput($stats->selectAggregate->smoothedPacePerMillion));
+        $parts[] = 'tr '.trim(self::formatThroughput($stats->transformAggregate->smoothedPacePerMillion));
+        $parts[] = 'ins '.trim(self::formatThroughput($stats->insertAggregate->smoothedPacePerMillion));
 
         return implode(' · ', $parts);
     }
