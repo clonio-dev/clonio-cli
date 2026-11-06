@@ -312,6 +312,46 @@ it('merges YAML skip entries with --skip-tables without duplicates', function ()
     expect($code)->toBe(0)->and($args[5])->toBe(['orders', 'logs']);
 });
 
+it('rejects a name option whose value holds no name', function (string $option, string $value): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    $called = false;
+    g1_bind(run: function (array $a) use (&$called) {
+        $called = true;
+
+        return g1_result();
+    });
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => $value]);
+
+    expect($code)->toBe(4)
+        ->and($out)->toBe($option." needs at least one name.\n")
+        ->and($called)->toBeFalse();
+})->with([
+    'skip blank' => ['--skip-tables', ' , '],
+    'skip comma' => ['--skip-tables', ','],
+    'only blank' => ['--only-tables', ' , '],
+    'only comma' => ['--only-tables', ','],
+    'audit blank' => ['--audit-channel', ' , '],
+    'audit comma' => ['--audit-channel', ','],
+]);
+
+it('keeps a table named 0', function (string $option, int $index): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    $args = null;
+    g1_bind(run: function (array $a) use (&$args) {
+        $args = $a;
+
+        return g1_result();
+    });
+
+    [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => '0, users']);
+
+    expect($code)->toBe(0)->and($args[$index])->toBe(['0', 'users']);
+})->with([
+    'skip' => ['--skip-tables', 5],
+    'only' => ['--only-tables', 6],
+]);
+
 // ─── Option overrides ─────────────────────────────────────────────────────────
 
 it('applies a single CLI override on top of the YAML options', function (string $flag, bool $yamlValue, string $field): void {

@@ -69,10 +69,21 @@ class CloningRunOrchestrator
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
 
+        // Tables the config skips never copy rows, whatever the caller passes in
+        // $skipTables. --only-tables can narrow a run, but never widen it.
+        $configSkipped = array_map(
+            static fn (TableCloningConfigData $t): string => $t->tableName,
+            array_filter($config->tables, static fn (TableCloningConfigData $t): bool => $t->rows->strategy === 'skip'),
+        );
+        $skipExcluded = array_values(array_unique(array_merge($skipTables, $configSkipped))); // @pest-mutate-ignore: UnwrapArrayValues
+
         // Compute excluded tables
         $explicitlyExcluded = $onlyTables !== []
-            ? array_values(array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true)))
-            : $skipTables;
+            ? array_values(array_unique(array_merge( // @pest-mutate-ignore: UnwrapArrayValues
+                array_filter($tableNames, static fn (string $t): bool => ! in_array($t, $onlyTables, true)),
+                $skipExcluded,
+            )))
+            : $skipExcluded;
 
         // Compute cascade exclusions
         $cascadeExclusions = $this->resolver->computeCascadeExclusions($sourceSchema, $explicitlyExcluded, $tableNames);
@@ -145,7 +156,7 @@ class CloningRunOrchestrator
 
         // Add skipped tables to results
         foreach ($explicitlyExcluded as $tableName) {
-            $reason = $onlyTables !== [] ? 'excluded by --only filter' : 'explicitly excluded via --skip';
+            $reason = in_array($tableName, $skipExcluded, true) ? 'explicitly excluded via --skip' : 'excluded by --only filter';
             $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedByFlag, 0, 0, 0.0, $reason);
             Log::info('table_skipped_by_flag', ['table' => $tableName, 'reason' => $reason]);
         }

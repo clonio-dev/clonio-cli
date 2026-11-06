@@ -492,7 +492,9 @@ clonio cloning:run prod.cloning.yaml --target staging --skip-tables=audit_logs,s
 clonio cloning:run prod.cloning.yaml --target staging --only-tables=users,orders
 ```
 
-Using both flags together is a `ValidationError (4)`.
+Using both flags together is a `ValidationError (4)`. So is a value that holds no table name, such as `--only-tables=' , '`: it does not turn the filter off. A missing or empty flag counts as not given. The same rule applies to `--audit-channel`.
+
+`--only-tables` narrows a run but never widens it. A table in the YAML `skip:` list or with `rows.strategy: skip` stays skipped, even when you name it in `--only-tables`.
 
 ### FK-Dependent Cascade
 
