@@ -161,6 +161,41 @@ it('maps SQL Server information_schema rows, treating MAX length as null', funct
         ->and($docs->foreignKeys[0]->referencedTable)->toBe('authors');
 });
 
+it('reads SQL Server tables, columns, keys and foreign keys from the default schema only', function (): void {
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    $connector->shouldReceive('open')->andReturn('c');
+
+    $queries = [];
+    $results = [
+        [(object) ['TABLE_NAME' => 'users']],
+        [(object) ['COLUMN_NAME' => 'id', 'DATA_TYPE' => 'int', 'IS_NULLABLE' => 'NO', 'COLUMN_DEFAULT' => null, 'CHARACTER_MAXIMUM_LENGTH' => null, 'NUMERIC_PRECISION' => 10, 'NUMERIC_SCALE' => 0, 'is_primary' => 1, 'pk_position' => 1, 'is_computed' => 0]],
+        [],
+    ];
+
+    DB::shouldReceive('connection')->with('c')->andReturnSelf();
+    DB::shouldReceive('select')->andReturnUsing(function (string $sql, array $bindings = []) use (&$queries, &$results): array {
+        $queries[] = [preg_replace('/\s+/', ' ', $sql), $bindings];
+
+        return array_shift($results);
+    });
+    DB::shouldReceive('purge')->with('c');
+
+    $conn = new ConnectionData('s', DatabaseConnectionType::SqlServer, 'h', 1433, 'cms', 'dbo', 'sa', '', false);
+    $schema = (new SchemaInspector($connector))->inspect($conn);
+
+    expect($schema->tables)->toHaveCount(1)
+        ->and($queries)->toHaveCount(3)
+        ->and($queries[0][0])->toBe("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = SCHEMA_NAME() ORDER BY TABLE_NAME")
+        ->and($queries[1][0])->toContain('JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_SCHEMA = ku.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME')
+        ->and($queries[1][0])->toContain("WHERE tc.TABLE_SCHEMA = SCHEMA_NAME() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'")
+        ->and($queries[1][0])->toContain('WHERE c.TABLE_SCHEMA = SCHEMA_NAME() AND c.TABLE_NAME = ?')
+        ->and($queries[1][1])->toBe(['users', 'users'])
+        ->and($queries[2][0])->toContain('JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME')
+        ->and($queries[2][0])->toContain('JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu ON ccu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND ccu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME')
+        ->and($queries[2][0])->toContain("WHERE tc.TABLE_SCHEMA = SCHEMA_NAME() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'FOREIGN KEY'")
+        ->and($queries[2][1])->toBe(['users']);
+});
+
 // ── Generated columns ───────────────────────────────────────────────────────
 
 it('detects virtual and stored generated columns in SQLite', function (): void {

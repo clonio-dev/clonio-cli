@@ -80,6 +80,10 @@ For SQLite connections, host, port, username, and password fields are skipped en
 
 A `dump` connection is a virtual SQL-file output target, not a live database. The host, port, database, and username steps are skipped; instead you choose a target SQL `dialect` and an optional ZIP archive password (encrypted at rest like any other secret; blank means no encryption). See [`dump` Connection Type](connection-dump.md) for the full reference.
 
+### SQL Server schemas
+
+A `sqlsrv` connection reads and writes only the login's default schema (`SCHEMA_NAME()`, usually `dbo`). Tables in other schemas are ignored, even when a table with the same name exists there. To clone another schema, connect with a login whose default schema is that schema. The `--schema` option has no effect on SQL Server.
+
 ### Transport security (TLS)
 
 New network connections use `require` by default: the connection is encrypted, the server certificate is not verified. This is what servers with `require_secure_transport=ON` need. SQL Server (`sqlsrv`) defaults to `verify` instead, because ODBC Driver 18 already verifies the server certificate by default — `require` would weaken that.
