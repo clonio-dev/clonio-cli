@@ -496,6 +496,14 @@ Using both flags together is a `ValidationError (4)`. So is a value that holds n
 
 `--only-tables` narrows a run but never widens it. A table in the YAML `skip:` list or with `rows.strategy: skip` stays skipped, even when you name it in `--only-tables`.
 
+A name that matches no table in the config, after name resolution, prints a warning and the run continues:
+
+```
+  Warning: --only-tables name "usrs" matches no table in the config
+```
+
+The warning also appears with `--ci` and is logged as `table_filter_unmatched`. If no `--only-tables` name matches, nothing would be cloned, so the run stops with `ValidationError (4)`. Names in the YAML `skip:` list are not checked. A dry run does not apply the filters, so it shows no warning.
+
 ### FK-Dependent Cascade
 
 When a table is excluded, all tables with a foreign key dependency on it — directly or transitively — are also excluded automatically:
@@ -636,7 +644,7 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `1` | Run failed — one or more tables had unrecoverable transfer errors |
 | `2` | Config error — `clonio.json` missing, or `APP_KEY` not set |
 | `3` | Connection error — source or target unreachable |
-| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, or CI without `--target` |
+| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, `--only-tables` matching no table, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |
 
 ## Audit & Process Logs

@@ -282,7 +282,7 @@ it('rejects --skip-tables combined with --only-tables before running', function 
 });
 
 it('casts non-string table option values to strings', function (string $option, int $index): void {
-    Storage::disk('local')->put('t.yaml', g1_yaml());
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n  \"7\":\n    rows:\n      strategy: full\n"));
     $args = null;
     g1_bind(run: function (array $a) use (&$args) {
         $args = $a;
@@ -297,6 +297,50 @@ it('casts non-string table option values to strings', function (string $option, 
     'skip' => ['--skip-tables', 5],
     'only' => ['--only-tables', 6],
 ]);
+
+it('warns about each filter name that matches no configured table and keeps running', function (string $flag, string $value): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n")."skip:\n  - not_configured\n");
+    $ran = false;
+    g1_bind(run: function () use (&$ran): RunResultData {
+        $ran = true;
+
+        return g1_result();
+    });
+    Log::spy();
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $flag => $value]);
+
+    // Names resolve before the check, so USERS matches users; YAML skip: entries are not checked.
+    expect($code)->toBe(0)->and($ran)->toBeTrue()->and($out)->toBe(
+        sprintf("  Warning: %s name \"usrs\" matches no table in the config\n", $flag)
+        .sprintf("  Warning: %s name \"ordrs\" matches no table in the config\n", $flag)
+    );
+    Log::shouldHaveReceived('warning')->with('table_filter_unmatched', ['flag' => $flag, 'table' => 'usrs'])->once();
+    Log::shouldHaveReceived('warning')->with('table_filter_unmatched', ['flag' => $flag, 'table' => 'ordrs'])->once();
+})->with([
+    'only' => ['--only-tables', 'USERS,usrs,ordrs'],
+    'skip' => ['--skip-tables', 'usrs,USERS,ordrs'],
+]);
+
+it('rejects --only-tables when no name matches a configured table', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    g1_bind(run: fn (): never => throw new RuntimeException('must not run'));
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--only-tables' => 'usrs']);
+
+    expect($code)->toBe(4)
+        ->and($out)->toContain('  Warning: --only-tables name "usrs" matches no table in the config')
+        ->and($out)->toContain('--only-tables matches no table in the config; nothing would be cloned.');
+});
+
+it('runs when --skip-tables matches no configured table at all', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    g1_bind();
+
+    [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--skip-tables' => 'usrs']);
+
+    expect($code)->toBe(0);
+});
 
 it('merges YAML skip entries with --skip-tables without duplicates', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml()."skip:\n  - orders\n  - logs\n");
@@ -1412,7 +1456,9 @@ it('suggests --no-memory-limit with the full original command line', function ()
     ]);
 
     expect($code)->toBe(1)->and($out)->toBe(
-        "Memory exhausted during key mapping generation: Allowed memory size of 1 bytes exhausted\n\n"
+        "  Warning: --skip-tables name \"a\" matches no table in the config\n"
+        ."  Warning: --skip-tables name \"b\" matches no table in the config\n"
+        ."Memory exhausted during key mapping generation: Allowed memory size of 1 bytes exhausted\n\n"
         ."Hint: Re-run with --no-memory-limit to remove the PHP memory limit:\n\n"
         .'    clonio cloning:run t.yaml --target=staging --allow-failure --ci --skip-schema --skip-tables=a,b'
         .' --audit-channel=x --remap-keys --file-based --enforce-column-types --no-enforce-column-types'
@@ -1423,7 +1469,7 @@ it('suggests --no-memory-limit with the full original command line', function ()
 });
 
 it('omits empty value options from the memory hint', function (): void {
-    Storage::disk('local')->put('t.yaml', g1_remap_yaml());
+    Storage::disk('local')->put('t.yaml', g1_remap_yaml(extraTables: "  c:\n    rows:\n      strategy: full\n"));
     g1_bind();
     $remapping = Mockery::mock(KeyRemappingService::class);
     $remapping->shouldReceive('generateMappings')->andThrow(new RuntimeException('Out of memory'));
