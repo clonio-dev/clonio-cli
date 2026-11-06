@@ -2237,7 +2237,24 @@ it('resolves remap_keys from config and CLI flags', function (bool $configValue,
     'config false, --remap-keys re-enables' => [false, ['--remap-keys' => true], true],
     'config false survives other overrides' => [false, ['--enforce-column-types' => true], false],
     'config true, --remap-keys' => [true, ['--remap-keys' => true], true],
-    'config true, both flags: --no-remap-keys wins' => [true, ['--remap-keys' => true, '--no-remap-keys' => true], false],
+]);
+
+it('rejects a flag combined with its negation', function (array $flags, string $message): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYamlWithRemapKeys(true));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+        ...$flags,
+    ])
+        ->expectsOutputToContain($message)
+        ->assertExitCode(ExitCode::ValidationError->value);
+})->with([
+    'remap keys' => [['--remap-keys' => true, '--no-remap-keys' => true], '--remap-keys and --no-remap-keys are mutually exclusive.'],
+    'remap keys alias' => [['--remap-keys' => true, '--skip-remapping-keys' => true], '--remap-keys and --skip-remapping-keys are mutually exclusive.'],
+    'fk checks' => [['--disable-fk-checks' => true, '--no-disable-fk-checks' => true], '--disable-fk-checks and --no-disable-fk-checks are mutually exclusive.'],
 ]);
 
 it('prints a notice when configured key remapping is disabled', function (array $flags, string $source): void {

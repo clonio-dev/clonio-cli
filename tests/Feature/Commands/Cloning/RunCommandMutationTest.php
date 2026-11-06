@@ -1643,7 +1643,7 @@ it('patches the column and prints the re-run command after interactive confirmat
         ->and(Storage::disk('local')->get('other.yaml'))->toContain('strategy: keep');
 });
 
-it('suggests --no-memory-limit with the full original command line', function (): void {
+it('suggests --no-memory-limit with the full original command line', function (array $flags, string $expected): void {
     Storage::disk('local')->put('t.yaml', g1_remap_yaml());
     g1_bind();
     $opened = 0;
@@ -1659,11 +1659,7 @@ it('suggests --no-memory-limit with the full original command line', function ()
 
     [$code, $out] = g1_call([
         'file' => 't.yaml', '--target' => 'staging', '--allow-failure' => true, '--ci' => true, '--skip-schema' => true,
-        '--skip-tables' => 'a,b', '--audit-channel' => 'x', '--remap-keys' => true, '--file-based' => true,
-        '--enforce-column-types' => true, '--no-enforce-column-types' => true, '--drop-unknown-tables' => true,
-        '--no-drop-unknown-tables' => true, '--drop-extra-columns' => true, '--no-drop-extra-columns' => true,
-        '--recreate-tables' => true, '--no-recreate-tables' => true, '--disable-fk-checks' => true,
-        '--no-disable-fk-checks' => true, '--break-on-failure' => true,
+        '--skip-tables' => 'a,b', '--audit-channel' => 'x', '--file-based' => true, '--break-on-failure' => true, ...$flags,
     ]);
 
     expect($code)->toBe(1)->and($out)->toBe(
@@ -1672,12 +1668,19 @@ it('suggests --no-memory-limit with the full original command line', function ()
         ."Memory exhausted during key mapping generation: Allowed memory size of 1 bytes exhausted\n\n"
         ."Hint: Re-run with --no-memory-limit to remove the PHP memory limit:\n\n"
         .'    clonio cloning:run t.yaml --target=staging --allow-failure --ci --skip-schema --skip-tables=a,b'
-        .' --audit-channel=x --remap-keys --file-based --enforce-column-types --no-enforce-column-types'
-        .' --drop-unknown-tables --no-drop-unknown-tables --drop-extra-columns --no-drop-extra-columns'
-        .' --recreate-tables --no-recreate-tables --disable-fk-checks --no-disable-fk-checks --break-on-failure'
+        .' --audit-channel=x'.$expected.' --break-on-failure'
         ." --no-memory-limit\n\n"
     );
-});
+})->with([
+    'flags on' => [
+        ['--remap-keys' => true, '--enforce-column-types' => true, '--drop-unknown-tables' => true, '--drop-extra-columns' => true, '--recreate-tables' => true, '--disable-fk-checks' => true],
+        ' --remap-keys --file-based --enforce-column-types --drop-unknown-tables --drop-extra-columns --recreate-tables --disable-fk-checks',
+    ],
+    'flags off' => [
+        ['--no-enforce-column-types' => true, '--no-drop-unknown-tables' => true, '--no-drop-extra-columns' => true, '--no-recreate-tables' => true, '--no-disable-fk-checks' => true],
+        ' --file-based --no-enforce-column-types --no-drop-unknown-tables --no-drop-extra-columns --no-recreate-tables --no-disable-fk-checks',
+    ],
+]);
 
 it('omits empty value options from the memory hint', function (): void {
     Storage::disk('local')->put('t.yaml', g1_remap_yaml(extraTables: "  c:\n    rows:\n      strategy: full\n"));

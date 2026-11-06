@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Commands\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
-use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
 use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\RunOptionsData;
 use App\Data\Cloning\StatsTableTransferData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
@@ -118,7 +118,17 @@ class RunCommand extends Command
         CloningRunOrchestrator $orchestrator,
         AuditBuffer $auditBuffer,
     ): int {
-        $ci = (bool) $this->option('ci');
+        try {
+            /** @var array<string, mixed> $rawOptions */
+            $rawOptions = $this->options();
+            $options = RunOptionsData::fromOptions((string) $this->argument('file'), $rawOptions);
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            $this->error($invalidArgumentException->getMessage());
+
+            return ExitCode::ValidationError->value;
+        }
+
+        $ci = $options->ci;
         $verbosity = $this->getOutput()->getVerbosity();
         $isVerbose = $verbosity >= OutputInterface::VERBOSITY_VERBOSE;
         $isVeryVerbose = $verbosity >= OutputInterface::VERBOSITY_VERY_VERBOSE;
@@ -142,7 +152,7 @@ class RunCommand extends Command
         $step = new VerboseStepRenderer($this->output, $ci);
 
         // ─── Phase 1: YAML Validation ──────────────────────────────────────────
-        $filePath = (string) $this->argument('file');
+        $filePath = $options->yamlPath;
 
         if (! file_exists($filePath) && ! Storage::disk('local')->exists($filePath)) {
             $this->error(sprintf('File not found: %s', $filePath));
@@ -183,54 +193,10 @@ class RunCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
-        // Validate --skip-tables + --only-tables mutual exclusivity
-        $skipTablesOpt = $this->option('skip-tables');
-        $onlyTablesOpt = $this->option('only-tables');
-
-        if ($skipTablesOpt !== null && $skipTablesOpt !== '' && $onlyTablesOpt !== null && $onlyTablesOpt !== '') {
-            $this->error('--skip-tables and --only-tables are mutually exclusive.');
-
-            return ExitCode::ValidationError->value;
-        }
-
-        try {
-            $skipTables = $this->parseTableNameList('skip-tables');
-            $onlyTables = $this->parseTableNameList('only-tables');
-            $auditChannels = $this->parseNameList('audit-channel');
-        } catch (InvalidArgumentException $invalidArgumentException) {
-            $this->error($invalidArgumentException->getMessage());
-
-            return ExitCode::ValidationError->value;
-        }
-
-        // ─── Option overrides ──────────────────────────────────────────────────
-        $enforceOverride = $this->option('enforce-column-types') ? true : ($this->option('no-enforce-column-types') ? false : null);
-        $dropUnkOverride = $this->option('drop-unknown-tables') ? true : ($this->option('no-drop-unknown-tables') ? false : null);
-        $dropExtOverride = $this->option('drop-extra-columns') ? true : ($this->option('no-drop-extra-columns') ? false : null);
-        $recreateOverride = $this->option('recreate-tables') ? true : ($this->option('no-recreate-tables') ? false : null);
-        $fkChecksOverride = $this->option('no-disable-fk-checks') ? false : ($this->option('disable-fk-checks') ? true : null);
-        $remapKeysOverride = ($this->option('no-remap-keys') || $this->option('skip-remapping-keys')) ? false : ($this->option('remap-keys') ? true : null);
-
-        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $recreateOverride !== null || $fkChecksOverride !== null || $remapKeysOverride !== null) {
-            $opts = $config->options;
-            $config = new CloningConfigData(
-                version: $config->version,
-                connectionName: $config->connectionName,
-                options: new CloningOptionsData(
-                    chunkSize: $opts->chunkSize,
-                    enforceColumnTypes: $enforceOverride ?? $opts->enforceColumnTypes,
-                    dropUnknownTables: $dropUnkOverride ?? $opts->dropUnknownTables,
-                    dropExtraColumns: $dropExtOverride ?? $opts->dropExtraColumns,
-                    disableForeignKeyChecks: $fkChecksOverride ?? $opts->disableForeignKeyChecks,
-                    fakerLocale: $opts->fakerLocale,
-                    remapKeys: $remapKeysOverride ?? $opts->remapKeys,
-                    recreateTables: $recreateOverride ?? $opts->recreateTables,
-                ),
-                tables: $config->tables,
-                keyRemapping: $config->keyRemapping,
-                skipTables: $config->skipTables,
-            );
-        }
+        $config = $options->applyTo($config);
+        $skipTables = $options->skipTables;
+        $onlyTables = $options->onlyTables;
+        $auditChannels = $options->auditChannels;
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
@@ -244,8 +210,7 @@ class RunCommand extends Command
         }
 
         // Resolve target connection
-        $targetOption = $this->option('target');
-        $targetName = is_string($targetOption) && $targetOption !== '' ? $targetOption : null;
+        $targetName = $options->targetConnectionName;
 
         if ($targetName === null) {
             if ($ci) {
@@ -345,7 +310,7 @@ class RunCommand extends Command
         }
 
         // ─── Phase 3: Dry-run ──────────────────────────────────────────────────
-        if ((bool) $this->option('dry-run')) { // @pest-mutate-ignore: RemoveBooleanCast
+        if ($options->dryRun) {
             return $this->runDryRun($config, $sourceConnection, $targetConnection, $inspector, $ci);
         }
 
@@ -400,11 +365,7 @@ class RunCommand extends Command
             // key values will be copied from the source unchanged.
             $this->line(sprintf(
                 '  <comment>Key remapping disabled (%s) — primary/foreign key values are copied unchanged.</comment>',
-                match (true) {
-                    (bool) $this->option('no-remap-keys') => '--no-remap-keys',
-                    (bool) $this->option('skip-remapping-keys') => '--skip-remapping-keys',
-                    default => 'options.remap_keys: false',
-                },
+                $options->remapKeysDisabledBy ?? 'options.remap_keys: false',
             ));
         }
 
@@ -413,11 +374,11 @@ class RunCommand extends Command
                 return ExitCode::ValidationError->value;
             }
 
-            if ((bool) $this->option('no-memory-limit')) { // @pest-mutate-ignore: RemoveBooleanCast
+            if ($options->noMemoryLimit) {
                 ini_set('memory_limit', '-1');
             }
 
-            $keyRemappingService = (bool) $this->option('file-based') // @pest-mutate-ignore: RemoveBooleanCast
+            $keyRemappingService = $options->fileBased
                 ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
                 : resolve(KeyRemappingService::class);
             // Schema-only tables copy no rows, so they need no key mappings.
@@ -455,7 +416,7 @@ class RunCommand extends Command
             }
         }
 
-        $skipSchema = (bool) $this->option('skip-schema');
+        $skipSchema = $options->skipSchema;
 
         if ($isVerbose && ! $ci && ! $targetIsDump) {
             $step->start('Comparing schema');
@@ -609,7 +570,7 @@ class RunCommand extends Command
                     skipTables: $skipTables,
                     onlyTables: $onlyTables,
                     keyRemapping: $keyRemappingService,
-                    breakOnFailure: (bool) $this->option('break-on-failure'),
+                    breakOnFailure: $options->breakOnFailure,
                     dumpSink: $dumpSink,
                     trackRowTotals: $progress instanceof CloningProgressDisplay,
                     onTableStart: match (true) {
@@ -827,7 +788,7 @@ class RunCommand extends Command
             }
         }
 
-        if (! $result->success && ! (bool) $this->option('allow-failure')) { // @pest-mutate-ignore: RemoveBooleanCast
+        if (! $result->success && ! $options->allowFailure) {
             return ExitCode::GeneralError->value;
         }
 
@@ -1211,64 +1172,11 @@ class RunCommand extends Command
     }
 
     /**
-     * Parses a table name flag. Patterns work only in cloning.yaml: a comma
-     * inside a pattern would split it.
-     *
-     * @return list<string>
-     *
-     * @throws InvalidArgumentException when the value holds no name or a pattern
-     */
-    private function parseTableNameList(string $option): array
-    {
-        $names = $this->parseNameList($option);
-        $pattern = array_find($names, static fn (string $name): bool => str_starts_with($name, '/'));
-
-        if ($pattern !== null) {
-            throw new InvalidArgumentException(sprintf(
-                '--%s takes table names, not patterns ("%s"). Write table patterns in cloning.yaml.',
-                $option,
-                $pattern,
-            ));
-        }
-
-        return $names;
-    }
-
-    /**
      * Reconstruct the original command line, adding --no-memory-limit if not already present.
      */
     private function getOriginalCommandWithNoMemoryLimit(): string
     {
         return $this->getOriginalCommand(['--no-memory-limit']);
-    }
-
-    /**
-     * Parse a comma-separated name option. A missing or empty option yields no
-     * names; a value that holds no name at all (e.g. ' , ') is rejected, so it
-     * cannot silently turn a filter off. '0' is a valid name.
-     *
-     * @return list<string>
-     *
-     * @throws InvalidArgumentException when the value holds no name
-     */
-    private function parseNameList(string $option): array
-    {
-        $value = $this->option($option);
-
-        if (! is_scalar($value) || $value === '') {
-            return [];
-        }
-
-        $names = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
-            array_map(trim(...), explode(',', (string) $value)),
-            static fn (string $name): bool => $name !== '',
-        ));
-
-        if ($names === []) {
-            throw new InvalidArgumentException(sprintf('--%s needs at least one name.', $option));
-        }
-
-        return $names;
     }
 
     /**
@@ -1329,14 +1237,6 @@ class RunCommand extends Command
     }
 
     /**
-     * Handle KeyRemappingExhaustedException with a friendly recovery flow.
-     *
-     * CI mode: print prose with hint, exit GeneralError.
-     * Interactive: prompt to switch the offending column to `keep` strategy via cloning:column:edit.
-     *   On accept: invoke editor in-process, exit Success with re-run hint.
-     *   On decline: exit Success without changes.
-     */
-    /**
      * Prints every key remapping entry that cannot work for the source schema.
      *
      * @return bool true when there is at least one problem
@@ -1352,6 +1252,14 @@ class RunCommand extends Command
         return $problems !== [];
     }
 
+    /**
+     * Handle KeyRemappingExhaustedException with a friendly recovery flow.
+     *
+     * CI mode: print prose with hint, exit GeneralError.
+     * Interactive: prompt to switch the offending column to `keep` strategy via cloning:column:edit.
+     *   On accept: invoke editor in-process, exit Success with re-run hint.
+     *   On decline: exit Success without changes.
+     */
     private function handleKeyRemappingExhausted(KeyRemappingExhaustedException $exhausted, string $filePath, bool $ci): int
     {
         $columnTypeLabel = sprintf('%s (%s, ceiling %d)', strtoupper($exhausted->columnType), $exhausted->unsigned ? 'unsigned' : 'signed', $exhausted->typeMax);
