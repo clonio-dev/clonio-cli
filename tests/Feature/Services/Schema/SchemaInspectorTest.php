@@ -216,9 +216,10 @@ it('reads SQL Server tables, columns, keys and foreign keys from the default sch
         ->and($queries[1][0])->toContain("WHERE tc.TABLE_SCHEMA = SCHEMA_NAME() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'")
         ->and($queries[1][0])->toContain('WHERE c.TABLE_SCHEMA = SCHEMA_NAME() AND c.TABLE_NAME = ?')
         ->and($queries[1][1])->toBe(['users', 'users'])
-        ->and($queries[2][0])->toContain('JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME')
-        ->and($queries[2][0])->toContain('JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu ON ccu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND ccu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME')
-        ->and($queries[2][0])->toContain("WHERE tc.TABLE_SCHEMA = SCHEMA_NAME() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'FOREIGN KEY'")
+        ->and($queries[2][0])->toContain('OBJECT_NAME(fkc.referenced_object_id) AS REFERENCED_TABLE')
+        ->and($queries[2][0])->toContain('COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS REFERENCED_COLUMN')
+        ->and($queries[2][0])->toContain("WHERE fkc.parent_object_id = OBJECT_ID(QUOTENAME(SCHEMA_NAME()) + '.' + QUOTENAME(?))")
+        ->and($queries[2][0])->toContain('ORDER BY fk.name, fkc.constraint_column_id')
         ->and($queries[2][1])->toBe(['users']);
 });
 

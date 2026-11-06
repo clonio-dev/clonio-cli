@@ -155,21 +155,26 @@ class SchemaInspector
             /** @var string $tableName */
             $tableName = $tableRow->tablename;
 
+            // Keys come from pg_catalog, not information_schema: information_schema
+            // shows constraints only to the table owner (or a user with a privilege
+            // other than SELECT), so a read-only user would see no keys at all.
             /** @var list<stdClass> $columnRows */
             $columnRows = DB::connection($connName)->select(
-                "SELECT column_name, data_type, is_nullable, column_default,
-                    character_maximum_length, numeric_precision, numeric_scale, is_generated,
-                    (SELECT COUNT(*) FROM information_schema.table_constraints tc
-                     JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-                     WHERE tc.table_name = c.table_name AND kcu.column_name = c.column_name
-                     AND tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = current_schema()) > 0 as is_primary,
-                    (SELECT MIN(kcu.ordinal_position) FROM information_schema.table_constraints tc
-                     JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-                     WHERE tc.table_name = c.table_name AND kcu.column_name = c.column_name
-                     AND tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = current_schema()) as pk_position
+                "SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
+                    c.character_maximum_length, c.numeric_precision, c.numeric_scale, c.is_generated,
+                    pk.position IS NOT NULL AS is_primary, pk.position AS pk_position
                 FROM information_schema.columns c
-                WHERE table_schema = current_schema() AND table_name = ?
-                ORDER BY ordinal_position",
+                LEFT JOIN LATERAL (
+                    SELECT key.position FROM pg_constraint con
+                    JOIN pg_class t ON t.oid = con.conrelid
+                    JOIN pg_namespace n ON n.oid = t.relnamespace
+                    CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS key(attnum, position)
+                    JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = key.attnum
+                    WHERE con.contype = 'p' AND n.nspname = c.table_schema AND t.relname = c.table_name
+                    AND a.attname = c.column_name
+                ) pk ON true
+                WHERE c.table_schema = current_schema() AND c.table_name = ?
+                ORDER BY c.ordinal_position",
                 [$tableName]
             );
 
@@ -200,14 +205,20 @@ class SchemaInspector
                 );
             }
 
+            // One row per column pair of each foreign key, in key order, so a
+            // composite key maps each column to its own referenced column.
             /** @var list<stdClass> $fkRows */
             $fkRows = DB::connection($connName)->select(
-                "SELECT kcu.column_name, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
-                FROM information_schema.table_constraints AS tc
-                JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
-                JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name
-                WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = ?
-                AND tc.table_schema = current_schema()",
+                "SELECT a.attname AS column_name, rt.relname AS referenced_table, ra.attname AS referenced_column
+                FROM pg_constraint con
+                JOIN pg_class t ON t.oid = con.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                JOIN pg_class rt ON rt.oid = con.confrelid
+                CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS key(attnum, refattnum, position)
+                JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = key.attnum
+                JOIN pg_attribute ra ON ra.attrelid = con.confrelid AND ra.attnum = key.refattnum
+                WHERE con.contype = 'f' AND n.nspname = current_schema() AND t.relname = ?
+                ORDER BY con.conname, key.position",
                 [$tableName]
             );
 
@@ -417,13 +428,18 @@ class SchemaInspector
                 );
             }
 
+            // sys.foreign_key_columns pairs each column with its referenced column.
+            // INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE lists a foreign key's own
+            // columns, not the referenced ones, so it cannot be used here.
             /** @var list<stdClass> $fkRows */
             $fkRows = DB::connection($connName)->select(
-                "SELECT kcu.COLUMN_NAME, ccu.TABLE_NAME as REFERENCED_TABLE, ccu.COLUMN_NAME as REFERENCED_COLUMN
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-                JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu ON ccu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND ccu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
-                WHERE tc.TABLE_SCHEMA = SCHEMA_NAME() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'FOREIGN KEY'",
+                "SELECT COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS COLUMN_NAME,
+                    OBJECT_NAME(fkc.referenced_object_id) AS REFERENCED_TABLE,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS REFERENCED_COLUMN
+                FROM sys.foreign_key_columns fkc
+                JOIN sys.foreign_keys fk ON fk.object_id = fkc.constraint_object_id
+                WHERE fkc.parent_object_id = OBJECT_ID(QUOTENAME(SCHEMA_NAME()) + '.' + QUOTENAME(?))
+                ORDER BY fk.name, fkc.constraint_column_id",
                 [$tableName]
             );
 
