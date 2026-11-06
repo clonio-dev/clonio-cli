@@ -192,8 +192,8 @@ class RunCommand extends Command
         }
 
         try {
-            $skipTables = $this->parseNameList('skip-tables');
-            $onlyTables = $this->parseNameList('only-tables');
+            $skipTables = $this->parseTableNameList('skip-tables');
+            $onlyTables = $this->parseTableNameList('only-tables');
             $auditChannels = $this->parseNameList('audit-channel');
         } catch (InvalidArgumentException $invalidArgumentException) {
             $this->error($invalidArgumentException->getMessage());
@@ -229,11 +229,6 @@ class RunCommand extends Command
                 skipTables: $config->skipTables,
             );
         }
-
-        // Merge YAML-level skip entries with CLI --skip-tables (additive). The list
-        // is deduplicated once the names are resolved against the source schema.
-        $cliSkipTables = $skipTables;
-        $skipTables = array_merge($skipTables, $config->skipTables);
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
@@ -369,15 +364,17 @@ class RunCommand extends Command
         $tableNameResolver = new TableNameResolver($sourceSchema);
 
         try {
-            $config = $tableNameResolver->resolveConfig($config);
-            $skipTables = $tableNameResolver->resolveAll($skipTables);
+            $config = $this->resolveTableNames($tableNameResolver, $config);
+            $cliSkipTables = $tableNameResolver->resolveAll($skipTables);
             $onlyTables = $tableNameResolver->resolveAll($onlyTables);
-            $cliSkipTables = $tableNameResolver->resolveAll($cliSkipTables);
         } catch (InvalidArgumentException $invalidArgumentException) {
             $this->error($invalidArgumentException->getMessage());
 
             return ExitCode::ValidationError->value;
         }
+
+        // YAML skip entries add to --skip-tables.
+        $skipTables = array_values(array_unique(array_merge($cliSkipTables, $config->skipTables))); // @pest-mutate-ignore: UnwrapArrayValues
 
         // A filter name that matches no configured table does nothing: say so.
         $configuredTables = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -853,6 +850,24 @@ class RunCommand extends Command
         return $unmatched;
     }
 
+    /**
+     * Resolves the config's table names and warns about every pattern that
+     * matches no table.
+     *
+     * @throws InvalidArgumentException
+     */
+    private function resolveTableNames(TableNameResolver $resolver, CloningConfigData $config): CloningConfigData
+    {
+        $resolved = $resolver->resolveConfig($config);
+
+        foreach ($resolver->unmatchedPatterns($config, $resolved) as $pattern) {
+            $this->line(sprintf('  <comment>Warning: table pattern "%s" matches no table</comment>', $pattern));
+            Log::warning('table_pattern_unmatched', ['pattern' => $pattern]);
+        }
+
+        return $resolved;
+    }
+
     private function runDryRun(
         CloningConfigData $config,
         ConnectionData $source,
@@ -869,7 +884,7 @@ class RunCommand extends Command
         }
 
         try {
-            $config = new TableNameResolver($schema)->resolveConfig($config);
+            $config = $this->resolveTableNames(new TableNameResolver($schema), $config);
         } catch (InvalidArgumentException $invalidArgumentException) {
             $this->error($invalidArgumentException->getMessage());
 
@@ -1183,6 +1198,30 @@ class RunCommand extends Command
         if ($rest > 0) {
             $sink->writeln(sprintf('     └ … and %d more error types', $rest));
         }
+    }
+
+    /**
+     * Parses a table name flag. Patterns work only in cloning.yaml: a comma
+     * inside a pattern would split it.
+     *
+     * @return list<string>
+     *
+     * @throws InvalidArgumentException when the value holds no name or a pattern
+     */
+    private function parseTableNameList(string $option): array
+    {
+        $names = $this->parseNameList($option);
+        $pattern = array_find($names, static fn (string $name): bool => str_starts_with($name, '/'));
+
+        if ($pattern !== null) {
+            throw new InvalidArgumentException(sprintf(
+                '--%s takes table names, not patterns ("%s"). Write table patterns in cloning.yaml.',
+                $option,
+                $pattern,
+            ));
+        }
+
+        return $names;
     }
 
     /**

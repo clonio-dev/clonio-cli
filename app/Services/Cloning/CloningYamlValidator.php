@@ -98,6 +98,12 @@ class CloningYamlValidator
         $skip = $data['skip'] ?? null;
         if ($skip !== null && ! is_array($skip)) {
             $errors[] = "Field 'skip' must be a list of table name strings";
+        } elseif (is_array($skip)) {
+            foreach ($skip as $entry) {
+                if (is_string($entry) && TablePattern::isPattern($entry) && ! TablePattern::compiles($entry)) {
+                    $errors[] = sprintf("Field 'skip': '%s' is not a valid regular expression", $entry);
+                }
+            }
         }
 
         return $errors;
@@ -153,6 +159,11 @@ class CloningYamlValidator
 
         foreach ($tables as $tableName => $tableConfig) {
             $prefix = sprintf("Table '%s'", $tableName);
+            $isPattern = TablePattern::isPattern((string) $tableName);
+
+            if ($isPattern && ! TablePattern::compiles((string) $tableName)) {
+                $errors[] = sprintf('%s: not a valid regular expression', $prefix);
+            }
 
             if (! is_array($tableConfig)) {
                 $errors[] = sprintf('%s: must be an object', $prefix);
@@ -184,7 +195,30 @@ class CloningYamlValidator
                     /** @var array<string, mixed> $typedColumns */
                     $typedColumns = $columns;
                     $errors = array_merge($errors, $this->validateColumns($prefix, $typedColumns));
+
+                    if ($isPattern) {
+                        $errors = array_merge($errors, $this->validatePatternColumns($prefix, $typedColumns));
+                    }
                 }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Key remapping needs one named table, so a pattern entry cannot use it.
+     *
+     * @param  array<string, mixed>  $columns
+     * @return list<string>
+     */
+    private function validatePatternColumns(string $tablePrefix, array $columns): array
+    {
+        $errors = [];
+
+        foreach ($columns as $columnName => $columnConfig) {
+            if (is_array($columnConfig) && ($columnConfig['strategy'] ?? null) === 'remapping') {
+                $errors[] = sprintf("%s, column '%s': 'remapping' needs a table name, not a pattern", $tablePrefix, $columnName);
             }
         }
 
@@ -319,6 +353,10 @@ class CloningYamlValidator
 
             $seenTables[] = $table;
 
+            if (TablePattern::isPattern($table)) {
+                $errors[] = sprintf("%s: table '%s' must be a table name, not a pattern", $prefix, $table);
+            }
+
             // Exact table resolution needs the source schema and runs later; here any casing counts.
             if (! array_any($knownTableNames, static fn (int|string $known): bool => strcasecmp((string) $known, $table) === 0)) {
                 $errors[] = sprintf("%s: table '%s' is not defined in the 'tables' section", $prefix, $table);
@@ -360,6 +398,8 @@ class CloningYamlValidator
                     /** @var array<string, mixed> $fk */
                     if (! is_string($fk['table'] ?? null) || $fk['table'] === '') {
                         $errors[] = sprintf("%s: 'table' is required", $fkPrefix);
+                    } elseif (TablePattern::isPattern($fk['table'])) {
+                        $errors[] = sprintf("%s: table '%s' must be a table name, not a pattern", $fkPrefix, $fk['table']);
                     }
 
                     if (! is_string($fk['column'] ?? null) || $fk['column'] === '') {

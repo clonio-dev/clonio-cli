@@ -92,6 +92,18 @@ tables:
         # strategy-specific options follow (see §5)
 ```
 
+#### Table patterns
+
+A `tables` key or a top-level `skip:` entry written as `/pattern/flags` is a PCRE
+pattern that stands for every source table whose name matches it (case-sensitive
+unless the `i` flag is set). A pattern key expands to one entry per matching table
+in schema order; its column rules apply to the matching tables that have the column.
+Each source table may match only one `tables` key — an overlap is a validation
+error (exit 4). A `skip:` pattern skips the configured tables it matches. Patterns
+that match nothing produce a warning (`table_pattern_unmatched`). Patterns are not
+allowed in `key_remapping`, under a key with a `strategy: remapping` column, or in
+`--skip-tables` / `--only-tables`. See `docs/cloning-yaml.md#table-patterns`.
+
 #### `rows.clear`
 
 Controls whether the target table is emptied **before** data is transferred. Executed after foreign-key checks are disabled (when `options.disable_foreign_key_checks: true`) and before any rows are inserted.

@@ -1143,3 +1143,62 @@ it('rejects an invalid remapping use value', function (mixed $use): void {
     'integer' => [123],
     'unknown string' => ['sequential'],
 ]);
+
+// ─── table patterns (issue #164) ─────────────────────────────────────────────
+
+it('accepts pattern tables: keys and skip: entries', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['/^logs_/i'] = ['rows' => ['strategy' => 'first', 'limit' => 10], 'columns' => ['ip' => ['strategy' => 'null']]];
+    $config['skip'] = ['/^tmp_/', 'cache'];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([]);
+});
+
+it('rejects a pattern tables: key that does not compile', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['/^logs_(/'] = ['rows' => ['strategy' => 'full']];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe(["Table '/^logs_(/': not a valid regular expression"]);
+});
+
+it('rejects a pattern skip: entry that does not compile', function (): void {
+    $config = makeValidConfig();
+    $config['skip'] = ['/^tmp_(/', 'cache', 7];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe(["Field 'skip': '/^tmp_(/' is not a valid regular expression"]);
+});
+
+it('rejects a remapping column under a pattern key', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['/^logs_/'] = ['rows' => ['strategy' => 'full'], 'columns' => [
+        'ip' => ['strategy' => 'null'],
+        'id' => ['strategy' => 'remapping', 'arguments' => [['use' => 'new_uuid']]],
+        'note' => 'oops',
+    ]];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([
+        "Table '/^logs_/', column 'note': must be an object",
+        "Table '/^logs_/', column 'id': 'remapping' needs a table name, not a pattern",
+    ]);
+});
+
+it('accepts a remapping column under a name key', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['users']['columns']['id'] = ['strategy' => 'remapping', 'arguments' => [['use' => 'new_uuid']]];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([]);
+});
+
+it('rejects patterns as key_remapping tables', function (): void {
+    $config = makeValidConfig();
+    $config['tables']['/^logs_/'] = ['rows' => ['strategy' => 'full']];
+    $config['key_remapping'] = ['tables' => [
+        ['table' => '/^logs_/', 'primary_key' => 'id', 'strategy' => 'new_uuid'],
+        ['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid', 'foreign_keys' => [['table' => '/^logs_/', 'column' => 'user_id']]],
+    ]];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([
+        "key_remapping.tables[0]: table '/^logs_/' must be a table name, not a pattern",
+        "key_remapping.tables[1].foreign_keys[0]: table '/^logs_/' must be a table name, not a pattern",
+    ]);
+});
