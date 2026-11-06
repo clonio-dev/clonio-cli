@@ -2,6 +2,15 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.8.0 - 2026-11-06
+
+### What's Changed
+
+* docs(changelog): note key remapping behaviour change in v1.7.0 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/269
+* feat(cloning): detect polymorphic relations in cloning:dump by @rokde in https://github.com/clonio-dev/clonio-cli/pull/271
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.7.0...v1.8.0
+
 ## v1.7.0 - 2026-11-06
 
 ### Behaviour change
