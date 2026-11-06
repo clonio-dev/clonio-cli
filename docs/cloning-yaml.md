@@ -392,7 +392,7 @@ id:
 
 | Key | Required | Values | Description |
 |-----|:--------:|--------|-------------|
-| `use` | yes | `random_integer` \| `new_uuid` | Strategy for generating new PK values. |
+| `use` | yes | `random_integer` \| `new_uuid` | Strategy for generating new PK values. `random_integer` needs an integer column; use `new_uuid` for UUID or text keys. `cloning:run` rejects a mismatch with exit code `4`. |
 | `min` | `random_integer` only | integer ≥ 1 | Lower bound, inclusive. Default: `100000`. |
 | `max` | `random_integer` only | integer | Upper bound, inclusive. Default: `9999999`. |
 | `foreign_keys` | yes | list | FK columns on other (or the same) table that reference this column. Use `[]` when there are none. |

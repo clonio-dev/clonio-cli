@@ -39,6 +39,7 @@ use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\CloningYamlLoader;
 use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
+use App\Services\Cloning\KeyRemappingPreflight;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\SkippedRow;
 use App\Services\Cloning\SourceRowEstimator;
@@ -409,6 +410,10 @@ class RunCommand extends Command
         }
 
         if ($keyRemappingConfig instanceof KeyRemappingConfigData && $keyRemappingConfig->isActive() && ! $skipRemapping) {
+            if ($this->reportRemappingProblems($config, $sourceSchema)) {
+                return ExitCode::ValidationError->value;
+            }
+
             if ((bool) $this->option('no-memory-limit')) { // @pest-mutate-ignore: RemoveBooleanCast
                 ini_set('memory_limit', '-1');
             }
@@ -871,6 +876,10 @@ class RunCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
+        if ($config->options->remapKeys && $this->reportRemappingProblems($config, $schema)) {
+            return ExitCode::ValidationError->value;
+        }
+
         $schemaDiff = null;
 
         try {
@@ -1278,6 +1287,22 @@ class RunCommand extends Command
      *   On accept: invoke editor in-process, exit Success with re-run hint.
      *   On decline: exit Success without changes.
      */
+    /**
+     * Prints every key remapping entry that cannot work for the source schema.
+     *
+     * @return bool true when there is at least one problem
+     */
+    private function reportRemappingProblems(CloningConfigData $config, DatabaseSchemaData $sourceSchema): bool
+    {
+        $problems = new KeyRemappingPreflight()->problems($config, $sourceSchema);
+
+        foreach ($problems as $problem) {
+            $this->error($problem);
+        }
+
+        return $problems !== [];
+    }
+
     private function handleKeyRemappingExhausted(KeyRemappingExhaustedException $exhausted, string $filePath, bool $ci): int
     {
         $columnTypeLabel = sprintf('%s (%s, ceiling %d)', strtoupper($exhausted->columnType), $exhausted->unsigned ? 'unsigned' : 'signed', $exhausted->typeMax);
