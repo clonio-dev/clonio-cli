@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\RunResultData;
@@ -180,16 +181,17 @@ function g3_orch_run(
         $source ?? g3_orch_conn('source'),
         $target ?? g3_orch_conn('target'),
         $schema,
-        $skipSchema,
-        $skip,
-        $only,
         static function (string $table, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progress): void {
             $progress[] = [$table, $status, $rows, $skipped, $skippedRows];
         },
-        $keyRemapping,
-        $breakOnFailure,
-        null,
-        $dumpSink,
+        new CloningRunSettingsData(
+            skipSchema: $skipSchema,
+            skipTables: $skip,
+            onlyTables: $only,
+            keyRemapping: $keyRemapping,
+            breakOnFailure: $breakOnFailure,
+            dumpSink: $dumpSink,
+        ),
     );
 
     return [$result, $progress];

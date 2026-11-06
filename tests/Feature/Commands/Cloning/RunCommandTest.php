@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
@@ -1027,8 +1028,8 @@ YAML;
 
     $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
     $orchestrator->shouldReceive('run')
-        ->withArgs(static function ($cfg, $src, $tgt, $schema, $skip, $skipTbls, $only, $cb, $km, bool $bof) use (&$capturedBreakOnFailure): bool {
-            $capturedBreakOnFailure = $bof;
+        ->withArgs(static function ($cfg, $src, $tgt, $schema, $cb, CloningRunSettingsData $settings) use (&$capturedBreakOnFailure): bool {
+            $capturedBreakOnFailure = $settings->breakOnFailure;
 
             return true;
         })
@@ -1084,8 +1085,8 @@ YAML;
 
     $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
     $orchestrator->shouldReceive('run')
-        ->withArgs(static function ($cfg, $src, $tgt, $schema, $skipSchema, array $skipTbls, $only, $cb, $km, $bof) use (&$capturedSkipTables): bool {
-            $capturedSkipTables = $skipTbls;
+        ->withArgs(static function ($cfg, $src, $tgt, $schema, $cb, CloningRunSettingsData $settings) use (&$capturedSkipTables): bool {
+            $capturedSkipTables = $settings->skipTables;
 
             return true;
         })
@@ -1199,16 +1200,11 @@ it('renders skip groups under the table line in verbose mode', function (): void
             ConnectionData $source,
             ConnectionData $target,
             DatabaseSchemaData $sourceSchema,
-            bool $skipSchema,
-            array $skipTables,
-            array $onlyTables,
             callable $onProgress,
-            ?KeyRemappingService $keyRemapping = null,
-            bool $breakOnFailure = false,
-            ?callable $onTableStart = null,
+            CloningRunSettingsData $settings,
         ) use ($skippedRows): RunResultData {
-            if ($onTableStart !== null) {
-                $onTableStart('orders');
+            if ($settings->onTableStart !== null) {
+                ($settings->onTableStart)('orders');
             }
 
             $onProgress('orders', TableRunStatus::Transferred, 5, 3, $skippedRows);
@@ -1277,16 +1273,11 @@ it('renders skip groups under a fully failed table line in verbose mode', functi
             ConnectionData $source,
             ConnectionData $target,
             DatabaseSchemaData $sourceSchema,
-            bool $skipSchema,
-            array $skipTables,
-            array $onlyTables,
             callable $onProgress,
-            ?KeyRemappingService $keyRemapping = null,
-            bool $breakOnFailure = false,
-            ?callable $onTableStart = null,
+            CloningRunSettingsData $settings,
         ) use ($skippedRows): RunResultData {
-            if ($onTableStart !== null) {
-                $onTableStart('invoice_lines');
+            if ($settings->onTableStart !== null) {
+                ($settings->onTableStart)('invoice_lines');
             }
 
             $onProgress('invoice_lines', TableRunStatus::Failed, 0, 2, $skippedRows);
@@ -1844,13 +1835,7 @@ it('reports schema-replication failures and not-found tables collected during a 
         ConnectionData $source,
         ConnectionData $target,
         DatabaseSchemaData $sourceSchema,
-        bool $skipSchema,
-        array $skipTables,
-        array $onlyTables,
         callable $onProgress,
-        ?KeyRemappingService $keyRemapping = null,
-        bool $breakOnFailure = false,
-        ?callable $onTableStart = null,
     ) use ($result): RunResultData {
         // CI branch of onProgress collects not-found + schema-failure names.
         $onProgress('gone', TableRunStatus::NotFound, 0, 0, []);
@@ -1954,8 +1939,8 @@ it('parses --only-tables and forwards it to the orchestrator', function (): void
     $capturedOnly = null;
     $orchestrator = Mockery::mock(CloningRunOrchestrator::class);
     $orchestrator->shouldReceive('run')
-        ->withArgs(static function ($cfg, $src, $tgt, $schema, $skipSchema, $skipTbls, array $only) use (&$capturedOnly): bool {
-            $capturedOnly = $only;
+        ->withArgs(static function ($cfg, $src, $tgt, $schema, $cb, CloningRunSettingsData $settings) use (&$capturedOnly): bool {
+            $capturedOnly = $settings->onlyTables;
 
             return true;
         })

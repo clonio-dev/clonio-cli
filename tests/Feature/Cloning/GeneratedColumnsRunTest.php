@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
@@ -75,15 +76,15 @@ function bookingsConfig(): CloningConfigData
 function runBookings(ConnectionData $source, ConnectionData $target, bool $skipSchema, ?SqlDumpService $sink = null): RunResultData
 {
     return resolve(CloningRunOrchestrator::class)->run(
-        config: bookingsConfig(),
-        source: $source,
-        target: $target,
-        sourceSchema: resolve(SchemaInspector::class)->inspect($source),
-        skipSchema: $skipSchema,
-        skipTables: [],
-        onlyTables: [],
-        onProgress: function (): void {},
-        dumpSink: $sink,
+        bookingsConfig(),
+        $source,
+        $target,
+        resolve(SchemaInspector::class)->inspect($source),
+        function (): void {},
+        new CloningRunSettingsData(
+            skipSchema: $skipSchema,
+            dumpSink: $sink,
+        ),
     );
 }
 

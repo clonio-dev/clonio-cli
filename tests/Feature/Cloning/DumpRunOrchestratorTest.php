@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
 use App\Data\ConnectionData;
@@ -47,18 +48,14 @@ function runDumpPipeline(DatabaseConnectionType $dialect): array
     $orchestrator = resolve(CloningRunOrchestrator::class);
 
     $result = $orchestrator->run(
-        config: $config,
-        source: $source,
-        target: $dump,
-        sourceSchema: $schema,
-        skipSchema: false,
-        skipTables: [],
-        onlyTables: [],
-        onProgress: function (): void {},
-        keyRemapping: null,
-        breakOnFailure: false,
-        onTableStart: null,
-        dumpSink: $sink,
+        $config,
+        $source,
+        $dump,
+        $schema,
+        function (): void {},
+        new CloningRunSettingsData(
+            dumpSink: $sink,
+        ),
     );
 
     $dumpResult = $sink->finish();
@@ -125,9 +122,14 @@ it('reads source rows in chunks smaller than the table size', function (): void 
 
     $sink = new SqlDumpService(new DumpDialectFactory, new DumpArchiver);
     $result = resolve(CloningRunOrchestrator::class)->run(
-        config: $config, source: $source, target: $dump, sourceSchema: $schema,
-        skipSchema: false, skipTables: [], onlyTables: [], onProgress: function (): void {},
-        keyRemapping: null, breakOnFailure: false, onTableStart: null, dumpSink: $sink,
+        $config,
+        $source,
+        $dump,
+        $schema,
+        function (): void {},
+        new CloningRunSettingsData(
+            dumpSink: $sink,
+        ),
     );
     $dumpResult = $sink->finish();
 

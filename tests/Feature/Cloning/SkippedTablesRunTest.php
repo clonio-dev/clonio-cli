@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
@@ -51,7 +52,7 @@ function skipRunRun(string $auditStrategy, array $skipTables, array $onlyTables,
     $source = skipRunConnection('source', $sourcePath);
 
     return resolve(CloningRunOrchestrator::class)->run(
-        config: new CloningConfigData(
+        new CloningConfigData(
             version: '1',
             connectionName: 'source',
             options: new CloningOptionsData(100, false, false, false, true, 'en_US'),
@@ -60,13 +61,14 @@ function skipRunRun(string $auditStrategy, array $skipTables, array $onlyTables,
                 new TableCloningConfigData('audit_logs', new TableRowConfigData($auditStrategy, null, null), []),
             ],
         ),
-        source: $source,
-        target: skipRunConnection('target', $targetPath),
-        sourceSchema: resolve(SchemaInspector::class)->inspect($source),
-        skipSchema: false,
-        skipTables: $skipTables,
-        onlyTables: $onlyTables,
-        onProgress: function (): void {},
+        $source,
+        skipRunConnection('target', $targetPath),
+        resolve(SchemaInspector::class)->inspect($source),
+        function (): void {},
+        new CloningRunSettingsData(
+            skipTables: $skipTables,
+            onlyTables: $onlyTables,
+        ),
     );
 }
 

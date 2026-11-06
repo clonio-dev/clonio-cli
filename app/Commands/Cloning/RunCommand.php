@@ -6,6 +6,7 @@ namespace App\Commands\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
@@ -523,9 +524,6 @@ class RunCommand extends Command
                 source: $sourceConnection,
                 target: $targetConnection,
                 sourceSchema: $sourceSchema,
-                skipSchema: $skipSchema,
-                skipTables: $skipTables,
-                onlyTables: $onlyTables,
                 onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use ($step, $isVerbose, $isDebug, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns, $progress, &$currentTimings): void {
                     $timings = $currentTimings;
                     $currentTimings = null;
@@ -606,22 +604,27 @@ class RunCommand extends Command
 
                     $progress?->advanceOverall();
                 },
-                keyRemapping: $keyRemappingService,
-                breakOnFailure: (bool) $this->option('break-on-failure'),
-                onTableStart: match (true) {
-                    $progress instanceof CloningProgressDisplay => $progress->startTable(...),
-                    $isVerbose && ! $ci => fn (string $tableName) => $step->start('  '.$tableName),
-                    default => null,
-                },
-                dumpSink: $dumpSink,
-                onStart: $progress instanceof CloningProgressDisplay ? $progress->start(...) : null,
-                trackRowTotals: $progress instanceof CloningProgressDisplay,
-                onTableProgress: $progress instanceof CloningProgressDisplay || ($isDebug && ! $ci)
-                    ? static function (string $tableName, StatsTableTransferData $stats) use (&$currentTimings, $progress): void {
-                        $currentTimings = $stats;
-                        $progress?->advanceTable($stats);
-                    }
-                : null,
+                settings: new CloningRunSettingsData(
+                    skipSchema: $skipSchema,
+                    skipTables: $skipTables,
+                    onlyTables: $onlyTables,
+                    keyRemapping: $keyRemappingService,
+                    breakOnFailure: (bool) $this->option('break-on-failure'),
+                    dumpSink: $dumpSink,
+                    trackRowTotals: $progress instanceof CloningProgressDisplay,
+                    onTableStart: match (true) {
+                        $progress instanceof CloningProgressDisplay => $progress->startTable(...),
+                        $isVerbose && ! $ci => fn (string $tableName) => $step->start('  '.$tableName),
+                        default => null,
+                    },
+                    onStart: $progress instanceof CloningProgressDisplay ? $progress->start(...) : null,
+                    onTableProgress: $progress instanceof CloningProgressDisplay || ($isDebug && ! $ci)
+                        ? static function (string $tableName, StatsTableTransferData $stats) use (&$currentTimings, $progress): void {
+                            $currentTimings = $stats;
+                            $progress?->advanceTable($stats);
+                        }
+                    : null,
+                ),
             );
         } finally {
             // Also on an exception: the bars must not stay open, and logging must
