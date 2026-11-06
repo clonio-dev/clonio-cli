@@ -414,11 +414,11 @@ it('rejects a table name that matches several source tables case-insensitively',
 it('counts a dry-run table whose key differs only in case from the source table', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  Users:\n    rows:\n      strategy: full\n"));
     g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users')]));
-    g1_db(['SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => 12]]], 3);
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 12]]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
-    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '12', 'full', '—'));
+    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '~12', 'full', '—'));
 });
 
 // ─── Option overrides ─────────────────────────────────────────────────────────
@@ -1121,15 +1121,18 @@ function g1_sep(): string
     return '  '.str_repeat('─', 68)."\n";
 }
 
+const G1_MYSQL_ESTIMATE = 'SELECT TABLE_ROWS AS c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?';
+
 /**
- * @param  array<string, list<object>|Throwable>  $selects  SQL => rows
+ * @param  list<array{string, list<string>, mixed}>  $selects  [SQL, bindings, result row or Throwable]
  */
 function g1_db(array $selects, int $purges): void
 {
     $conn = Mockery::mock();
-    foreach ($selects as $sql => $rows) {
-        $exp = $conn->shouldReceive('select')->once()->with($sql);
-        $rows instanceof Throwable ? $exp->andThrow($rows) : $exp->andReturn($rows);
+    $conn->shouldReceive('select')->never();
+    foreach ($selects as [$sql, $bindings, $result]) {
+        $exp = $conn->shouldReceive('selectOne')->once()->with($sql, $bindings);
+        $result instanceof Throwable ? $exp->andThrow($result) : $exp->andReturn($result);
     }
     DB::shouldReceive('connection')->with('test_conn')->andReturn($conn);
     DB::shouldReceive('purge')->times($purges)->with('test_conn');
@@ -1146,12 +1149,12 @@ it('estimates rows per strategy in a dry run', function (): void {
     g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => $c->name === 'production-db'
         ? g1_schema([g1_table('users'), g1_table('orders'), g1_table('logs'), g1_table('items')])
         : throw new RuntimeException('target down'));
+    // 'schema' copies no rows and is not queried; one source connection serves all tables.
     g1_db([
-        'SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => '5']],
-        'SELECT COUNT(*) as count FROM `orders`' => [(object) ['count' => 3]],
-        'SELECT COUNT(*) as count FROM `logs`' => [(object) ['count' => 7]],
-        'SELECT COUNT(*) as count FROM `items`' => [(object) ['count' => 4], (object) ['count' => 99]],
-    ], 6);
+        [G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => '5']],
+        [G1_MYSQL_ESTIMATE, ['orders'], (object) ['c' => 3]],
+        [G1_MYSQL_ESTIMATE, ['items'], (object) ['c' => 4]],
+    ], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
@@ -1159,24 +1162,24 @@ it('estimates rows per strategy in a dry run', function (): void {
         "\n  Dry-run: production-db\n\n"
         .g1_row('Table', 'Rows (est.)', 'Strategy', 'Transformations')
         .g1_sep()
-        .g1_row('users', '2', 'first 2', 'email, phone')
-        .g1_row('orders', '3', 'last 10', '—')
+        .g1_row('users', '~2', 'first 2', 'email, phone')
+        .g1_row('orders', '~3', 'last 10', '—')
         .g1_row('logs', '0', 'schema', '—')
-        .g1_row('items', '4', 'full', '—')
+        .g1_row('items', '~4', 'full', '—')
         .g1_row('ghost', 'NOT FOUND', '—', '—')
         .g1_sep()
-        ."  Total                    9 rows across 5 tables, 1 not found, will be skipped\n"
+        ."  Total                    ~9 rows across 5 tables, 1 not found, will be skipped\n"
         ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
     );
 });
 
-it('quotes the table name per source driver when counting rows', function (DatabaseConnectionType $type, string $quoted): void {
+it('reads catalog statistics on server sources and counts only on SQLite', function (DatabaseConnectionType $type, string $sql, array $bindings, string $rows): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n"));
     g1_bind(connections: [
         'production-db' => g1_conn('production-db', $type, production: true),
         'staging' => g1_conn('staging'),
     ]);
-    g1_db(['SELECT COUNT(*) as count FROM '.$quoted => [(object) ['count' => 1500]]], 3);
+    g1_db([[$sql, $bindings, (object) ['c' => 1500]]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
@@ -1185,23 +1188,83 @@ it('quotes the table name per source driver when counting rows', function (Datab
         ."  Schema diff: target matches source\n\n"
         .g1_row('Table', 'Rows (est.)', 'Strategy', 'Transformations')
         .g1_sep()
-        .g1_row('users', '1,500', 'full', '—')
+        .g1_row('users', $rows, 'full', '—')
         .g1_sep()
-        ."  Total                    1,500 rows across 1 tables\n"
+        ."  Total                    {$rows} rows across 1 tables\n"
         ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
     );
 })->with([
-    'mysql' => [DatabaseConnectionType::Mysql, '`users`'],
-    'mariadb' => [DatabaseConnectionType::MariaDB, '`users`'],
-    'sqlsrv' => [DatabaseConnectionType::SqlServer, '[users]'],
-    'pgsql' => [DatabaseConnectionType::PostgreSQL, '"users"'],
-    'sqlite' => [DatabaseConnectionType::Sqlite, '"users"'],
+    'mysql' => [DatabaseConnectionType::Mysql, G1_MYSQL_ESTIMATE, ['users'], '~1,500'],
+    'mariadb' => [DatabaseConnectionType::MariaDB, G1_MYSQL_ESTIMATE, ['users'], '~1,500'],
+    'sqlsrv' => [DatabaseConnectionType::SqlServer, 'SELECT SUM(p.rows) AS c FROM sys.partitions p WHERE p.object_id = OBJECT_ID(?) AND p.index_id IN (0, 1)', ['users'], '~1,500'],
+    'pgsql' => [DatabaseConnectionType::PostgreSQL, 'SELECT c.reltuples::bigint AS c FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname = ?', ['users'], '~1,500'],
+    'sqlite' => [DatabaseConnectionType::Sqlite, 'SELECT COUNT(*) AS c FROM "users"', [], '1,500'],
 ]);
 
-it('falls back when the row count result is unusable', function (array|Throwable $rows, string $label): void {
+it('bounds the SQLite count of a first or last table in a dry run', function (string $strategy): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: {$strategy}\n      limit: 100\n"));
+    g1_bind(connections: [
+        'production-db' => g1_conn('production-db', DatabaseConnectionType::Sqlite, production: true),
+        'staging' => g1_conn('staging'),
+    ]);
+    g1_db([['SELECT COUNT(*) AS c FROM (SELECT 1 FROM "users" LIMIT 100)', [], (object) ['c' => 100]]], 3);
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '100', $strategy.' 100', '—'));
+})->with(['first', 'last']);
+
+it('leaves the estimate empty when the source cannot be opened in a dry run', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n"));
     g1_bind();
-    g1_db(['SELECT COUNT(*) as count FROM `users`' => $rows], 3);
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    // The connection check opens source and target; the third open is the estimate's.
+    $opens = 0;
+    $connector->shouldReceive('open')->andReturnUsing(static function () use (&$opens): string {
+        return ++$opens <= 2 ? 'test_conn' : throw new RuntimeException('refused');
+    });
+    app()->instance(DatabaseConnectionService::class, $connector);
+    DB::shouldReceive('purge')->twice()->with('test_conn');
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)
+        ->and($out)->toContain(g1_row('users', '?', 'full', '—'))
+        ->and($out)->toContain("  Total                    0 rows across 1 tables\n");
+});
+
+it('opens the source once for all tables of a dry run', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n  orders:\n    rows:\n      strategy: full\n"));
+    g1_bind(inspect: fn (): DatabaseSchemaData => g1_schema([g1_table('users'), g1_table('orders')]));
+    $connector = Mockery::mock(DatabaseConnectionService::class);
+    // Two for the connection check, one for the estimates.
+    $connector->shouldReceive('open')->times(3)->andReturn('test_conn');
+    app()->instance(DatabaseConnectionService::class, $connector);
+    g1_db([
+        [G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 1]],
+        [G1_MYSQL_ESTIMATE, ['orders'], (object) ['c' => 2]],
+    ], 3);
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)->and($out)->toContain("  Total                    ~3 rows across 2 tables\n");
+});
+
+it('opens no source connection when a dry run copies no rows', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: schema\n"));
+    g1_bind();
+    DB::shouldReceive('connection')->never();
+    DB::shouldReceive('purge')->twice()->with('test_conn'); // the connection check only
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '0', 'schema', '—'));
+});
+
+it('falls back when the row count result is unusable', function (mixed $rows, string $label): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n"));
+    g1_bind();
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], $rows]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
@@ -1216,9 +1279,10 @@ it('falls back when the row count result is unusable', function (array|Throwable
         ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
     );
 })->with([
-    'no rows' => [[], '?'],
-    'missing count column' => [[(object) ['other' => 3]], '0'],
-    'non-numeric count' => [[(object) ['count' => 'abc']], '0'],
+    'no row' => [null, '?'],
+    'missing count column' => [(object) ['other' => 3], '?'],
+    'non-numeric count' => [(object) ['c' => 'abc'], '?'],
+    'never analyzed' => [(object) ['c' => -1], '?'],
     'query error' => [new RuntimeException('boom'), '?'],
 ]);
 
@@ -1237,7 +1301,7 @@ it('renders the schema diff in a dry run', function (): void {
             g1_table('audit'),
             g1_table('extra2'),
         ]));
-    g1_db(['SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => 2000]]], 3);
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 2000]]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
@@ -1251,9 +1315,9 @@ it('renders the schema diff in a dry run', function (): void {
         ."\n"
         .g1_row('Table', 'Rows (est.)', 'Strategy', 'Transformations')
         .g1_sep()
-        .g1_row('users', '1,500', 'last 1,500', '—')
+        .g1_row('users', '~1,500', 'last 1,500', '—')
         .g1_sep()
-        ."  Total                    1,500 rows across 1 tables\n"
+        ."  Total                    ~1,500 rows across 1 tables\n"
         ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
     );
 });
@@ -1261,7 +1325,7 @@ it('renders the schema diff in a dry run', function (): void {
 it('prints nothing for a dry run in CI mode', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml());
     g1_bind();
-    g1_db(['SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => 1]]], 3);
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 1]]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true, '--ci' => true]);
 
@@ -1460,7 +1524,7 @@ it('collects not-found and schema-failure tables reported during progress in CI 
 it('ignores a row limit for the full strategy in a dry run', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n      limit: 2\n"));
     g1_bind();
-    g1_db(['SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => 5]]], 3);
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 5]]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
@@ -1469,9 +1533,9 @@ it('ignores a row limit for the full strategy in a dry run', function (): void {
         ."  Schema diff: target matches source\n\n"
         .g1_row('Table', 'Rows (est.)', 'Strategy', 'Transformations')
         .g1_sep()
-        .g1_row('users', '5', 'full', '—')
+        .g1_row('users', '~5', 'full', '—')
         .g1_sep()
-        ."  Total                    5 rows across 1 tables\n"
+        ."  Total                    ~5 rows across 1 tables\n"
         ."\n  No data will be transferred. Run without --dry-run to execute.\n\n"
     );
 });

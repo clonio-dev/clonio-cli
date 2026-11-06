@@ -41,6 +41,7 @@ use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\SourceRowEstimator;
 use App\Services\Cloning\TableNameResolver;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
@@ -850,48 +851,51 @@ class RunCommand extends Command
         $dryRunTables = [];
         $totalEstimated = 0;
         $notFoundCount = 0;
+        $connector = resolve(DatabaseConnectionService::class);
+        $estimator = resolve(SourceRowEstimator::class);
+        $connName = null;
 
-        foreach ($config->tables as $tableConfig) {
-            $tableName = $tableConfig->tableName;
-            $exists = $schema->hasTable($tableName);
-            $estimatedRows = null;
+        try {
+            foreach ($config->tables as $tableConfig) {
+                $tableName = $tableConfig->tableName;
+                $exists = $schema->hasTable($tableName);
+                $estimatedRows = null;
+                $estimated = false;
 
-            if ($exists) {
-                try {
-                    $estimatedRows = $this->countRows($source, $tableName);
-                } catch (Throwable) {
-                    // Row count unavailable: leave the estimate empty.
-                }
-
-                if ($estimatedRows !== null) {
-                    $strategy = $tableConfig->rows->strategy;
-                    $limit = $tableConfig->rows->limit;
-
-                    if (($strategy === 'first' || $strategy === 'last') && $limit !== null) {
-                        $estimatedRows = min($estimatedRows, $limit);
-                    } elseif ($strategy === 'schema') {
-                        $estimatedRows = 0;
+                if (! $exists) {
+                    $notFoundCount++;
+                } elseif ($tableConfig->rows->strategy === 'schema') {
+                    $estimatedRows = 0;
+                } else {
+                    try {
+                        $connName ??= $connector->open($source);
+                        [$estimatedRows, $estimated] = $estimator->estimate($connName, $tableConfig, $source->type);
+                    } catch (Throwable) {
+                        // Source unreachable: leave the estimate empty.
                     }
-
-                    $totalEstimated += $estimatedRows;
                 }
-            } else {
-                $notFoundCount++;
+
+                $totalEstimated += $estimatedRows ?? 0;
+
+                $transformedColumns = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
+                    static fn (ColumnCloningConfigData $col): string => $col->columnName,
+                    array_filter($tableConfig->columns, static fn (ColumnCloningConfigData $col): bool => $col->strategy !== 'keep')
+                ));
+
+                $dryRunTables[] = new DryRunTableData(
+                    tableName: $tableName,
+                    exists: $exists,
+                    estimatedRows: $estimatedRows,
+                    rowStrategy: $tableConfig->rows->strategy,
+                    rowLimit: $tableConfig->rows->limit,
+                    transformedColumns: $transformedColumns,
+                    estimated: $estimatedRows !== null && $estimated,
+                );
             }
-
-            $transformedColumns = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
-                static fn (ColumnCloningConfigData $col): string => $col->columnName,
-                array_filter($tableConfig->columns, static fn (ColumnCloningConfigData $col): bool => $col->strategy !== 'keep')
-            ));
-
-            $dryRunTables[] = new DryRunTableData(
-                tableName: $tableName,
-                exists: $exists,
-                estimatedRows: $estimatedRows,
-                rowStrategy: $tableConfig->rows->strategy,
-                rowLimit: $tableConfig->rows->limit,
-                transformedColumns: $transformedColumns,
-            );
+        } finally {
+            if ($connName !== null) {
+                DB::purge($connName);
+            }
         }
 
         $dryRunResult = new DryRunResultData(
@@ -905,41 +909,6 @@ class RunCommand extends Command
         }
 
         return ExitCode::Success->value;
-    }
-
-    private function countRows(ConnectionData $connection, string $tableName): ?int
-    {
-        $connector = resolve(DatabaseConnectionService::class);
-
-        try {
-            $connName = $connector->open($connection);
-
-            try {
-                $driver = $connection->type->value;
-                $quotedTable = match ($driver) {
-                    'mysql', 'mariadb' => '`'.$tableName.'`',
-                    'sqlsrv' => '['.$tableName.']',
-                    default => '"'.$tableName.'"',
-                };
-                $sql = 'SELECT COUNT(*) as count FROM '.$quotedTable;
-                /** @var list<object> $rows */
-                $rows = DB::connection($connName)->select($sql);
-                $first = $rows[0] ?? null;
-
-                if ($first === null) {
-                    return null;
-                }
-
-                $row = (array) $first;
-                $count = $row['count'] ?? 0;
-
-                return is_numeric($count) ? (int) $count : 0;
-            } finally {
-                DB::purge($connName);
-            }
-        } catch (Throwable) {
-            return null;
-        }
     }
 
     private function renderSchemaDiff(SchemaDiffData $diff): void
@@ -1012,7 +981,7 @@ class RunCommand extends Command
 
         foreach ($result->tables as $table) {
             $rowsLabel = $table->exists
-                ? ($table->estimatedRows !== null ? number_format($table->estimatedRows) : '?')
+                ? ($table->estimatedRows !== null ? ($table->estimated ? '~' : '').number_format($table->estimatedRows) : '?')
                 : 'NOT FOUND';
 
             $strategyLabel = $table->exists
@@ -1041,7 +1010,7 @@ class RunCommand extends Command
         $this->line(sprintf(
             '  %-'.$tableWidth.'s %-'.$rowsWidth.'s', // @pest-mutate-ignore: ConcatRemoveRight
             'Total',
-            number_format($result->totalEstimatedRows).' rows across '.count($result->tables).' tables'.$notFoundMsg,
+            (array_any($result->tables, static fn (DryRunTableData $t): bool => $t->estimated) ? '~' : '').number_format($result->totalEstimatedRows).' rows across '.count($result->tables).' tables'.$notFoundMsg,
         ));
 
         $this->line('');

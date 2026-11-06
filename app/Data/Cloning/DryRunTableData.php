@@ -14,5 +14,7 @@ final readonly class DryRunTableData
         public string $rowStrategy,
         public ?int $rowLimit,
         public array $transformedColumns,
+        /** True when estimatedRows comes from catalog statistics, not a count. */
+        public bool $estimated = false,
     ) {}
 }
