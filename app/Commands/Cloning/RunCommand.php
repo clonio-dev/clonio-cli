@@ -231,6 +231,7 @@ class RunCommand extends Command
 
         // Merge YAML-level skip entries with CLI --skip-tables (additive). The list
         // is deduplicated once the names are resolved against the source schema.
+        $cliSkipTables = $skipTables;
         $skipTables = array_merge($skipTables, $config->skipTables);
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
@@ -370,8 +371,20 @@ class RunCommand extends Command
             $config = $tableNameResolver->resolveConfig($config);
             $skipTables = $tableNameResolver->resolveAll($skipTables);
             $onlyTables = $tableNameResolver->resolveAll($onlyTables);
+            $cliSkipTables = $tableNameResolver->resolveAll($cliSkipTables);
         } catch (InvalidArgumentException $invalidArgumentException) {
             $this->error($invalidArgumentException->getMessage());
+
+            return ExitCode::ValidationError->value;
+        }
+
+        // A filter name that matches no configured table does nothing: say so.
+        $configuredTables = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
+        $unmatchedOnly = $this->warnUnmatchedFilter('only-tables', $onlyTables, $configuredTables);
+        $this->warnUnmatchedFilter('skip-tables', $cliSkipTables, $configuredTables);
+
+        if ($onlyTables !== [] && count($unmatchedOnly) === count($onlyTables)) {
+            $this->error('--only-tables matches no table in the config; nothing would be cloned.');
 
             return ExitCode::ValidationError->value;
         }
@@ -813,6 +826,26 @@ class RunCommand extends Command
         }
 
         return ExitCode::Success->value;
+    }
+
+    /**
+     * Warns once per filter name that matches no `tables:` entry and logs it
+     * for the audit trail.
+     *
+     * @param  list<string>  $names
+     * @param  list<string>  $configuredTables
+     * @return list<string> The unmatched names
+     */
+    private function warnUnmatchedFilter(string $flag, array $names, array $configuredTables): array
+    {
+        $unmatched = array_values(array_diff($names, $configuredTables)); // @pest-mutate-ignore: UnwrapArrayValues
+
+        foreach ($unmatched as $name) {
+            $this->line(sprintf('  <comment>Warning: --%s name "%s" matches no table in the config</comment>', $flag, $name));
+            Log::warning('table_filter_unmatched', ['flag' => '--'.$flag, 'table' => $name]);
+        }
+
+        return $unmatched;
     }
 
     private function runDryRun(
