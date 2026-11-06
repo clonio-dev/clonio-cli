@@ -18,6 +18,7 @@ use App\Enums\ExitCode;
 use App\Enums\KeyRemappingStrategy;
 use App\Services\Cloning\CloningYamlWriter;
 use App\Services\Cloning\FrameworkTableCatalog;
+use App\Services\Cloning\PolymorphicRelationDetector;
 use App\Services\Config\ConfigService;
 use App\Services\Pii\PiiMatcherLoader;
 use App\Services\Schema\SchemaInspector;
@@ -58,6 +59,7 @@ class DumpCommand extends Command
         PiiMatcherLoader $piiMatcherLoader,
         CloningYamlWriter $yamlWriter,
         FrameworkTableCatalog $frameworkTables,
+        PolymorphicRelationDetector $polymorphicDetector,
     ): int {
         // 1. Check config exists
         if (! $config->exists()) {
@@ -279,7 +281,7 @@ class DumpCommand extends Command
             piiColumnsDetected: $piiColumnsDetected,
             outputPath: $outputPath,
             fakerLocale: $fakerLocale,
-            keyRemapping: $onlyPii ? null : $this->buildKeyRemapping($schema),
+            keyRemapping: $onlyPii ? null : $this->buildKeyRemapping($schema, $connection, $polymorphicDetector, $ci),
             includeKeepColumns: $allColumns,
             enforceColumnTypes: $enforceColumnTypes,
             dropUnknownTables: $dropUnknownTables,
@@ -365,8 +367,12 @@ class DumpCommand extends Command
         );
     }
 
-    private function buildKeyRemapping(DatabaseSchemaData $schema): ?KeyRemappingConfigData
-    {
+    private function buildKeyRemapping(
+        DatabaseSchemaData $schema,
+        ConnectionData $connection,
+        PolymorphicRelationDetector $polymorphicDetector,
+        bool $ci,
+    ): ?KeyRemappingConfigData {
         // Collect tables that have a single integer primary key.
         // Tables with composite primary keys (e.g. N:M pivot tables) are
         // skipped — their FK columns are remapped automatically via the
@@ -412,6 +418,10 @@ class DumpCommand extends Command
             }
         }
 
+        foreach ($this->detectPolymorphic($schema, $connection, $polymorphicDetector, $intPkByTable, $ci) as $tableName => $fks) {
+            $fksByReferencedTable[$tableName] = [...$fksByReferencedTable[$tableName] ?? [], ...$fks];
+        }
+
         $tables = [];
 
         foreach ($intPkByTable as $tableName => $primaryKey) {
@@ -424,6 +434,45 @@ class DumpCommand extends Command
         }
 
         return new KeyRemappingConfigData(tables: $tables);
+    }
+
+    /**
+     * Polymorphic foreign keys (`<name>_type` + `<name>_id`), keyed by the
+     * remapped table they point at. A failed read or an unmatched type value
+     * is reported as a warning, not an error.
+     *
+     * @param  array<string, string>  $intPkByTable
+     * @return array<string, list<KeyRemappingForeignKeyData>>
+     */
+    private function detectPolymorphic(
+        DatabaseSchemaData $schema,
+        ConnectionData $connection,
+        PolymorphicRelationDetector $detector,
+        array $intPkByTable,
+        bool $ci,
+    ): array {
+        try {
+            $detection = $detector->detect($connection, $schema, $intPkByTable);
+        } catch (Throwable $throwable) {
+            if (! $ci) {
+                $this->warn(sprintf('  Could not read polymorphic type values (%s) — no polymorphic foreign keys added.', $throwable->getMessage()));
+                $this->line(''); // @pest-mutate-ignore: RemoveMethodCall,EmptyStringToNotEmpty
+            }
+
+            return [];
+        }
+
+        if (! $ci && $detection->unresolved !== []) {
+            $this->warn('  Polymorphic type values without a remapped table — add their foreign_keys entries by hand:');
+
+            foreach ($detection->unresolved as $entry) {
+                $this->warn('    '.$entry);
+            }
+
+            $this->line(''); // @pest-mutate-ignore: RemoveMethodCall,EmptyStringToNotEmpty
+        }
+
+        return $detection->foreignKeysByTable;
     }
 
     private function isIntegerType(string $type): bool
