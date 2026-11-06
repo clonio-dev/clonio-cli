@@ -273,7 +273,7 @@ class CloningYamlValidator
 
     /**
      * @param  array<string, mixed>  $keyRemapping
-     * @param  list<string>  $knownTableNames
+     * @param  list<int|string>  $knownTableNames
      * @return list<string>
      */
     private function validateKeyRemapping(array $keyRemapping, array $knownTableNames): array
@@ -319,7 +319,8 @@ class CloningYamlValidator
 
             $seenTables[] = $table;
 
-            if (! in_array($table, $knownTableNames, true)) {
+            // Exact table resolution needs the source schema and runs later; here any casing counts.
+            if (! array_any($knownTableNames, static fn (int|string $known): bool => strcasecmp((string) $known, $table) === 0)) {
                 $errors[] = sprintf("%s: table '%s' is not defined in the 'tables' section", $prefix, $table);
             }
 
