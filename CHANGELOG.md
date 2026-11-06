@@ -2,6 +2,15 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.6.0 - 2026-11-06
+
+### What's Changed
+
+* refactor(cloning): split RunCommand into options DTO, run observer and renderers by @rokde in https://github.com/clonio-dev/clonio-cli/pull/264
+* chore: remove unused code by @rokde in https://github.com/clonio-dev/clonio-cli/pull/266
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.5.2...v1.6.0
+
 ## v1.5.2 - 2026-11-06
 
 ### What's Changed
