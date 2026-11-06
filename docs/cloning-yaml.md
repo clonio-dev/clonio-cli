@@ -119,6 +119,52 @@ Table names under `tables`, in `skip:`, in `key_remapping` (the remapped table a
 
 Two `tables` keys that resolve to the same table (`users` and `Users` with only `users` in the source) also stop the run with exit code `4`. The same goes for two `key_remapping` entries that resolve to the same table, and for a `key_remapping` entry whose table resolves to a table without a `tables` entry.
 
+### Table patterns
+
+A `tables` key or a `skip:` entry written as `/pattern/flags` is a regular expression (PHP PCRE syntax). It stands for every source table whose name matches it. Quote the key in single quotes so YAML keeps it as written:
+
+```yaml
+tables:
+  '/^logs_\d{4}$/':
+    rows:
+      strategy: last
+      limit: 1000
+      sort_by: id
+    columns:
+      ip_address:
+        strategy: "null"
+  users:
+    rows:
+      strategy: full
+
+skip:
+  - '/^tmp_/'
+```
+
+- The pattern matches the table name as written, so case counts. Add the `i` flag to ignore case: `'/^logs_/i'`. Anchor it with `^` and `$` when it should match the whole name.
+- A pattern key becomes one entry per matching table, in source schema order. Its `rows` settings apply to each of them. A column rule applies only to the matching tables that have that column, so one pattern can carry rules for columns some tables lack.
+- **Each table may match only one `tables` entry.** A table that a pattern and a name both match, or that two patterns match, stops the run with exit code `4` before anything is copied: `Table "logs_2024" matches more than one tables: entry: "/^logs_/" and "logs_2024". Each table may match only one entry.` To give one table its own settings, leave it out of the pattern, for example with a negative lookahead:
+
+  ```yaml
+  tables:
+    '/^logs_(?!critical$)/':
+      rows:
+        strategy: last
+        limit: 1000
+        sort_by: id
+    logs_critical:
+      rows:
+        strategy: full
+  ```
+
+- A `skip:` pattern skips the **configured** tables it matches (the tables your `tables` entries resolve to). Tables without a `tables` entry are not copied anyway.
+- A pattern that matches no table prints `Warning: table pattern "/^ghosts_/" matches no table`, also with `--ci`, and is logged as `table_pattern_unmatched`. The run goes on. A pattern key that matches nothing adds no table, so it is not reported as `not_found`.
+- A pattern that is not a valid regular expression is a validation error (exit code `4`).
+- `key_remapping` needs table names: a pattern as a `key_remapping` table or `foreign_keys` table, and a `strategy: remapping` column under a pattern key, are validation errors.
+- `--skip-tables` and `--only-tables` take table names only. A comma inside a pattern would split it, so a flag value that starts with `/` is a validation error.
+
+Glob patterns such as `logs_*` are not supported for table names; use `'/^logs_/'`.
+
 ### `rows`
 
 Controls which rows are transferred and whether the target table is cleared first.

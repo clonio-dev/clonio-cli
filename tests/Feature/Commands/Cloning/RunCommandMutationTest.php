@@ -528,6 +528,90 @@ it('counts a dry-run table whose key differs only in case from the source table'
     expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '~12', 'full', '—'));
 });
 
+// Issue #164 / PR #168: tables: keys and skip: entries written as /pattern/flags.
+function g1_pattern_schema(): DatabaseSchemaData
+{
+    return g1_schema([g1_table('users'), g1_table('logs_2024', ['id' => ['int'], 'ip' => ['varchar']]), g1_table('logs_2025')]);
+}
+
+it('expands pattern tables: keys and skip: entries to the matching source tables', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n  '/^logs_/':\n    rows:\n      strategy: first\n      limit: 5\n    columns:\n      ip:\n        strategy: \"null\"\n")."skip:\n  - '/2025$/'\n");
+    $args = null;
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_pattern_schema(), run: function (array $a) use (&$args) {
+        $args = $a;
+
+        return g1_result();
+    });
+    Log::spy();
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, '--skip-tables' => 'users']);
+
+    expect($code)->toBe(0)
+        ->and($out)->toBe('')
+        ->and(array_map(fn ($t): string => $t->tableName, $args[0]->tables))->toBe(['users', 'logs_2024', 'logs_2025'])
+        ->and($args[0]->tables[1]->rows->limit)->toBe(5)
+        ->and(count($args[0]->tables[1]->columns))->toBe(1)
+        ->and($args[0]->tables[2]->columns)->toBe([])
+        ->and($args[5])->toBe(['users', 'logs_2025']);
+    Log::shouldNotHaveReceived('warning', ['table_pattern_unmatched', Mockery::any()]);
+});
+
+it('warns about each pattern that matches no table and keeps running', function (array $params): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: schema\n  '/^ghosts_/':\n    rows:\n      strategy: full\n")."skip:\n  - '/^logs_/'\n");
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_pattern_schema());
+    Log::spy();
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, ...$params]);
+
+    expect($code)->toBe(0)->and($out)->toStartWith(
+        "  Warning: table pattern \"/^ghosts_/\" matches no table\n"
+        ."  Warning: table pattern \"/^logs_/\" matches no table\n"
+    );
+    Log::shouldHaveReceived('warning')->with('table_pattern_unmatched', ['pattern' => '/^ghosts_/'])->once();
+    Log::shouldHaveReceived('warning')->with('table_pattern_unmatched', ['pattern' => '/^logs_/'])->once();
+})->with([
+    'run' => [[]],
+    'dry run' => [['--dry-run' => true]],
+]);
+
+it('rejects a table that matches more than one tables: entry', function (array $params): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  '/^logs_/':\n    rows:\n      strategy: full\n  logs_2024:\n    rows:\n      strategy: schema\n"));
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_pattern_schema(), run: fn (array $a): never => throw new RuntimeException('must not run'));
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, ...$params]);
+
+    expect($code)->toBe(4)->and($out)->toBe(
+        "Table \"logs_2024\" matches more than one tables: entry: \"/^logs_/\" and \"logs_2024\". Each table may match only one entry.\n"
+    );
+})->with([
+    'run' => [[]],
+    'dry run' => [['--dry-run' => true]],
+]);
+
+it('lists the tables a pattern key matches in a dry run', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  '/^logs_/':\n    rows:\n      strategy: schema\n"));
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_pattern_schema());
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)
+        ->and($out)->toContain(g1_row('logs_2024', '0', 'schema', '—'))
+        ->and($out)->toContain(g1_row('logs_2025', '0', 'schema', '—'))
+        ->and($out)->not->toContain('/^logs_/');
+});
+
+it('rejects a pattern in a table name flag', function (string $option): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    g1_bind(run: fn (array $a): never => throw new RuntimeException('must not run'));
+
+    // The comma splits the pattern, so the flag names the part that starts with a slash.
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => 'users,/^logs_(a,b)/']);
+
+    expect($code)->toBe(4)->and($out)->toBe(
+        $option.' takes table names, not patterns ("/^logs_(a"). Write table patterns in cloning.yaml.'."\n"
+    );
+})->with(['--skip-tables', '--only-tables']);
+
 // ─── Option overrides ─────────────────────────────────────────────────────────
 
 it('applies a single CLI override on top of the YAML options', function (string $flag, bool $yamlValue, string $field): void {

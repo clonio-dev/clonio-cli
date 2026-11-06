@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
+use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\KeyRemappingForeignKeyData;
 use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
+use App\Data\Schema\ColumnSchemaData;
 use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\KeyRemappingStrategy;
@@ -76,7 +78,7 @@ it('rejects two tables keys that resolve to the same table', function (): void {
     $config = new CloningConfigData('1', 'prod', new CloningOptionsData(100, false, false, false, true, 'en_US'), [tnrTable('users'), tnrTable('Users')]);
 
     tnrResolver('users')->resolveConfig($config);
-})->throws(InvalidArgumentException::class, 'Two tables: entries refer to table "users". Keep one entry.');
+})->throws(InvalidArgumentException::class, 'Table "users" matches more than one tables: entry: "users" and "Users". Each table may match only one entry.');
 
 // Issue #246: key_remapping references resolve like tables: keys, against the
 // resolved config, so the remapping finds its table under the resolved name.
@@ -135,3 +137,86 @@ it('rejects an ambiguous key_remapping foreign key table', function (): void {
 
     tnrResolver('users', 'Orders', 'ORDERS')->resolveConfig($config);
 })->throws(InvalidArgumentException::class, 'Table name "orders" is ambiguous');
+
+// Issue #164 / PR #168: a tables: key or skip: entry written as /pattern/flags
+// stands for every table whose name matches it.
+
+function tnrPatternResolver(): TableNameResolver
+{
+    $col = static fn (string $name): ColumnSchemaData => new ColumnSchemaData($name, 'varchar', true, null, false);
+
+    return new TableNameResolver(new DatabaseSchemaData('db', [
+        new TableSchemaData('logs_2025', [$col('id'), $col('ip')], []),
+        new TableSchemaData('users', [$col('id'), $col('email')], []),
+        new TableSchemaData('logs_2024', [$col('id'), $col('message')], []),
+        new TableSchemaData('Logs_archive', [$col('id')], []),
+    ]));
+}
+
+function tnrColumn(string $name): ColumnCloningConfigData
+{
+    return new ColumnCloningConfigData($name, 'null', null, [], null, null, null, null, null, null);
+}
+
+function tnrConfig(array $tables, array $skip = []): CloningConfigData
+{
+    return new CloningConfigData('1', 'prod', new CloningOptionsData(100, false, false, false, true, 'en_US'), $tables, null, $skip);
+}
+
+it('expands a pattern key to every matching table in schema order, keeping the rules for columns each table has', function (): void {
+    $rows = new TableRowConfigData('first', 10, null);
+    $pattern = new TableCloningConfigData('/^logs_/', $rows, [tnrColumn('ip'), tnrColumn('message'), tnrColumn('id')]);
+
+    $tables = tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable('users'), $pattern]))->tables;
+
+    expect(array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $tables))->toBe(['users', 'logs_2025', 'logs_2024'])
+        ->and($tables[1]->rows)->toBe($rows)
+        ->and(array_map(static fn (ColumnCloningConfigData $c): string => $c->columnName, $tables[1]->columns))->toBe(['ip', 'id'])
+        ->and(array_map(static fn (ColumnCloningConfigData $c): string => $c->columnName, $tables[2]->columns))->toBe(['message', 'id']);
+});
+
+it('matches a pattern as written, so only the i flag ignores case', function (): void {
+    $names = static fn (string $pattern): array => array_map(
+        static fn (TableCloningConfigData $t): string => $t->tableName,
+        tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable($pattern)]))->tables,
+    );
+
+    expect($names('/^logs_/'))->toBe(['logs_2025', 'logs_2024'])
+        ->and($names('/^logs_/i'))->toBe(['logs_2025', 'logs_2024', 'Logs_archive']);
+});
+
+it('drops a pattern key that matches no table', function (): void {
+    expect(tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable('/^ghosts_/'), tnrTable('users')]))->tables)->toHaveCount(1);
+});
+
+it('rejects a table that a pattern key and a name key both match', function (): void {
+    tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable('/^logs_/'), tnrTable('logs_2024')]));
+})->throws(InvalidArgumentException::class, 'Table "logs_2024" matches more than one tables: entry: "/^logs_/" and "logs_2024". Each table may match only one entry.');
+
+it('rejects a table that two pattern keys match', function (): void {
+    tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable('/2025$/'), tnrTable('/^logs_/')]));
+})->throws(InvalidArgumentException::class, 'Table "logs_2025" matches more than one tables: entry: "/2025$/" and "/^logs_/".');
+
+it('accepts a lookahead that leaves one table to its own entry', function (): void {
+    $tables = tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable('/^logs_(?!2024$)/'), tnrTable('logs_2024', 'schema')]))->tables;
+
+    expect(array_map(static fn (TableCloningConfigData $t): string => $t->rows->strategy.':'.$t->tableName, $tables))
+        ->toBe(['full:logs_2025', 'schema:logs_2024']);
+});
+
+it('expands a pattern skip entry to the configured tables it matches', function (): void {
+    $config = tnrConfig([tnrTable('users'), tnrTable('logs_2024')], ['/^logs_/', 'USERS', '/^users$/']);
+
+    expect(tnrPatternResolver()->resolveConfig($config)->skipTables)->toBe(['logs_2024', 'users']);
+});
+
+it('rejects a pattern that does not compile', function (): void {
+    tnrPatternResolver()->resolveConfig(tnrConfig([tnrTable('/^logs_(/')]));
+})->throws(InvalidArgumentException::class, 'Table pattern "/^logs_(/" is not a valid regular expression.');
+
+it('lists the patterns that match no table', function (): void {
+    $resolver = tnrPatternResolver();
+    $written = tnrConfig([tnrTable('/^logs_/'), tnrTable('/^ghosts_/'), tnrTable('nobody')], ['/^logs_/', '/^users$/', '/^ghosts_/', 'nobody']);
+
+    expect($resolver->unmatchedPatterns($written, $resolver->resolveConfig($written)))->toBe(['/^ghosts_/', '/^users$/']);
+});

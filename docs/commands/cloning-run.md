@@ -499,7 +499,7 @@ Prints the run summary. Tables not found in the source are always listed, regard
 
 ### `--skip-tables` and `--only-tables`
 
-Both flags accept a comma-separated list of table names. Glob patterns and regex are not supported. Spaces around commas are trimmed. Names resolve like [`tables:` keys](../cloning-yaml.md#table-names): an exact match wins, then a unique match that differs only in case, so `--skip-tables=Users` skips the source table `users`.
+Both flags accept a comma-separated list of table names. Glob patterns and regex are not supported: a name that starts with `/` is a `ValidationError (4)`. Write [table patterns](../cloning-yaml.md#table-patterns) in `cloning.yaml` instead. Spaces around commas are trimmed. Names resolve like [`tables:` keys](../cloning-yaml.md#table-names): an exact match wins, then a unique match that differs only in case, so `--skip-tables=Users` skips the source table `users`.
 
 ```bash
 # Skip two tables
@@ -563,6 +563,8 @@ tables:
         faker_method: safeEmail
         faker_arguments: []
 ```
+
+Both forms accept [table patterns](../cloning-yaml.md#table-patterns), such as `- '/^tmp_/'` or a `'/^logs_/'` key with `rows.strategy: skip`. A `skip:` pattern skips the configured tables it matches.
 
 YAML-level skips and `--skip-tables` are **additive**: both lists are merged at runtime. The same cascade rules apply — tables with FK dependencies on a skipped table are also skipped automatically.
 
@@ -661,7 +663,7 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `1` | Run failed — one or more tables had unrecoverable transfer errors |
 | `2` | Config error — `clonio.json` missing, or `APP_KEY` not set |
 | `3` | Connection error — source or target unreachable |
-| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, `--only-tables` matching no table, a key remapping that does not fit the source column, or CI without `--target` |
+| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, a table that matches more than one `tables:` entry, an invalid table pattern or a pattern in `--skip-tables` / `--only-tables`, `--only-tables` matching no table, a key remapping that does not fit the source column, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |
 
 ## Audit & Process Logs
