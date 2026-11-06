@@ -2,6 +2,31 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.4.1 - 2026-11-06
+
+### What's Changed
+
+* docs(changelog): update CHANGELOG for v1.4.0 by @github-actions[bot] in https://github.com/clonio-dev/clonio-cli/pull/233
+* chore(deps): bump symfony/yaml from 8.1.9 to 8.1.10 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/234
+* chore(deps-dev): bump pestphp/pest from 5.3.3 to 5.3.4 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/235
+* chore(deps-dev): bump driftingly/rector-laravel from 2.7.0 to 2.7.3 by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/236
+* chore(deps): bump the github-actions group with 2 updates by @dependabot[bot] in https://github.com/clonio-dev/clonio-cli/pull/237
+* fix(cloning): order first/last rows by the primary key, validate sort_by by @rokde in https://github.com/clonio-dev/clonio-cli/pull/238
+* fix(cloning): keep YAML skips under --only-tables, reject name lists without names by @rokde in https://github.com/clonio-dev/clonio-cli/pull/247
+* fix(schema): leave PostgreSQL partitions out of the table list by @rokde in https://github.com/clonio-dev/clonio-cli/pull/248
+* fix(schema): read SQL Server tables from the default schema only by @rokde in https://github.com/clonio-dev/clonio-cli/pull/249
+* fix(cloning): resolve table names case-insensitively when unambiguous by @rokde in https://github.com/clonio-dev/clonio-cli/pull/250
+* fix(cloning): use catalog row estimates in --dry-run by @rokde in https://github.com/clonio-dev/clonio-cli/pull/251
+* fix(cloning): warn about table filter names that match no configured table by @rokde in https://github.com/clonio-dev/clonio-cli/pull/252
+* fix(cloning): resolve key_remapping table references like tables: keys by @rokde in https://github.com/clonio-dev/clonio-cli/pull/253
+* fix(cloning): report unsupported key remapping columns as validation errors by @rokde in https://github.com/clonio-dev/clonio-cli/pull/255
+
+### New Contributors
+
+* @github-actions[bot] made their first contribution in https://github.com/clonio-dev/clonio-cli/pull/233
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.4.0...v1.4.1
+
 ## v1.4.0 - 2026-10-27
 
 ### What's Changed
