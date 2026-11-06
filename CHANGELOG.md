@@ -2,6 +2,14 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.5.2 - 2026-11-06
+
+### What's Changed
+
+* refactor(cloning): group CloningRunOrchestrator::run() settings in CloningRunSettingsData by @rokde in https://github.com/clonio-dev/clonio-cli/pull/263
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.5.1...v1.5.2
+
 ## v1.5.1 - 2026-11-06
 
 ### What's Changed
