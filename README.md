@@ -74,6 +74,12 @@ This makes `vendor/bin/clonio` available with the exact release version. See [do
 
 ---
 
+## Security
+
+Store secrets as `env:NAME` references (the default), run transfers from production only in CI, and feed test and dev from anonymized data. See [docs/security.md](docs/security.md).
+
+---
+
 ## Commands
 
 | Command | Description |

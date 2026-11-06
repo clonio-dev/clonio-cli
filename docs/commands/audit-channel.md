@@ -75,7 +75,7 @@ Every type-specific field has a matching option. Values passed as options are no
 | `--s3-bucket=` | Bucket name |
 | `--s3-region=` | Region string |
 | `--s3-access-key=` | Access key ID |
-| `--s3-secret-key=` | Secret access key (stored encrypted) |
+| `--s3-secret-key=` | Secret access key, or `env:NAME` (otherwise stored encrypted) |
 | `--s3-path-prefix=` | Key prefix template (default: `clonio/{year}/{month}/{source}/`) |
 
 Default retry settings: 5 attempts, 1000 ms initial delay, multiplier 2, max delay 30000 ms.
@@ -88,7 +88,7 @@ Default retry settings: 5 attempts, 1000 ms initial delay, multiplier 2, max del
 | `--mail-port=` | SMTP port (default: `587`) |
 | `--mail-encryption=` | Encryption: `tls` (default), `ssl`, `none` |
 | `--mail-username=` | SMTP username |
-| `--mail-password=` | SMTP password (stored encrypted) |
+| `--mail-password=` | SMTP password, or `env:NAME` (otherwise stored encrypted) |
 | `--mail-from-address=` | Sender email address |
 | `--mail-from-name=` | Sender display name |
 | `--mail-to=` | Comma-separated recipient addresses |
@@ -99,7 +99,7 @@ Default retry settings: 3 attempts, 500 ms initial delay, multiplier 2, max dela
 
 | Option | Description |
 |---|---|
-| `--webhook-url=` | Incoming webhook URL (stored encrypted) |
+| `--webhook-url=` | Incoming webhook URL, or `env:NAME` (otherwise stored encrypted) |
 
 Default retry settings: 3 attempts, 500 ms initial delay, multiplier 2, max delay 10000 ms.
 
@@ -111,7 +111,7 @@ Default retry settings: 3 attempts, 500 ms initial delay, multiplier 2, max dela
 | `--ntfy-topic=` | ntfy topic name |
 | `--ntfy-priority=` | Notification priority: `min`, `low`, `default` (default), `high`, `max` |
 | `--ntfy-tags=` | Comma-separated tag strings (optional) |
-| `--ntfy-token=` | Bearer token for authenticated servers (stored encrypted, optional) |
+| `--ntfy-token=` | Bearer token for authenticated servers, or `env:NAME` (otherwise stored encrypted, optional) |
 
 Topics on the public `ntfy.sh` server are readable by anyone who knows the name. Use a hard-to-guess topic or a self-hosted server for sensitive environments.
 
@@ -139,12 +139,16 @@ clonio audit:add
 # Non-interactive: local channel, enabled immediately
 clonio audit:add logs --type=local --local-path='./clonio-logs/{year}/{month}' --enable
 
-# S3 channel (the secret key is prompted, so it stays out of shell history)
+# S3 channel (Clonio asks how to get the secret key; the default is an
+# environment variable named CLONIO_AUDIT_S3_BACKUP_SECRET_KEY)
 clonio audit:add s3-backup --type=s3 --s3-endpoint=https://s3.amazonaws.com \
   --s3-bucket=my-bucket --s3-region=eu-west-1 --s3-access-key=AKIA... \
   --s3-path-prefix='clonio/{year}/{month}/'
 
-# Slack channel (the webhook URL is prompted)
+# Slack channel, webhook URL read from an environment variable
+clonio audit:add slack-alerts --type=slack --webhook-url=env:SLACK_AUDIT_WEBHOOK
+
+# Slack channel (Clonio asks how to get the webhook URL)
 clonio audit:add slack-alerts --type=slack
 
 # Email with multiple recipients
@@ -170,7 +174,7 @@ clonio audit:update [<name>]
 
 If `name` is omitted and only one channel exists, it is selected automatically. With multiple channels, an interactive selection prompt is shown.
 
-All type-specific fields are re-prompted with the current values as defaults. Secrets display as `••••••••` — press Enter to keep the existing value, or enter a new one to replace it.
+All type-specific fields are re-prompted with the current values as defaults. For each secret, Clonio shows the current value (an `env:` reference as is, an encrypted value as `••••••••`) and asks how to get it: keep the current value (default), read it from an environment variable, or enter it now and store it encrypted.
 
 A diff table is shown before the final confirmation so you can review exactly what will change.
 
@@ -320,15 +324,20 @@ Use `--enable` when adding a channel to add it to `audit.use` in one step:
 clonio audit:add logs --type=local --local-path=./ --enable
 ```
 
-### Secret encryption
+### Secrets: environment references (default) or encrypted
 
-All secrets (S3 secret keys, SMTP passwords, webhook URLs, ntfy tokens) are stored encrypted using Laravel's `Crypt` facade:
+Secrets (S3 secret keys, SMTP passwords, webhook URLs, ntfy tokens) are stored in one of two forms:
 
-```
-encrypted:<base64-encoded-ciphertext>
-```
+| Stored value | Meaning |
+|---|---|
+| `env:NAME` | Read from the environment variable `NAME` at delivery time; never written to disk. **This is the default.** |
+| `encrypted:<payload>` | Encrypted with `APP_KEY` (Laravel `Crypt`) and stored in `clonio.json`. |
 
-This requires `APP_KEY` to be set in the environment (`.env` or exported). Passing secrets via CLI flags (`--s3-secret-key=`, `--mail-password=`, `--webhook-url=`, `--ntfy-token=`) is supported but prints a warning, because the value may end up in shell history. Prefer the interactive prompt.
+For each secret, Clonio first asks how to get it. The default is an environment variable named `CLONIO_AUDIT_<CHANNEL>_<FIELD>`, e.g. `CLONIO_AUDIT_S3_BACKUP_SECRET_KEY`. Clonio warns if the variable is not set yet; delivery fails until it is. Without interaction, required secrets default to that reference; the optional ntfy token defaults to none.
+
+Encrypting requires `APP_KEY` (`.env` or exported). An encrypted secret is only as safe as `APP_KEY` — see [Security and deployment](../security.md).
+
+`--s3-secret-key=env:NAME` (and the other secret flags) stores the reference without a warning. Any other flag value is encrypted, and Clonio warns that it may end up in shell history.
 
 ### What each channel delivers
 

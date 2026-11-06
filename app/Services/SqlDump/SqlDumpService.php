@@ -10,12 +10,11 @@ use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
 use App\Data\SqlDump\DumpResultData;
 use App\Enums\DatabaseConnectionType;
+use App\Services\Secrets\Secret;
 use App\Services\SqlDump\Contracts\SqlDumpDialect;
 use DateTimeImmutable;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
-use Throwable;
 
 /**
  * Streams a dialect-correct SQL dump to a `.sql` file in the working directory,
@@ -170,15 +169,7 @@ class SqlDumpService
             return null; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
-        if (str_starts_with($password, 'encrypted:')) {
-            try {
-                return Crypt::decryptString(substr($password, 10)); // @pest-mutate-ignore: DecrementInteger
-            } catch (Throwable) {
-                throw new RuntimeException('Could not decrypt dump ZIP password — check APP_KEY.');
-            }
-        }
-
-        return $password;
+        return Secret::resolve($password, 'dump ZIP password');
     }
 
     private function deriveSourceDbName(ConnectionData $source): string

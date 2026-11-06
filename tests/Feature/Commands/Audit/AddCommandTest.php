@@ -361,7 +361,8 @@ it('prompts interactively for s3 secret and retry settings', function (): void {
         '--s3-access-key' => 'AKIA123',
         '--s3-path-prefix' => 'clonio/logs/',
     ])
-        ->expectsQuestion('Secret key', 'my-secret')
+        ->expectsChoice('How should Clonio get the S3 secret key?', 'Enter it now and store it encrypted in clonio.json', G2_SECRET_CHOICES)
+        ->expectsQuestion('S3 secret key', 'my-secret')
         ->expectsConfirmation('Override retry settings?', 'yes')
         ->expectsQuestion('Max attempts', '5')
         ->expectsQuestion('Initial delay (ms)', '1000')
@@ -390,6 +391,7 @@ it('prompts interactively for email encryption and password', function (): void 
         '--mail-to' => 'admin@example.com',
     ])
         ->expectsChoice('Encryption', 'tls', ['tls', 'ssl', 'none'])
+        ->expectsChoice('How should Clonio get the SMTP password?', 'Enter it now and store it encrypted in clonio.json', G2_SECRET_CHOICES)
         ->expectsQuestion('SMTP password', 'my-smtp-password')
         ->expectsConfirmation('Override retry settings?', 'yes')
         ->expectsQuestion('Max attempts', '3')
@@ -409,6 +411,7 @@ it('prompts interactively for webhook url when not given via flag', function ():
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:add', ['name' => 'my-teams', '--type' => 'ms_teams'])
+        ->expectsChoice('How should Clonio get the Teams webhook URL?', 'Enter it now and store it encrypted in clonio.json', G2_SECRET_CHOICES)
         ->expectsQuestion('Teams webhook URL', 'https://outlook.office.com/webhook/test')
         ->expectsConfirmation('Override retry settings?', 'yes')
         ->expectsQuestion('Max attempts', '3')
@@ -435,7 +438,7 @@ it('prompts interactively for ntfy priority, tags and token', function (): void 
     ])
         ->expectsChoice('Priority', 'default', ['min', 'low', 'default', 'high', 'max'])
         ->expectsQuestion('Tags (comma-separated, optional — press Enter to skip)', '')
-        ->expectsQuestion('Bearer token (optional — press Enter to skip)', '')
+        ->expectsChoice('How should Clonio get the ntfy bearer token?', 'No bearer token', [...G2_SECRET_CHOICES, 'No bearer token'])
         ->expectsConfirmation('Override retry settings?', 'yes')
         ->expectsQuestion('Max attempts', '3')
         ->expectsQuestion('Initial delay (ms)', '500')
@@ -503,6 +506,8 @@ function g2_add_mock(?array &$saved, array $existing = []): MockInterface
 const G2_RETRY = 'Override retry settings?';
 const G2_SAVE = 'Save this channel?';
 const G2_HINT = 'Supports: {year} {month} {day} {source} {target} {timestamp}';
+const G2_STORED = 'Enter it now and store it encrypted in clonio.json';
+const G2_SECRET_CHOICES = ['Read it from an environment variable (recommended)', G2_STORED];
 
 it('asks for the name when the name argument is empty', function (): void {
     $saved = null;
@@ -626,7 +631,8 @@ it('prompts for every s3 field with its defaults and retry defaults', function (
             ['Bucket name', null],
             ['Region', null],
             ['Access key', null],
-            ['Secret key', null],
+            ['How should Clonio get the S3 secret key?', 0],
+            ['Environment variable name', 'CLONIO_AUDIT_BUCKET_SECRET_KEY'],
             ['Path prefix ('.G2_HINT.')', 'clonio/{year}/{month}/{source}/'],
             [G2_RETRY, false],
             ['Max attempts', '5'],
@@ -635,10 +641,10 @@ it('prompts for every s3 field with its defaults and retry defaults', function (
             ['Max delay (ms)', '30000'],
             [G2_SAVE, true],
         ])
-        ->and($result->asked[4]['hidden'])->toBeTrue();
+        ->and($result->output)->toContain('CLONIO_AUDIT_BUCKET_SECRET_KEY is not set.');
 
     $channel = $saved['bucket'];
-    expect(g2_audit_decrypt($channel['secret_key']))->toBe('');
+    expect($channel['secret_key'])->toBe('env:CLONIO_AUDIT_BUCKET_SECRET_KEY');
     unset($channel['secret_key']);
 
     expect($channel)->toBe([
@@ -666,7 +672,8 @@ it('stores answered s3 fields, the encrypted secret and custom retry settings', 
         'Bucket name' => 'bkt',
         'Region' => 'eu-1',
         'Access key' => 'AKIA',
-        'Secret key' => 'shh',
+        'How should Clonio get the S3 secret key?' => G2_STORED,
+        'S3 secret key' => 'shh',
         'Path prefix ('.G2_HINT.')' => 'pre/',
         G2_RETRY => true,
         'Max attempts' => '7',
@@ -743,7 +750,8 @@ it('prompts for every email field with its defaults and retry defaults', functio
             ['SMTP port', '587'],
             ['Encryption', 0],
             ['SMTP username', null],
-            ['SMTP password', null],
+            ['How should Clonio get the SMTP password?', 0],
+            ['Environment variable name', 'CLONIO_AUDIT_MAIL_PASSWORD'],
             ['From address', null],
             ['From name', null],
             ['Recipients (comma-separated emails)', null],
@@ -757,7 +765,7 @@ it('prompts for every email field with its defaults and retry defaults', functio
         ->and($result->asked[2]['choices'])->toBe(['tls', 'ssl', 'none']);
 
     $channel = $saved['mail'];
-    expect(g2_audit_decrypt($channel['password']))->toBe('');
+    expect($channel['password'])->toBe('env:CLONIO_AUDIT_MAIL_PASSWORD');
     unset($channel['password']);
 
     expect($channel)->toBe([
@@ -786,6 +794,7 @@ it('stores answered email fields with trimmed recipients', function (): void {
         'SMTP host' => 'smtp.x.io',
         'SMTP port' => '2525',
         'SMTP username' => 'user',
+        'How should Clonio get the SMTP password?' => G2_STORED,
         'SMTP password' => 'pw',
         'From address' => 'from@x.io',
         'From name' => 'Clonio',
@@ -833,9 +842,10 @@ it('prompts for the webhook url with the provider hint and retry defaults', func
 
     expect($result->exit)->toBe(0)
         ->and($result->output)->toContain('  '.$hint)
-        ->and($result->output)->not->toContain('Passing webhook URL via CLI flag')
+        ->and($result->output)->not->toContain('Passing --webhook-url via CLI flag')
         ->and(g2_audit_questions($result))->toBe([
-            [$label.' webhook URL', null],
+            ['How should Clonio get the '.$label.' webhook URL?', 0],
+            ['Environment variable name', 'CLONIO_AUDIT_HOOK_WEBHOOK_URL'],
             [G2_RETRY, false],
             ['Max attempts', '3'],
             ['Initial delay (ms)', '500'],
@@ -843,10 +853,10 @@ it('prompts for the webhook url with the provider hint and retry defaults', func
             ['Max delay (ms)', '10000'],
             [G2_SAVE, true],
         ])
-        ->and($result->asked[0]['hidden'])->toBeTrue();
+        ->and($result->asked[0]['choices'])->toBe(G2_SECRET_CHOICES);
 
     $channel = $saved['hook'];
-    expect(g2_audit_decrypt($channel['webhook_url']))->toBe('');
+    expect($channel['webhook_url'])->toBe('env:CLONIO_AUDIT_HOOK_WEBHOOK_URL');
     unset($channel['webhook_url']);
 
     expect($channel)->toBe([
@@ -868,11 +878,13 @@ it('stores an answered webhook url encrypted', function (): void {
     g2_add_mock($saved);
 
     $result = g2_audit_run('audit:add', ['name' => 'hook', '--type' => 'slack'], [
+        'How should Clonio get the Slack webhook URL?' => G2_STORED,
         'Slack webhook URL' => 'https://hooks.slack.com/x',
     ]);
 
     expect($result->exit)->toBe(0)
         ->and(g2_audit_decrypt($saved['hook']['webhook_url']))->toBe('https://hooks.slack.com/x')
+        ->and(collect($result->asked)->firstWhere('question', 'Slack webhook URL')['hidden'] ?? null)->toBeTrue()
         ->and(array_keys($saved['hook']))->toBe(['webhook_url', 'type'])
         ->and($result->output)->toContain(g2_audit_table(['Field', 'Value'], [
             ['Name', 'hook'],
@@ -888,7 +900,7 @@ it('warns when the webhook url is passed as a flag', function (): void {
     $result = g2_audit_run('audit:add', ['name' => 'hook', '--type' => 'ms_teams', '--webhook-url' => 'https://flag']);
 
     expect($result->exit)->toBe(0)
-        ->and($result->output)->toContain('Passing webhook URL via CLI flag may expose it in shell history.')
+        ->and($result->output)->toContain('Passing --webhook-url via CLI flag may expose it in shell history. Use --webhook-url=env:NAME instead.')
         ->and(g2_audit_questions($result))->toBe([[G2_RETRY, false], [G2_SAVE, true]])
         ->and(g2_audit_decrypt($saved['hook']['webhook_url']))->toBe('https://flag');
 });
@@ -909,7 +921,7 @@ it('prompts for every ntfy field with its defaults and retry defaults', function
             ['Topic', null],
             ['Priority', 2],
             ['Tags (comma-separated, optional — press Enter to skip)', null],
-            ['Bearer token (optional — press Enter to skip)', null],
+            ['How should Clonio get the ntfy bearer token?', 2],
             [G2_RETRY, false],
             ['Max attempts', '3'],
             ['Initial delay (ms)', '500'],
@@ -918,7 +930,7 @@ it('prompts for every ntfy field with its defaults and retry defaults', function
             [G2_SAVE, true],
         ])
         ->and($result->asked[2]['choices'])->toBe(['min', 'low', 'default', 'high', 'max'])
-        ->and($result->asked[4]['hidden'])->toBeTrue()
+        ->and($result->asked[4]['choices'])->toBe([...G2_SECRET_CHOICES, 'No bearer token'])
         ->and($saved)->toBe(['nt' => [
             'url' => 'https://ntfy.sh',
             'topic' => '',
@@ -938,7 +950,8 @@ it('omits the ntfy token when the answer is empty', function (): void {
     g2_add_mock($saved);
 
     $result = g2_audit_run('audit:add', ['name' => 'nt', '--type' => 'ntfy'], [
-        'Bearer token (optional — press Enter to skip)' => '',
+        'How should Clonio get the ntfy bearer token?' => G2_STORED,
+        'Ntfy bearer token' => '',
         'Tags (comma-separated, optional — press Enter to skip)' => '',
     ]);
 
@@ -959,7 +972,8 @@ it('stores answered ntfy fields with trimmed tags and an encrypted token', funct
         'ntfy server URL' => 'https://push.example.com',
         'Topic' => 'ops',
         'Tags (comma-separated, optional — press Enter to skip)' => ' a , ,b ',
-        'Bearer token (optional — press Enter to skip)' => 'tok',
+        'How should Clonio get the ntfy bearer token?' => G2_STORED,
+        'Ntfy bearer token' => 'tok',
     ]);
 
     expect($result->exit)->toBe(0);
@@ -1001,7 +1015,7 @@ it('warns when the ntfy token is passed as a flag', function (): void {
     ]);
 
     expect($result->exit)->toBe(0)
-        ->and($result->output)->toContain('Passing token via CLI flag may expose it in shell history.')
+        ->and($result->output)->toContain('Passing --ntfy-token via CLI flag may expose it in shell history. Use --ntfy-token=env:NAME instead.')
         ->and(g2_audit_questions($result))->toBe([[G2_RETRY, false], [G2_SAVE, true]])
         ->and(g2_audit_decrypt($saved['nt']['token']))->toBe('flag-token')
         ->and($saved['nt']['tags'])->toBe(['x']);
@@ -1037,4 +1051,40 @@ it('stores an empty stack when no members are answered', function (): void {
             [G2_SAVE, true],
         ])
         ->and($saved)->toBe(['stk' => ['channels' => [], 'type' => 'stack']]);
+});
+
+it('stores an env reference passed as a flag without the shell history warning', function (): void {
+    $saved = null;
+    g2_add_mock($saved);
+
+    $result = g2_audit_run('audit:add', ['name' => 'hook', '--type' => 'slack', '--webhook-url' => 'env:SLACK_HOOK']);
+
+    expect($result->exit)->toBe(0)
+        ->and($result->output)->not->toContain('shell history')
+        ->and($result->output)->toMatch('/\| webhook url\s+\| env:SLACK_HOOK\s+\|/')
+        ->and($saved['hook']['webhook_url'])->toBe('env:SLACK_HOOK');
+});
+
+it('fails when a flag holds an invalid env reference', function (): void {
+    $saved = null;
+    g2_add_mock($saved);
+
+    $result = g2_audit_run('audit:add', ['name' => 'hook', '--type' => 'slack', '--webhook-url' => 'env:1bad']);
+
+    expect($result->exit)->toBe(2)
+        ->and($result->output)->toContain('"env:1bad" is not a valid environment variable reference.')
+        ->and($saved)->toBeNull();
+});
+
+it('stores an env reference for the ntfy token', function (): void {
+    $saved = null;
+    g2_add_mock($saved);
+
+    $result = g2_audit_run('audit:add', ['name' => 'nt', '--type' => 'ntfy', '--ntfy-url' => 'https://n', '--ntfy-topic' => 't', '--ntfy-priority' => 'min'], [
+        'How should Clonio get the ntfy bearer token?' => 'Read it from an environment variable (recommended)',
+    ]);
+
+    expect($result->exit)->toBe(0)
+        ->and(collect($result->asked)->firstWhere('question', 'Environment variable name')['default'] ?? null)->toBe('CLONIO_AUDIT_NT_TOKEN')
+        ->and($saved['nt']['token'])->toBe('env:CLONIO_AUDIT_NT_TOKEN');
 });

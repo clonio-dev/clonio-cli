@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Audit;
 
 use App\Contracts\DeliveryAdapterInterface;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
 use RuntimeException;
 
 class EmailDeliveryAdapter implements DeliveryAdapterInterface
@@ -16,7 +16,7 @@ class EmailDeliveryAdapter implements DeliveryAdapterInterface
         $port = is_int($channelConfig['port'] ?? null) ? $channelConfig['port'] : 587;
         $encryption = is_string($channelConfig['encryption'] ?? null) ? $channelConfig['encryption'] : 'tls';
         $username = is_string($channelConfig['username'] ?? null) ? $channelConfig['username'] : '';
-        $password = $this->decryptIfNeeded(is_string($channelConfig['password'] ?? null) ? $channelConfig['password'] : '');
+        $password = Secret::resolve(is_string($channelConfig['password'] ?? null) ? $channelConfig['password'] : '', 'SMTP password');
         $fromAddress = is_string($channelConfig['from_address'] ?? null) ? $channelConfig['from_address'] : '';
         $fromName = is_string($channelConfig['from_name'] ?? null) ? $channelConfig['from_name'] : 'Clonio';
         $to = is_array($channelConfig['to'] ?? null) ? $channelConfig['to'] : [];
@@ -154,14 +154,5 @@ class EmailDeliveryAdapter implements DeliveryAdapterInterface
         }
 
         return $response;
-    }
-
-    private function decryptIfNeeded(string $value): string
-    {
-        if (str_starts_with($value, 'encrypted:')) {
-            return Crypt::decryptString(substr($value, 10)); // @pest-mutate-ignore: DecrementInteger
-        }
-
-        return $value;
     }
 }

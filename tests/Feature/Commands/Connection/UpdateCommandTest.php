@@ -8,6 +8,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Enums\SslMode;
 use App\Services\Config\ConfigService;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -42,6 +43,12 @@ function fakeUpdateConfig(ConnectionData $current, Closure $check): ConfigServic
     return $config;
 }
 
+const UPDATE_PASSWORD_CHOICES = [
+    'Read it from an environment variable (recommended)',
+    'Enter it now and store it encrypted in clonio.json',
+    'Keep the current password',
+];
+
 it('updates a connection when found', function (): void {
     $connection = makeUpdateConnection('staging');
 
@@ -69,7 +76,7 @@ it('updates a connection when found', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -94,7 +101,7 @@ it('cancels update when user declines save confirmation', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'no')
@@ -136,7 +143,7 @@ it('preserves existing password when empty input given', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -162,7 +169,7 @@ it('auto-selects connection when only one exists', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -203,7 +210,7 @@ it('renames a connection when the name changes', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -229,7 +236,7 @@ it('returns an IO error when persisting the update throws', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -260,7 +267,7 @@ it('prompts the user to choose when multiple connections exist and no name is gi
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -328,7 +335,8 @@ it('uses default prompts when changing the driver type to another network databa
         ->expectsQuestion('Database', 'pgdb')
         ->expectsQuestion('Username', 'postgres')
         ->expectsQuestion('Schema', 'public')
-        ->expectsQuestion('Password (press Enter to keep current)', 'newsecret')
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', UPDATE_PASSWORD_CHOICES)
+        ->expectsQuestion('Password', 'newsecret')
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -358,7 +366,7 @@ it('updates to a SQLite connection asking only for the file path', function (): 
         ->expectsQuestion('Connection name', 'staging')
         ->expectsQuestion('Database driver', 'sqlite')
         ->expectsQuestion('Database file path', '/tmp/new.db')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -393,7 +401,7 @@ it('keeps the existing SQLite file path when the type is unchanged', function ()
         ->expectsQuestion('Connection name', 'local')
         ->expectsQuestion('Database driver', 'sqlite')
         ->expectsQuestion('Database file path', '/tmp/existing.db')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -422,7 +430,7 @@ it('migrates the legacy SQL Server trust flag to ssl require', function (): void
         ->expectsQuestion('Port', '1433')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'sa')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsChoice('Transport security', 'Require (encrypted, not verified)', [
             'Require (encrypted, not verified)',
             'Verify (encrypted + certificate check)',
@@ -453,7 +461,7 @@ it('fails with validation error when renaming to an existing connection name', f
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsOutputToContain("A connection named 'production' already exists.")
@@ -474,7 +482,7 @@ it('keeps a stored CA on Enter', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', '')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -500,7 +508,8 @@ it('updates the password of a connection whose cert file is missing, without che
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', 'newsecret')
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', UPDATE_PASSWORD_CHOICES)
+        ->expectsQuestion('Password', 'newsecret')
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', '')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -556,7 +565,7 @@ it('preserves a non-null dialect across an update', function (): void {
         ->expectsQuestion('Connection name', 'dump-target')
         ->expectsQuestion('Database driver', 'dump')
         ->expectsQuestion('Database file path', '/tmp/out.sql')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -581,7 +590,7 @@ it('removes a stored CA on "none" and shows it in the diff (pgsql verify without
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'u')
         ->expectsQuestion('Schema', 'public')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', 'none')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -605,7 +614,7 @@ it('drops the CA when switching from verify to require', function (): void {
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
         ->expectsConfirmation('Is this a production connection?', 'no')
@@ -628,7 +637,7 @@ it('rejects an update that leaves mysql verify without a CA', function (): void 
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsQuestion('CA certificate path (leave empty for none)', '')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -646,7 +655,7 @@ it('removes ssl when the type changes to sqlite', function (): void {
         ->expectsQuestion('Connection name', 'staging')
         ->expectsQuestion('Database driver', 'sqlite')
         ->expectsQuestion('Database file path', '/tmp/a.db')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
@@ -734,7 +743,7 @@ it('applies the stored values as prompt defaults when every question is answered
         ->and($output)->toContain(' Port [3307]:')
         ->and($output)->toContain(' Database [appdb]:')
         ->and($output)->toContain(' Username [app]:')
-        ->and($output)->toContain(' Password (press Enter to keep current):'.PHP_EOL)
+        ->and($output)->toContain(' How should Clonio get the password? [Keep the current password]:')
         ->and($output)->toContain('No fields changed.')
         ->and($output)->toContain(' Save changes? (yes/no) [yes]:')
         ->and($output)->toContain("Connection 'staging' updated successfully.")
@@ -841,7 +850,7 @@ it('stores empty answers as null and falls back to the stored port', function ()
         ->expectsQuestion('Port', '')
         ->expectsQuestion('Database', '')
         ->expectsQuestion('Username', '')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -865,7 +874,7 @@ it('falls back to the new driver default port and stores an empty schema as null
         ->expectsQuestion('Database', '')
         ->expectsQuestion('Username', '')
         ->expectsQuestion('Schema', '')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -883,7 +892,7 @@ it('stores port 0 as null but keeps port 1', function (string $answer, ?int $exp
         ->expectsQuestion('Port', $answer)
         ->expectsQuestion('Database', 'appdb')
         ->expectsQuestion('Username', 'app')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -920,7 +929,7 @@ it('updates the connection picked from the list', function (?string $answer, str
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save changes?', 'yes')
@@ -950,7 +959,7 @@ it('tells the user that certificate paths were removed when switching to sqlsrv'
         ->expectsQuestion('Port', '1433')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsOutputToContain('Certificate paths are not supported for sqlsrv and were removed.')
         ->expectsConfirmation('Is this a production connection?', 'no')
@@ -973,7 +982,7 @@ it('does not mention removed certificate paths for sqlsrv without certificate fi
         ->expectsQuestion('Port', '1433')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'sa')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
         ->doesntExpectOutputToContain('Certificate paths are not supported')
         ->expectsConfirmation('Is this a production connection?', 'no')
@@ -994,7 +1003,7 @@ it('does not mention removed certificate paths when a mysql connection keeps its
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsQuestion('CA certificate path [certs/ca.pem] (Enter = keep, "none" = remove)', '')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -1030,7 +1039,8 @@ it('shows every changed field in the diff when filling an empty sqlite connectio
         ->expectsQuestion('Database', 'pgdb')
         ->expectsQuestion('Username', 'pgu')
         ->expectsQuestion('Schema', 'sch')
-        ->expectsQuestion('Password (press Enter to keep current)', 'secret')
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', UPDATE_PASSWORD_CHOICES)
+        ->expectsQuestion('Password', 'secret')
         ->expectsQuestion('Transport security', 'Verify (encrypted + certificate check)')
         ->expectsQuestion('CA certificate path (leave empty for none)', 'certs/ca.pem')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'yes')
@@ -1067,7 +1077,7 @@ it('shows every cleared field in the diff when turning a full pgsql connection i
         ->expectsQuestion('Connection name', 'pg')
         ->expectsQuestion('Database driver', 'sqlite')
         ->expectsQuestion('Database file path', '/tmp/g4b-b.db')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsTable(['Field', 'Old', 'New'], [
             ['type', 'pgsql', 'sqlite'],
@@ -1130,7 +1140,8 @@ it('lists a changed password in the change summary without printing it', functio
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', 'newsecret')
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', UPDATE_PASSWORD_CHOICES)
+        ->expectsQuestion('Password', 'newsecret')
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsTable(['Field', 'Old', 'New'], [['password', '••••••••', '(changed)']])
@@ -1154,10 +1165,66 @@ it('reports no changes when only the unchanged password is kept', function (): v
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database', 'mydb')
         ->expectsQuestion('Username', 'root')
-        ->expectsQuestion('Password (press Enter to keep current)', '')
+        ->expectsChoice('How should Clonio get the password?', 'Keep the current password', UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsOutputToContain('No fields changed.')
         ->expectsConfirmation('Save changes?', 'yes')
         ->assertExitCode(0);
+});
+
+it('switches the password to an env reference named after the connection', function (): void {
+    putenv('CLONIO_STAGING_PASSWORD=from-env');
+    $connection = makeUpdateConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $connection]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $config->shouldReceive('hasConnection')->with('staging')->andReturn(true);
+    $config->shouldReceive('setConnection')
+        ->once()
+        ->withArgs(fn (string $name, ConnectionData $data): bool => $data->password === 'env:CLONIO_STAGING_PASSWORD');
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'db.example.com')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsChoice('How should Clonio get the password?', UPDATE_PASSWORD_CHOICES[0], UPDATE_PASSWORD_CHOICES)
+        ->expectsQuestion('Environment variable name', 'CLONIO_STAGING_PASSWORD')
+        ->expectsQuestion('Transport security', 'Driver default')
+        ->expectsConfirmation('Is this a production connection?', 'no')
+        ->expectsConfirmation('Save changes?', 'yes')
+        ->doesntExpectOutputToContain('is not set')
+        ->assertExitCode(0);
+
+    putenv('CLONIO_STAGING_PASSWORD');
+});
+
+it('returns a config error when encrypting the new password fails', function (): void {
+    $connection = makeUpdateConnection('staging');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnections')->andReturn(['staging' => $connection]);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $config->shouldReceive('hasConnection')->with('staging')->andReturn(true);
+    $config->shouldNotReceive('setConnection');
+    $this->app->instance(ConfigService::class, $config);
+
+    Crypt::shouldReceive('encryptString')->andThrow(new RuntimeException('no key'));
+
+    $this->artisan('connection:update', ['name' => 'staging'])
+        ->expectsQuestion('Connection name', 'staging')
+        ->expectsQuestion('Database driver', 'mysql')
+        ->expectsQuestion('Host', 'db.example.com')
+        ->expectsQuestion('Port', '3306')
+        ->expectsQuestion('Database', 'mydb')
+        ->expectsQuestion('Username', 'root')
+        ->expectsChoice('How should Clonio get the password?', UPDATE_PASSWORD_CHOICES[1], UPDATE_PASSWORD_CHOICES)
+        ->expectsQuestion('Password', 'new-secret')
+        ->expectsOutputToContain('Failed to encrypt password. Ensure APP_KEY is set in your environment.')
+        ->assertExitCode(2);
 });

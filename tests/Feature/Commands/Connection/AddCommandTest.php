@@ -55,6 +55,13 @@ function mysqlFlags(): array
     ];
 }
 
+const PASSWORD_CHOICES = [
+    'Read it from an environment variable (recommended)',
+    'Enter it now and store it encrypted in clonio.json',
+];
+
+const ZIP_CHOICES = [...PASSWORD_CHOICES, 'No ZIP encryption'];
+
 it('successfully adds a MySQL connection with all options provided via flags', function (): void {
     $this->app->instance(ConfigService::class, fakeConfig());
 
@@ -157,7 +164,7 @@ it('adds an unencrypted dump connection when the ZIP password is left blank', fu
         '--type' => 'dump',
         '--dialect' => 'sqlite',
     ])
-        ->expectsQuestion('ZIP archive password (leave blank for no encryption)', '')
+        ->expectsChoice('How should Clonio get the ZIP archive password?', 'No ZIP encryption', ZIP_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -208,6 +215,7 @@ it('prompts interactively for every MySQL field when no flags are given', functi
         ->expectsQuestion('Port', '3306')
         ->expectsQuestion('Database name', 'mydb')
         ->expectsQuestion('Username', 'root')
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', PASSWORD_CHOICES)
         ->expectsQuestion('Password', 'secret')
         ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -248,7 +256,7 @@ it('prompts interactively for the dump dialect when no flag is given', function 
         '--type' => 'dump',
     ])
         ->expectsQuestion('Target SQL dialect', 'mysql')
-        ->expectsQuestion('ZIP archive password (leave blank for no encryption)', '')
+        ->expectsChoice('How should Clonio get the ZIP archive password?', 'No ZIP encryption', ZIP_CHOICES)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsConfirmation('Save this connection?', 'yes')
         ->assertExitCode(0);
@@ -606,6 +614,7 @@ it('re-prompts for every option passed as an empty string', function (): void {
         ->expectsQuestion('Port', '3307')
         ->expectsQuestion('Database name', 'shop')
         ->expectsQuestion('Username', 'admin')
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', PASSWORD_CHOICES)
         ->expectsQuestion('Password', 'pw')
         ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
         ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
@@ -631,6 +640,7 @@ it('falls back to defaults when prompts return no answer and shows the PostgreSQ
         ->expectsQuestion('Database name', null)
         ->expectsQuestion('Schema', null)
         ->expectsQuestion('Username', null)
+        ->expectsChoice('How should Clonio get the password?', 'Enter it now and store it encrypted in clonio.json', PASSWORD_CHOICES)
         ->expectsQuestion('Password', null)
         ->expectsQuestion('Transport security', 'Driver default')
         ->expectsConfirmation('Is this a production connection?', 'no')
@@ -717,7 +727,8 @@ it('re-prompts for an empty dump dialect and ZIP password and encrypts the archi
 
     $this->artisan('connection:add', ['name' => 'dump1', '--type' => 'dump', '--dialect' => '', '--password' => ''])
         ->expectsQuestion('Target SQL dialect', 'pgsql')
-        ->expectsQuestion('ZIP archive password (leave blank for no encryption)', 'zip')
+        ->expectsChoice('How should Clonio get the ZIP archive password?', 'Enter it now and store it encrypted in clonio.json', ZIP_CHOICES)
+        ->expectsQuestion('ZIP archive password', 'zip')
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsTable(['Field', 'Value'], [
             ['Name', 'dump1'],
@@ -736,7 +747,8 @@ it('stores no password for a dump whose ZIP password is left blank', function (?
     ));
 
     $this->artisan('connection:add', ['name' => 'dump1', '--type' => 'dump', '--dialect' => 'mysql'])
-        ->expectsQuestion('ZIP archive password (leave blank for no encryption)', $answer)
+        ->expectsChoice('How should Clonio get the ZIP archive password?', 'Enter it now and store it encrypted in clonio.json', ZIP_CHOICES)
+        ->expectsQuestion('ZIP archive password', $answer)
         ->expectsConfirmation('Is this a production connection?', 'no')
         ->expectsTable(['Field', 'Value'], [
             ['Name', 'dump1'],
@@ -872,4 +884,106 @@ it('does not ask for client certificate paths when the mutual TLS prompt is answ
 
     expect($tester->getStatusCode())->toBe(0)
         ->and($tester->getDisplay())->not->toContain('Client certificate path');
+});
+
+/** @return array<string, string> */
+function mysqlFlagsWithoutPassword(): array
+{
+    $flags = mysqlFlags();
+    unset($flags['--password']);
+
+    return $flags;
+}
+
+describe('env references', function (): void {
+    afterEach(function (): void {
+        putenv('CLONIO_MY_DB_PASSWORD');
+        putenv('MY_PW');
+    });
+
+    it('reads the password from an environment variable by default', function (): void {
+        $this->app->instance(ConfigService::class, fakeConfigExpecting(
+            static fn (ConnectionData $d): bool => $d->password === 'env:CLONIO_MY_DB_PASSWORD'
+        ));
+
+        // Password source, variable name, transport security, client certificate, production, save.
+        $tester = g4_runAdd(mysqlFlagsWithoutPassword(), ['', '', '', '', '', '']);
+
+        expect($tester->getStatusCode())->toBe(0)
+            ->and($tester->getDisplay())
+            ->toContain('How should Clonio get the password? [Read it from an environment variable (recommended)]:')
+            ->toContain('Environment variable name [CLONIO_MY_DB_PASSWORD]:')
+            ->toContain('CLONIO_MY_DB_PASSWORD is not set. Set it before Clonio uses the password.')
+            ->toMatch('/\| Password\s+\| env:CLONIO_MY_DB_PASSWORD\s+\|/');
+    });
+
+    it('accepts a variable name with a leading $ or env: and does not warn when it is set', function (string $answer): void {
+        putenv('MY_PW=secret');
+        $this->app->instance(ConfigService::class, fakeConfigExpecting(
+            static fn (ConnectionData $d): bool => $d->password === 'env:MY_PW'
+        ));
+
+        $this->artisan('connection:add', mysqlFlagsWithoutPassword())
+            ->expectsChoice('How should Clonio get the password?', PASSWORD_CHOICES[0], PASSWORD_CHOICES)
+            ->expectsQuestion('Environment variable name', $answer)
+            ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+            ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+            ->expectsConfirmation('Is this a production connection?', 'no')
+            ->expectsConfirmation('Save this connection?', 'yes')
+            ->doesntExpectOutputToContain('is not set')
+            ->assertExitCode(0);
+    })->with(['MY_PW', ' $MY_PW ', 'env:MY_PW', '$env:MY_PW']);
+
+    it('asks again when the variable name is invalid', function (): void {
+        $this->app->instance(ConfigService::class, fakeConfigExpecting(
+            static fn (ConnectionData $d): bool => $d->password === 'env:MY_PW'
+        ));
+
+        $this->artisan('connection:add', mysqlFlagsWithoutPassword())
+            ->expectsChoice('How should Clonio get the password?', PASSWORD_CHOICES[0], PASSWORD_CHOICES)
+            ->expectsQuestion('Environment variable name', '1bad')
+            ->expectsOutputToContain('"env:1bad" is not a valid environment variable reference.')
+            ->expectsQuestion('Environment variable name', 'MY_PW')
+            ->expectsQuestion('Transport security', 'Require (encrypted, not verified)')
+            ->expectsConfirmation('Use a client certificate (mutual TLS)?', 'no')
+            ->expectsConfirmation('Is this a production connection?', 'no')
+            ->expectsConfirmation('Save this connection?', 'yes')
+            ->assertExitCode(0);
+    });
+
+    it('stores an env reference passed as --password verbatim', function (): void {
+        $this->app->instance(ConfigService::class, fakeConfigExpecting(
+            static fn (ConnectionData $d): bool => $d->password === 'env:PROD_PW'
+        ));
+
+        $this->artisan('connection:add', [...mysqlFlags(), '--password' => 'env:PROD_PW', '--no-interaction' => true])
+            ->assertExitCode(0);
+    });
+
+    it('rejects an invalid env reference passed as --password', function (): void {
+        $this->app->instance(ConfigService::class, fakeConfigReadOnly());
+
+        $this->artisan('connection:add', [...mysqlFlags(), '--password' => 'env:1bad', '--no-interaction' => true])
+            ->expectsOutputToContain('"env:1bad" is not a valid environment variable reference.')
+            ->assertExitCode(4);
+    });
+
+    it('references the suggested variable without interaction', function (): void {
+        $this->app->instance(ConfigService::class, fakeConfigExpecting(
+            static fn (ConnectionData $d): bool => $d->password === 'env:CLONIO_MY_DB_PASSWORD'
+        ));
+
+        $this->artisan('connection:add', [...mysqlFlagsWithoutPassword(), '--no-interaction' => true])
+            ->expectsOutputToContain('CLONIO_MY_DB_PASSWORD is not set.')
+            ->assertExitCode(0);
+    });
+
+    it('stores no ZIP password without interaction', function (): void {
+        $this->app->instance(ConfigService::class, fakeConfigExpecting(
+            static fn (ConnectionData $d): bool => $d->password === ''
+        ));
+
+        $this->artisan('connection:add', ['name' => 'dump', '--type' => 'dump', '--dialect' => 'sqlite', '--no-interaction' => true])
+            ->assertExitCode(0);
+    });
 });

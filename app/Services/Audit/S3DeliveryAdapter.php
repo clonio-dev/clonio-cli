@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Audit;
 
 use App\Contracts\DeliveryAdapterInterface;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
 use Illuminate\Support\Facades\Storage;
 
 class S3DeliveryAdapter implements DeliveryAdapterInterface
@@ -16,7 +16,7 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
         $bucket = is_string($channelConfig['bucket'] ?? null) ? $channelConfig['bucket'] : '';
         $region = is_string($channelConfig['region'] ?? null) ? $channelConfig['region'] : 'us-east-1';
         $accessKey = is_string($channelConfig['access_key'] ?? null) ? $channelConfig['access_key'] : '';
-        $secretKey = $this->decryptIfNeeded(is_string($channelConfig['secret_key'] ?? null) ? $channelConfig['secret_key'] : '');
+        $secretKey = Secret::resolve(is_string($channelConfig['secret_key'] ?? null) ? $channelConfig['secret_key'] : '', 'S3 secret key');
         $pathPrefix = is_string($channelConfig['path_prefix'] ?? null) ? $channelConfig['path_prefix'] : '';
 
         $disk = Storage::build([
@@ -48,14 +48,5 @@ class S3DeliveryAdapter implements DeliveryAdapterInterface
         $resolved = rtrim($resolved, '/');
 
         return $resolved !== '' ? $resolved.'/'.$filename : $filename;
-    }
-
-    private function decryptIfNeeded(string $value): string
-    {
-        if (str_starts_with($value, 'encrypted:')) {
-            return Crypt::decryptString(substr($value, 10)); // @pest-mutate-ignore: DecrementInteger
-        }
-
-        return $value;
     }
 }

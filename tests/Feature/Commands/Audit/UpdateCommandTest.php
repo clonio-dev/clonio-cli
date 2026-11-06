@@ -176,7 +176,7 @@ it('updates an s3 channel with pre-filled values', function (): void {
         ->expectsQuestion('Bucket', 'my-bucket')
         ->expectsQuestion('Region', 'us-east-1')
         ->expectsQuestion('Access key', 'AKIA123')
-        ->expectsQuestion('Secret key (press Enter to keep)', '')
+        ->expectsChoice('How should Clonio get the S3 secret key?', 'Keep the current S3 secret key', [...G2_UPD_CHOICES, 'Keep the current S3 secret key'])
         ->expectsQuestion('Path prefix', 'clonio/{year}/')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-s3' updated successfully.")
@@ -196,7 +196,7 @@ it('updates a webhook channel (slack) with pre-filled values', function (): void
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update', ['name' => 'my-slack'])
-        ->expectsQuestion('Webhook URL (press Enter to keep)', '')
+        ->expectsChoice('How should Clonio get the webhook URL?', 'Keep the current webhook URL', [...G2_UPD_CHOICES, 'Keep the current webhook URL'])
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-slack' updated successfully.")
         ->assertExitCode(0);
@@ -278,7 +278,8 @@ it('updates an s3 channel preserving retry settings and replacing the secret', f
         ->expectsQuestion('Bucket', 'my-bucket')
         ->expectsQuestion('Region', 'us-east-1')
         ->expectsQuestion('Access key', 'AKIA123')
-        ->expectsQuestion('Secret key (press Enter to keep)', 'new-secret')
+        ->expectsChoice('How should Clonio get the S3 secret key?', G2_UPD_STORED, [...G2_UPD_CHOICES, 'Keep the current S3 secret key'])
+        ->expectsQuestion('S3 secret key', 'new-secret')
         ->expectsQuestion('Path prefix', 'clonio/{year}/')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-s3' updated successfully.")
@@ -310,7 +311,7 @@ it('updates an email channel with pre-filled values and preserved retry', functi
         ->expectsQuestion('SMTP port', '587')
         ->expectsChoice('Encryption', 'tls', ['tls', 'ssl', 'none'])
         ->expectsQuestion('Username', 'user@example.com')
-        ->expectsQuestion('Password (press Enter to keep)', '')
+        ->expectsChoice('How should Clonio get the SMTP password?', 'Keep the current SMTP password', [...G2_UPD_CHOICES, 'Keep the current SMTP password'])
         ->expectsQuestion('From address', 'noreply@example.com')
         ->expectsQuestion('From name', 'Clonio')
         ->expectsQuestion('Recipients (comma-separated)', 'admin@example.com, ops@example.com')
@@ -333,7 +334,8 @@ it('updates a webhook channel preserving retry settings', function (): void {
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('audit:update', ['name' => 'my-teams'])
-        ->expectsQuestion('Webhook URL (press Enter to keep)', 'https://new-webhook')
+        ->expectsChoice('How should Clonio get the webhook URL?', G2_UPD_STORED, [...G2_UPD_CHOICES, 'Keep the current webhook URL'])
+        ->expectsQuestion('Webhook URL', 'https://new-webhook')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-teams' updated successfully.")
         ->assertExitCode(0);
@@ -361,7 +363,8 @@ it('updates an ntfy channel with pre-filled values, tags, token and retry', func
         ->expectsQuestion('Topic', 'my-topic')
         ->expectsChoice('Priority', 'high', ['min', 'low', 'default', 'high', 'max'])
         ->expectsQuestion('Tags (comma-separated, optional)', 'alert, ops')
-        ->expectsQuestion('Bearer token (optional — press Enter to keep/skip) (press Enter to keep)', 'new-token')
+        ->expectsChoice('How should Clonio get the ntfy bearer token?', G2_UPD_STORED, [...G2_UPD_CHOICES, 'Keep the current ntfy bearer token'])
+        ->expectsQuestion('Ntfy bearer token', 'new-token')
         ->expectsConfirmation('Save changes?', 'yes')
         ->expectsOutputToContain("Channel 'my-ntfy' updated successfully.")
         ->assertExitCode(0);
@@ -483,6 +486,8 @@ function g2_update_mock(?array &$saved, array $channels): MockInterface
 
 const G2_UPD_SAVE = 'Save changes?';
 const G2_UPD_MASK = '••••••••';
+const G2_UPD_STORED = 'Enter it now and store it encrypted in clonio.json';
+const G2_UPD_CHOICES = ['Read it from an environment variable (recommended)', G2_UPD_STORED];
 
 it('treats an empty name argument as missing and auto-selects the only channel', function (): void {
     $saved = null;
@@ -600,12 +605,12 @@ it('prompts s3 fields pre-filled from the current channel and keeps the secret',
             ['Bucket', 'bkt'],
             ['Region', 'eu'],
             ['Access key', 'AK'],
-            ['Secret key (press Enter to keep)', null],
+            ['How should Clonio get the S3 secret key?', 2],
             ['Path prefix', 'pre/'],
             [G2_UPD_SAVE, true],
         ])
-        ->and($result->asked[4]['hidden'])->toBeTrue()
-        ->and($result->output)->toContain('  Secret key: '.G2_UPD_MASK.' (press Enter to keep)')
+        ->and($result->asked[4]['choices'])->toBe([...G2_UPD_CHOICES, 'Keep the current S3 secret key'])
+        ->and($result->output)->toContain('  Current S3 secret key: '.G2_UPD_MASK)
         ->and($saved)->toBe(['s' => [
             'endpoint' => 'https://s3',
             'bucket' => 'bkt',
@@ -630,7 +635,7 @@ it('prompts s3 fields with empty defaults when nothing is stored', function (): 
             ['Bucket', null],
             ['Region', null],
             ['Access key', null],
-            ['Secret key (press Enter to keep)', null],
+            ['How should Clonio get the S3 secret key?', 2],
             ['Path prefix', 'clonio/{year}/{month}/{source}/'],
             [G2_UPD_SAVE, true],
         ])
@@ -649,7 +654,7 @@ it('keeps an empty s3 secret when none is stored', function (): void {
     $saved = null;
     g2_update_mock($saved, ['s' => ['type' => 's3']]);
 
-    $result = g2_audit_run('audit:update', ['name' => 's'], ['Secret key (press Enter to keep)' => '']);
+    $result = g2_audit_run('audit:update', ['name' => 's'], ['How should Clonio get the S3 secret key?' => 'Leave it empty']);
 
     expect($result->exit)->toBe(0)
         ->and($saved['s']['secret_key'])->toBe('');
@@ -664,7 +669,8 @@ it('stores answered s3 fields and encrypts a new secret', function (): void {
         'Bucket' => 'b',
         'Region' => 'r',
         'Access key' => 'a',
-        'Secret key (press Enter to keep)' => 'new-secret',
+        'How should Clonio get the S3 secret key?' => G2_UPD_STORED,
+        'S3 secret key' => 'new-secret',
         'Path prefix' => 'p/',
     ]);
 
@@ -707,7 +713,7 @@ it('prompts email fields pre-filled from the current channel', function (): void
             ['SMTP port', '2525'],
             ['Encryption', 1],
             ['Username', 'u'],
-            ['Password (press Enter to keep)', null],
+            ['How should Clonio get the SMTP password?', 2],
             ['From address', 'f@x'],
             ['From name', 'F'],
             ['Recipients (comma-separated)', 'a@x, 5, '],
@@ -740,7 +746,7 @@ it('prompts email fields with fallback defaults when nothing is stored', functio
             ['SMTP port', '587'],
             ['Encryption', 0],
             ['Username', null],
-            ['Password (press Enter to keep)', null],
+            ['How should Clonio get the SMTP password?', 2],
             ['From address', null],
             ['From name', null],
             ['Recipients (comma-separated)', null],
@@ -768,7 +774,8 @@ it('stores answered email fields with trimmed recipients', function (): void {
         'SMTP port' => '465',
         'Encryption' => 'none',
         'Username' => 'u',
-        'Password (press Enter to keep)' => 'pw',
+        'How should Clonio get the SMTP password?' => G2_UPD_STORED,
+        'SMTP password' => 'pw',
         'From address' => 'f',
         'From name' => 'n',
         'Recipients (comma-separated)' => ' a , ,b ',
@@ -800,10 +807,10 @@ it('keeps the webhook url and retry settings by default', function (): void {
 
     expect($result->exit)->toBe(0)
         ->and(g2_audit_questions($result))->toBe([
-            ['Webhook URL (press Enter to keep)', null],
+            ['How should Clonio get the webhook URL?', 2],
             [G2_UPD_SAVE, true],
         ])
-        ->and($result->output)->toContain('  Webhook URL: '.G2_UPD_MASK.' (press Enter to keep)')
+        ->and($result->output)->toContain('  Current webhook URL: '.G2_UPD_MASK)
         ->and($saved)->toBe(['w' => [
             'webhook_url' => 'encrypted:old',
             'retry' => ['max_attempts' => 4],
@@ -841,7 +848,7 @@ it('prompts ntfy fields pre-filled from the current channel', function (): void 
             ['Topic', 'ops'],
             ['Priority', 3],
             ['Tags (comma-separated, optional)', 'a, 5, '],
-            ['Bearer token (optional — press Enter to keep/skip) (press Enter to keep)', null],
+            ['How should Clonio get the ntfy bearer token?', 2],
             [G2_UPD_SAVE, true],
         ])
         ->and($result->asked[2]['choices'])->toBe(['min', 'low', 'default', 'high', 'max'])
@@ -868,7 +875,7 @@ it('prompts ntfy fields with fallback defaults when nothing is stored', function
             ['Topic', null],
             ['Priority', 0],
             ['Tags (comma-separated, optional)', null],
-            ['Bearer token (optional — press Enter to keep/skip) (press Enter to keep)', null],
+            ['How should Clonio get the ntfy bearer token?', 2],
             [G2_UPD_SAVE, true],
         ])
         ->and($saved)->toBe(['n' => [
@@ -899,7 +906,8 @@ it('stores answered ntfy fields with trimmed tags and a new token', function ():
         'Topic' => 't',
         'Priority' => 'max',
         'Tags (comma-separated, optional)' => ' a , ,b ',
-        'Bearer token (optional — press Enter to keep/skip) (press Enter to keep)' => 'tok',
+        'How should Clonio get the ntfy bearer token?' => G2_UPD_STORED,
+        'Ntfy bearer token' => 'tok',
     ]);
 
     expect($result->exit)->toBe(0);
@@ -967,4 +975,55 @@ it('prompts stack members without a default when none are stored', function (): 
         ->and($result->output)->toContain(g2_audit_table(['Field', 'Old', 'New'], [
             ['channels', '', '["x","y"]'],
         ]));
+});
+
+it('shows a current env reference unmasked and keeps it by default', function (): void {
+    $saved = null;
+    g2_update_mock($saved, ['w' => ['type' => 'slack', 'webhook_url' => 'env:SLACK_HOOK']]);
+
+    $result = g2_audit_run('audit:update', ['name' => 'w']);
+
+    expect($result->exit)->toBe(0)
+        ->and($result->output)->toContain('  Current webhook URL: env:SLACK_HOOK')
+        ->and($saved['w']['webhook_url'])->toBe('env:SLACK_HOOK');
+});
+
+it('offers to leave an unset secret empty', function (): void {
+    $saved = null;
+    g2_update_mock($saved, ['w' => ['type' => 'slack']]);
+
+    $result = g2_audit_run('audit:update', ['name' => 'w']);
+
+    expect($result->exit)->toBe(0)
+        ->and($result->output)->toContain('  Current webhook URL: not set')
+        ->and($result->asked[0]['choices'])->toBe([...G2_UPD_CHOICES, 'Leave it empty']);
+});
+
+it('switches a stored secret to an env reference', function (): void {
+    $saved = null;
+    g2_update_mock($saved, ['w' => ['type' => 'slack', 'webhook_url' => 'encrypted:old']]);
+
+    $result = g2_audit_run('audit:update', ['name' => 'w'], [
+        'How should Clonio get the webhook URL?' => 'Read it from an environment variable (recommended)',
+    ]);
+
+    expect($result->exit)->toBe(0)
+        ->and(collect($result->asked)->firstWhere('question', 'Environment variable name')['default'] ?? null)->toBe('CLONIO_AUDIT_W_WEBHOOK_URL')
+        ->and($result->output)->toMatch('/\| webhook_url\s+\| '.G2_UPD_MASK.'\s+\| env:CLONIO_AUDIT_W_WEBHOOK_URL\s+\|/u')
+        ->and($saved['w']['webhook_url'])->toBe('env:CLONIO_AUDIT_W_WEBHOOK_URL');
+});
+
+it('fails when encrypting the new secret fails', function (): void {
+    $saved = null;
+    g2_update_mock($saved, ['w' => ['type' => 'slack', 'webhook_url' => 'encrypted:old']]);
+    Crypt::shouldReceive('encryptString')->andThrow(new RuntimeException('no key'));
+
+    $result = g2_audit_run('audit:update', ['name' => 'w'], [
+        'How should Clonio get the webhook URL?' => G2_UPD_STORED,
+        'Webhook URL' => 'https://new',
+    ]);
+
+    expect($result->exit)->toBe(2)
+        ->and($result->output)->toContain('Failed to encrypt the secret. Ensure APP_KEY is set in your environment.')
+        ->and($saved)->toBeNull();
 });

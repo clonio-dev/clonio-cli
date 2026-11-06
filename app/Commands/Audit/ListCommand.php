@@ -7,6 +7,7 @@ namespace App\Commands\Audit;
 use App\Enums\AuditChannelType;
 use App\Enums\ExitCode;
 use App\Services\Config\ConfigService;
+use App\Services\Secrets\Secret;
 use LaravelZero\Framework\Commands\Command;
 
 class ListCommand extends Command
@@ -80,7 +81,12 @@ class ListCommand extends Command
         }
 
         if ($type === AuditChannelType::MsTeams || $type === AuditChannelType::Slack) {
-            return '(webhook — encrypted)';
+            $webhookUrl = $channel['webhook_url'] ?? null;
+
+            // An env reference names a variable, not the secret, so it is safe to show.
+            return is_string($webhookUrl) && str_starts_with($webhookUrl, Secret::ENV_PREFIX)
+                ? sprintf('(webhook — %s)', $webhookUrl)
+                : '(webhook — encrypted)';
         }
 
         if ($type === AuditChannelType::Ntfy) {

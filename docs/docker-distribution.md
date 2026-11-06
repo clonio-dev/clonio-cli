@@ -102,6 +102,8 @@ Prefer an exact `:1.2.3` tag in CI. `:latest` is safe for interactive use but dr
 
 Clonio reads `clonio.json` and `.env` from `getcwd()` — inside the container that's `/workspace`. The `.env` file holds `APP_KEY`, which is required to decrypt any `encrypted:…` connection passwords. **Both files must be on the mounted volume**, otherwise the container will either skip configuration entirely or fail to decrypt credentials.
 
+Passwords stored as `env:NAME` references need no `APP_KEY`; pass the variables with `-e NAME` instead. Do not bake `clonio.json` or `.env` into an image, and do not keep them in long-running containers that can reach production — see [Security and deployment](security.md).
+
 ```bash
 docker run --rm -v "$(pwd)":/workspace \
   ghcr.io/clonio-dev/clonio:latest connection:list

@@ -110,9 +110,11 @@ This check runs on every `init` invocation — regardless of whether a key was n
 
 In production, set `APP_KEY` as a system environment variable (Docker secrets, Kubernetes secrets, CI/CD env vars). `init` completes immediately without writing any file.
 
+Better still, store no encrypted secrets at all: use `env:NAME` references for passwords and tokens (the default in `connection:add` and `audit:add`) and provide the values from your secret store. Then `APP_KEY` protects nothing of value, and a copy of `.env` plus `clonio.json` reveals no credentials. See [Security and deployment](../security.md).
+
 ## Relation to Other Commands
 
-- `connection:add`, `connection:update`, and `connection:test` all require `APP_KEY` to be present for encrypting and decrypting passwords. Run `clonio init` once per project directory before using those commands.
+- `connection:add`, `connection:update`, `connection:test`, and the audit commands need `APP_KEY` to encrypt and decrypt stored secrets. Secrets stored as `env:NAME` references do not use `APP_KEY`. Run `clonio init` once per project directory before using those commands.
 - `init` does not create `clonio.json`. That file is created by `connection:add`.
 
 ## Exit Codes

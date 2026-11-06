@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Commands\Connection;
 
+use App\Commands\Concerns\PromptsForSecret;
 use App\Commands\Connection\Concerns\PromptsForSsl;
 use App\Data\ConnectionData;
 use App\Data\SslConfig;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
 use App\Enums\SslMode;
+use App\Exceptions\SecretEncryptionException;
 use App\Services\Config\ConfigService;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
+use InvalidArgumentException;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
-use Throwable;
 
 class AddCommand extends Command
 {
+    use PromptsForSecret;
     use PromptsForSsl;
 
     /**
@@ -32,7 +35,7 @@ class AddCommand extends Command
         {--database= : Database name or file path}
         {--schema= : Database schema (PostgreSQL only)}
         {--username= : Database username}
-        {--password= : Database password}
+        {--password= : Database password, or env:NAME to read it from an environment variable}
         {--production : Mark this as a production connection}
         {--ssl-mode= : Transport security — disable|require|verify (network drivers only, default: require)}
         {--ssl-ca= : Path to CA certificate (PEM), used with --ssl-mode=verify}
@@ -184,45 +187,32 @@ class AddCommand extends Command
         }
 
         // --- Step 8: Password (skip for SQLite) ---
-        $encryptedPassword = '';
-
-        if ($type->requiresNetworkConfig()) {
-            $passwordOption = $this->option('password');
-            $rawPassword = is_string($passwordOption) && $passwordOption !== '' ? $passwordOption : null;
-
-            if ($rawPassword === null) {
-                $asked = $this->secret('Password');
-                $rawPassword = is_string($asked) ? $asked : '';
-            }
-
-            try {
-                $encryptedPassword = 'encrypted:'.Crypt::encryptString($rawPassword);
-            } catch (Throwable) {
-                $this->error('Failed to encrypt password. Ensure APP_KEY is set in your environment.');
-
-                return ExitCode::ConfigError->value;
-            }
-        }
-
         // --- Step 8b: ZIP password (dump only, optional) ---
-        if ($type === DatabaseConnectionType::Dump) {
-            $passwordOption = $this->option('password');
-            $rawPassword = is_string($passwordOption) && $passwordOption !== '' ? $passwordOption : null;
+        $encryptedPassword = '';
+        $passwordOption = $this->option('password');
+        $passwordFlag = is_string($passwordOption) && $passwordOption !== '' ? $passwordOption : null;
 
-            if ($rawPassword === null && $this->input->isInteractive()) {
-                $asked = $this->secret('ZIP archive password (leave blank for no encryption)');
-                $rawPassword = is_string($asked) && $asked !== '' ? $asked : null;
+        try {
+            if ($passwordFlag !== null && ($type->requiresNetworkConfig() || $type === DatabaseConnectionType::Dump)) {
+                $encryptedPassword = Secret::protect($passwordFlag);
+            } elseif ($type->requiresNetworkConfig()) {
+                // Never null without a skip choice; the cast only narrows the type.
+                $encryptedPassword = (string) $this->promptForSecret('password', $this->secretEnvName($name, 'password')); // @pest-mutate-ignore: RemoveStringCast
+            } elseif ($type === DatabaseConnectionType::Dump) {
+                $encryptedPassword = $this->promptForSecret(
+                    'ZIP archive password',
+                    $this->secretEnvName($name, 'zip_password'),
+                    'No ZIP encryption',
+                ) ?? '';
             }
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            $this->error($invalidArgumentException->getMessage());
 
-            if ($rawPassword !== null) {
-                try {
-                    $encryptedPassword = 'encrypted:'.Crypt::encryptString($rawPassword);
-                } catch (Throwable) {
-                    $this->error('Failed to encrypt password. Ensure APP_KEY is set in your environment.');
+            return ExitCode::ValidationError->value;
+        } catch (SecretEncryptionException) {
+            $this->error('Failed to encrypt password. Ensure APP_KEY is set in your environment.');
 
-                    return ExitCode::ConfigError->value;
-                }
-            }
+            return ExitCode::ConfigError->value;
         }
 
         // --- Step 9: Transport security (network drivers only) ---
@@ -326,7 +316,7 @@ class AddCommand extends Command
         }
 
         if ($type->requiresNetworkConfig()) {
-            $summaryRows[] = ['Password', '••••••••'];
+            $summaryRows[] = ['Password', Secret::isEncrypted($encryptedPassword) ? '••••••••' : $encryptedPassword];
         }
 
         if ($type->requiresNetworkConfig()) {

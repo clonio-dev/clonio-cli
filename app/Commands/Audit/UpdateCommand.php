@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace App\Commands\Audit;
 
+use App\Commands\Concerns\PromptsForSecret;
 use App\Enums\AuditChannelType;
 use App\Enums\ExitCode;
+use App\Exceptions\SecretEncryptionException;
 use App\Services\Config\ConfigService;
-use Illuminate\Support\Facades\Crypt;
+use App\Services\Secrets\Secret;
+use InvalidArgumentException;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 
 class UpdateCommand extends Command
 {
+    use PromptsForSecret;
+
     /**
      * @var string
      */
@@ -68,7 +73,14 @@ class UpdateCommand extends Command
         $this->line(sprintf('  Type: <info>%s</info> (cannot be changed — delete and re-add to change type)', $type->label()));
 
         // ─── Re-prompt fields ─────────────────────────────────────────────────
-        $updated = $this->promptUpdatedFields($type, $current);
+        try {
+            $updated = $this->promptUpdatedFields($name, $type, $current);
+        } catch (InvalidArgumentException|SecretEncryptionException $exception) {
+            $this->error($exception->getMessage());
+
+            return ExitCode::ConfigError->value;
+        }
+
         $updated['type'] = $type->value;
 
         // Delivery flags are not prompted; keep hand-edited values from clonio.json.
@@ -105,15 +117,15 @@ class UpdateCommand extends Command
      * @param  array<string, mixed>  $current
      * @return array<string, mixed>
      */
-    private function promptUpdatedFields(AuditChannelType $type, array $current): array
+    private function promptUpdatedFields(string $name, AuditChannelType $type, array $current): array
     {
         return match ($type) {
             AuditChannelType::Local => $this->updateLocalFields($current),
-            AuditChannelType::S3 => $this->updateS3Fields($current),
-            AuditChannelType::Email => $this->updateEmailFields($current),
+            AuditChannelType::S3 => $this->updateS3Fields($name, $current),
+            AuditChannelType::Email => $this->updateEmailFields($name, $current),
             AuditChannelType::MsTeams,
-            AuditChannelType::Slack => $this->updateWebhookFields($current),
-            AuditChannelType::Ntfy => $this->updateNtfyFields($current),
+            AuditChannelType::Slack => $this->updateWebhookFields($name, $current),
+            AuditChannelType::Ntfy => $this->updateNtfyFields($name, $current),
             AuditChannelType::Stack => $this->updateStackFields($current),
             AuditChannelType::Stdout, AuditChannelType::Stderr => $current,
         };
@@ -138,13 +150,13 @@ class UpdateCommand extends Command
      * @param  array<string, mixed>  $current
      * @return array<string, mixed>
      */
-    private function updateS3Fields(array $current): array
+    private function updateS3Fields(string $name, array $current): array
     {
         $endpoint = $this->askString('Endpoint', is_string($current['endpoint'] ?? null) ? $current['endpoint'] : '');
         $bucket = $this->askString('Bucket', is_string($current['bucket'] ?? null) ? $current['bucket'] : '');
         $region = $this->askString('Region', is_string($current['region'] ?? null) ? $current['region'] : '');
         $accessKey = $this->askString('Access key', is_string($current['access_key'] ?? null) ? $current['access_key'] : '');
-        $secretKey = $this->updateSecret('Secret key', $current['secret_key'] ?? '');
+        $secretKey = $this->updateSecret('S3 secret key', $current['secret_key'] ?? '', $this->secretEnvName('audit', $name, 'secret_key'));
         $pathPrefix = $this->askString('Path prefix', is_string($current['path_prefix'] ?? null) ? $current['path_prefix'] : 'clonio/{year}/{month}/{source}/');
 
         $updated = [
@@ -167,7 +179,7 @@ class UpdateCommand extends Command
      * @param  array<string, mixed>  $current
      * @return array<string, mixed>
      */
-    private function updateEmailFields(array $current): array
+    private function updateEmailFields(string $name, array $current): array
     {
         $host = $this->askString('SMTP host', is_string($current['host'] ?? null) ? $current['host'] : '');
         $portVal = $current['port'] ?? null;
@@ -177,7 +189,7 @@ class UpdateCommand extends Command
         $encIdx = (int) array_search($currentEnc, $encOptions, true);
         $encryption = $this->choice('Encryption', $encOptions, $encIdx);
         $username = $this->askString('Username', is_string($current['username'] ?? null) ? $current['username'] : '');
-        $password = $this->updateSecret('Password', $current['password'] ?? '');
+        $password = $this->updateSecret('SMTP password', $current['password'] ?? '', $this->secretEnvName('audit', $name, 'password'));
         $fromAddr = $this->askString('From address', is_string($current['from_address'] ?? null) ? $current['from_address'] : '');
         $fromName = $this->askString('From name', is_string($current['from_name'] ?? null) ? $current['from_name'] : '');
         $toRaw2 = $current['to'] ?? null;
@@ -207,9 +219,9 @@ class UpdateCommand extends Command
      * @param  array<string, mixed>  $current
      * @return array<string, mixed>
      */
-    private function updateWebhookFields(array $current): array
+    private function updateWebhookFields(string $name, array $current): array
     {
-        $webhookUrl = $this->updateSecret('Webhook URL', $current['webhook_url'] ?? '');
+        $webhookUrl = $this->updateSecret('webhook URL', $current['webhook_url'] ?? '', $this->secretEnvName('audit', $name, 'webhook_url'));
         $updated = ['webhook_url' => $webhookUrl];
 
         if (isset($current['retry']) && is_array($current['retry'])) {
@@ -223,7 +235,7 @@ class UpdateCommand extends Command
      * @param  array<string, mixed>  $current
      * @return array<string, mixed>
      */
-    private function updateNtfyFields(array $current): array
+    private function updateNtfyFields(string $name, array $current): array
     {
         $url = $this->askString('Server URL', is_string($current['url'] ?? null) ? $current['url'] : 'https://ntfy.sh');
         $topic = $this->askString('Topic', is_string($current['topic'] ?? null) ? $current['topic'] : '');
@@ -235,7 +247,7 @@ class UpdateCommand extends Command
         $currentTags = is_array($tagsRaw2) ? implode(', ', array_map(static fn (mixed $v): string => is_scalar($v) ? (string) $v : '', $tagsRaw2)) : '';
         $tagsRaw = $this->askString('Tags (comma-separated, optional)', $currentTags);
         $tags = $tagsRaw !== '' ? array_values(array_filter(array_map(trim(...), explode(',', $tagsRaw)))) : []; // @pest-mutate-ignore: EmptyStringToNotEmpty
-        $token = $this->updateSecret('Bearer token (optional — press Enter to keep/skip)', $current['token'] ?? '');
+        $token = $this->updateSecret('ntfy bearer token', $current['token'] ?? '', $this->secretEnvName('audit', $name, 'token'));
 
         $updated = [
             'url' => $url,
@@ -265,15 +277,23 @@ class UpdateCommand extends Command
         return is_string($answer) ? $answer : $default;
     }
 
-    private function updateSecret(string $label, mixed $current): string
+    /**
+     * Asks how Clonio gets the secret; keeping the current value is the default.
+     * An `env:` reference is shown as is, anything else is masked.
+     */
+    private function updateSecret(string $label, mixed $current, string $suggestedEnvName): string
     {
-        $this->line(sprintf('  %s: <comment>••••••••</comment> (press Enter to keep)', $label));
-        $asked = $this->secret($label.' (press Enter to keep)');
-        if (! is_string($asked) || $asked === '') {
-            return is_string($current) ? $current : '';
-        }
+        $current = is_string($current) ? $current : '';
+        $shown = match (true) {
+            $current === '' => 'not set',
+            str_starts_with($current, Secret::ENV_PREFIX) => $current,
+            default => '••••••••',
+        };
 
-        return 'encrypted:'.Crypt::encryptString($asked);
+        $this->line(sprintf('  Current %s: <comment>%s</comment>', $label, $shown));
+        $skipChoice = $current === '' ? 'Leave it empty' : 'Keep the current '.$label;
+
+        return $this->promptForSecret($label, $suggestedEnvName, $skipChoice) ?? $current;
     }
 
     /**
@@ -308,11 +328,11 @@ class UpdateCommand extends Command
 
             $oldStr = is_array($oldVal) ? (json_encode($oldVal) ?: '') : (is_scalar($oldVal) ? (string) $oldVal : '');
             $newStr = is_array($newVal) ? (json_encode($newVal) ?: '') : (is_scalar($newVal) ? (string) $newVal : '');
-            if (str_starts_with($oldStr, 'encrypted:')) {
+            if (Secret::isEncrypted($oldStr)) {
                 $oldStr = '••••••••';
             }
 
-            if (str_starts_with($newStr, 'encrypted:')) {
+            if (Secret::isEncrypted($newStr)) {
                 $newStr = '••••••••';
             }
 

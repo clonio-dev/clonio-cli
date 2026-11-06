@@ -297,7 +297,20 @@ it('fails with exit code 2 when APP_KEY is missing and password is encrypted', f
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('connection:test', ['name' => 'staging'])
-        ->expectsOutputToContain('FAILED')
+        ->expectsOutputToContain('staging: FAILED — Could not decrypt password — check APP_KEY.')
+        ->assertExitCode(ExitCode::ConfigError->value);
+});
+
+it('fails with exit code 2 when the referenced password variable is not set', function (): void {
+    putenv('CLONIO_UNSET_TEST_PASSWORD');
+    $connection = makeMysqlConnection('staging', 'env:CLONIO_UNSET_TEST_PASSWORD');
+
+    $config = Mockery::mock(ConfigService::class);
+    $config->shouldReceive('getConnection')->with('staging')->andReturn($connection);
+    $this->app->instance(ConfigService::class, $config);
+
+    $this->artisan('connection:test', ['name' => 'staging'])
+        ->expectsOutputToContain('Could not read password — environment variable CLONIO_UNSET_TEST_PASSWORD is not set.')
         ->assertExitCode(ExitCode::ConfigError->value);
 });
 

@@ -17,9 +17,9 @@ In non-interactive mode (`--no-interaction`), the choice prompt is unavailable: 
 1. **Select connection** — If `name` is not provided and multiple connections exist, a choice prompt lists all connection names. If only one connection exists it is selected automatically.
 2. **Edit fields** — All fields are presented with their current values pre-filled as defaults. Press `Enter` to keep a value unchanged.
 3. **Driver change** — If the database driver is changed to a type with a different set of required fields (e.g. switching from MySQL to SQLite), fields that no longer apply are dropped and new required fields are prompted without defaults.
-4. **Password** — The existing password is never decrypted or shown. A blank response keeps the current encrypted value. Entering a new password encrypts it before saving.
+4. **Password** — The existing password is never decrypted or shown. Clonio asks how to get the password: **Keep the current password** (default), **Read it from an environment variable (recommended)** — stores `env:CLONIO_<NAME>_PASSWORD` or another name you enter — or **Enter it now and store it encrypted in clonio.json**.
 5. **Transport security** — Pre-selected with the stored mode (`Driver default` if none is stored). Certificate path prompts show the stored value: press Enter to keep it, type `none` to remove it, or enter a new path. Switching to `require` drops the CA; switching to `disable` or `Driver default` drops all certificate paths. A legacy SQL Server `trust_server_certificate: true` is pre-selected as `require` and replaced by `ssl: { mode: require }` on save.
-6. **Review changes** — A diff table shows only the fields that changed, with `Old` and `New` columns. If the password changed it is shown as `••••••••` in both columns.
+6. **Review changes** — A diff table shows only the fields that changed, with `Old` and `New` columns. If the password changed it is shown as `••••••••` / `(changed)`.
 7. **Confirm save** — A confirmation prompt (`Save changes? [Y/n]`) defaults to yes. Answering no cancels without writing any changes.
 
 ## Exit codes
@@ -37,6 +37,6 @@ In non-interactive mode (`--no-interaction`), the choice prompt is unavailable: 
 
 **Driver change** — Changing the driver type resets network fields (host, port) and optional fields (schema) that are not applicable to the new driver. The user is prompted for all required fields of the new driver without pre-filled defaults.
 
-**Password handling** — Passwords are stored encrypted. The update command never exposes the stored ciphertext. Leaving the password prompt blank preserves the existing encrypted value unchanged.
+**Password handling** — Passwords are stored as `env:NAME` references or encrypted with `APP_KEY`. The update command never exposes the stored value. Keeping the current password leaves it unchanged. See [`connection:add`](connection-add.md#passwords-environment-references-default-or-encrypted) and [Security and deployment](../security.md).
 
 **Transport security changes** — The diff shows ssl.mode, ssl.ca, ssl.cert and ssl.key changes before saving.
