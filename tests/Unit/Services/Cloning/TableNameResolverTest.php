@@ -220,3 +220,13 @@ it('lists the patterns that match no table', function (): void {
 
     expect($resolver->unmatchedPatterns($written, $resolver->resolveConfig($written)))->toBe(['/^ghosts_/', '/^users$/']);
 });
+
+it('keeps the type column and value of a polymorphic foreign key', function (): void {
+    $config = tnrRemapConfig([tnrTable('users'), tnrTable('addresses')], [
+        tnrRemap('users', [new KeyRemappingForeignKeyData('ADDRESSES', 'addressable_id', typeColumn: 'addressable_type', typeValue: 'user')]),
+    ]);
+
+    expect(tnrResolver('users', 'addresses')->resolveConfig($config)->keyRemapping?->getTable('users')->foreignKeys)->toEqual([
+        new KeyRemappingForeignKeyData('addresses', 'addressable_id', typeColumn: 'addressable_type', typeValue: 'user'),
+    ]);
+});

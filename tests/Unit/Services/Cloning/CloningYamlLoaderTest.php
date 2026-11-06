@@ -1220,3 +1220,43 @@ YAML;
         ->and($fks[1]->column)->toBe('parent_id')
         ->and($fks[1]->selfReferential)->toBeTrue();
 });
+
+// Issue #161: polymorphic foreign keys.
+
+it('reads type_column and type_value of polymorphic foreign keys in both forms', function (): void {
+    $inlineYaml = <<<'YAML'
+tables:
+  users:
+    columns:
+      id:
+        strategy: remapping
+        arguments:
+          - use: new_uuid
+          - foreign_keys:
+              - {table: addresses, column: addressable_id, type_column: addressable_type, type_value: App\Models\User}
+              - {table: orders, column: user_id}
+YAML;
+    $legacyYaml = <<<'YAML'
+tables: {}
+key_remapping:
+  tables:
+    - table: companies
+      primary_key: id
+      strategy: new_uuid
+      foreign_keys:
+        - {table: addresses, column: addressable_id, type_column: addressable_type, type_value: 7}
+        - {table: notes, column: notable_id, type_column: '', type_value: [x]}
+YAML;
+
+    $inline = g6_loadCloningYaml($inlineYaml)->tables[0]->columns[0]->remappingForeignKeys ?? [];
+    $legacy = g6_loadCloningYaml($legacyYaml)->keyRemapping?->getTable('companies')->foreignKeys ?? [];
+
+    expect($inline[0]->typeColumn)->toBe('addressable_type')
+        ->and($inline[0]->typeValue)->toBe('App\Models\User')
+        ->and($inline[1]->typeColumn)->toBeNull()
+        ->and($inline[1]->typeValue)->toBeNull()
+        ->and($legacy[0]->typeColumn)->toBe('addressable_type')
+        ->and($legacy[0]->typeValue)->toBe('7')
+        ->and($legacy[1]->typeColumn)->toBeNull()
+        ->and($legacy[1]->typeValue)->toBeNull();
+});

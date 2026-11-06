@@ -256,6 +256,10 @@ class KeyRemappingService
                     continue;
                 }
 
+                if (! $fk->appliesTo($row)) {
+                    continue;
+                }
+
                 $rawFk = $row[$fk->column];
                 $fkValue = is_scalar($rawFk) ? (string) $rawFk : '';
                 $row[$fk->column] = $this->store->lookup($remappedTable->table, $fkValue) ?? $row[$fk->column];

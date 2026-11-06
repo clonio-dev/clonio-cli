@@ -1202,3 +1202,57 @@ it('rejects patterns as key_remapping tables', function (): void {
         "key_remapping.tables[1].foreign_keys[0]: table '/^logs_/' must be a table name, not a pattern",
     ]);
 });
+
+// Issue #161: polymorphic foreign keys name the type column and the type value.
+
+it('accepts polymorphic foreign keys in both forms', function (): void {
+    $fks = [
+        ['table' => 'addresses', 'column' => 'addressable_id', 'type_column' => 'addressable_type', 'type_value' => 'App\Models\User'],
+        ['table' => 'comments', 'column' => 'commentable_id', 'type_column' => 'commentable_type', 'type_value' => 3],
+    ];
+
+    expect(g6_validateKeyRemapping(['tables' => [['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid', 'foreign_keys' => $fks]]]))->toBe([])
+        ->and(g6_validateColumns(['id' => ['strategy' => 'remapping', 'arguments' => [['use' => 'new_uuid'], ['foreign_keys' => $fks]]]]))->toBe([]);
+});
+
+it('flags polymorphic foreign key settings that do not fit', function (array $fk, string $error): void {
+    expect(g6_validateKeyRemapping(['tables' => [['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid', 'foreign_keys' => [$fk]]]]))
+        ->toBe(['key_remapping.tables[0].foreign_keys[0]: '.$error]);
+})->with([
+    'type_column alone' => [['table' => 'a', 'column' => 'b_id', 'type_column' => 'b_type'], "'type_column' and 'type_value' must be set together"],
+    'type_value alone' => [['table' => 'a', 'column' => 'b_id', 'type_value' => 'User'], "'type_column' and 'type_value' must be set together"],
+    'empty type_column' => [['table' => 'a', 'column' => 'b_id', 'type_column' => '', 'type_value' => 'User'], "'type_column' must be a column name"],
+    'list type_column' => [['table' => 'a', 'column' => 'b_id', 'type_column' => ['x'], 'type_value' => 'User'], "'type_column' must be a column name"],
+    'empty type_value' => [['table' => 'a', 'column' => 'b_id', 'type_column' => 'b_type', 'type_value' => ''], "'type_value' must be a string or number"],
+    'bool type_value' => [['table' => 'a', 'column' => 'b_id', 'type_column' => 'b_type', 'type_value' => true], "'type_value' must be a string or number"],
+    'null type_value' => [['table' => 'a', 'column' => 'b_id', 'type_column' => 'b_type', 'type_value' => null], "'type_value' must be a string or number"],
+]);
+
+it('flags both bad polymorphic settings on one foreign key', function (): void {
+    expect(g6_validateKeyRemapping(['tables' => [['table' => 'users', 'primary_key' => 'id', 'strategy' => 'new_uuid', 'foreign_keys' => [
+        ['table' => 'a', 'column' => 'b_id', 'type_column' => '', 'type_value' => ''],
+    ]]]]))->toBe([
+        "key_remapping.tables[0].foreign_keys[0]: 'type_column' must be a column name",
+        "key_remapping.tables[0].foreign_keys[0]: 'type_value' must be a string or number",
+    ]);
+});
+
+it('validates the foreign keys of an inline remapping column', function (): void {
+    $errors = g6_validateColumns(['id' => ['strategy' => 'remapping', 'arguments' => [['use' => 'new_uuid'], ['foreign_keys' => [
+        'nope',
+        ['column' => 'user_id'],
+        ['table' => 'orders', 'column' => 'user_id', 'type_column' => 'user_type'],
+    ]]]]]);
+
+    expect($errors)->toHaveCount(3)
+        ->and($errors[0])->toEndWith('.foreign_keys[0]: must be an object')
+        ->and($errors[1])->toEndWith(".foreign_keys[1]: 'table' is required")
+        ->and($errors[2])->toEndWith(".foreign_keys[2]: 'type_column' and 'type_value' must be set together");
+});
+
+it('flags inline remapping foreign keys that are not a list', function (): void {
+    $errors = g6_validateColumns(['id' => ['strategy' => 'remapping', 'arguments' => [['use' => 'new_uuid'], ['foreign_keys' => 'nope']]]]);
+
+    expect($errors)->toHaveCount(1)
+        ->and($errors[0])->toEndWith(": 'foreign_keys' must be a list");
+});

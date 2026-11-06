@@ -138,6 +138,8 @@ Each entry in `foreign_keys`:
 | `table` | string | yes | Table that holds the FK column. |
 | `column` | string | yes | Column name of the FK. |
 | `self_referential` | bool | no | `true` when the FK table is the same as the remapped table (e.g. `employees.manager_id → employees.id`). Defaults to `false`. |
+| `type_column` | string | with `type_value` | Polymorphic relations: the column holding the related type (e.g. `addressable_type`). The FK is rewritten only in rows whose `type_column` equals `type_value`. |
+| `type_value` | string | with `type_column` | The type value that selects this remapped table (model class or morph alias). Numbers are compared as strings. |
 
 ### 3.3 Legacy: top-level `key_remapping` section (still supported)
 
@@ -172,6 +174,8 @@ key_remapping:
 - A table listed in `key_remapping.tables` must also appear in `tables`.
 - A FK entry referencing a table that is not in `tables` is a warning, not a hard error (the FK update will be skipped for unlisted tables).
 - If the `key_remapping` section is present but `tables` is absent or empty, it is treated as if the section were absent — no remapping runs and no error is raised.
+- `type_column` and `type_value` must be set together; `type_column` is a non-empty string, `type_value` a non-empty string or number.
+- Before the run (preflight, exit code `4`): an FK column (`table.column`) listed under more than one remapped table needs `type_column` on every entry and a distinct `type_value` per entry; `type_column` must exist in the source table.
 
 ---
 
