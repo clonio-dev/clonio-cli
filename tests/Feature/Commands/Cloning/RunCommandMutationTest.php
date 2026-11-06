@@ -352,6 +352,75 @@ it('keeps a table named 0', function (string $option, int $index): void {
     'only' => ['--only-tables', 6],
 ]);
 
+// Issue #241: table names resolve like the database resolves them.
+it('resolves flag names that differ only in case to the source table', function (string $option, int $index): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml());
+    $args = null;
+    g1_bind(
+        inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users'), g1_table('Orders')]),
+        run: function (array $a) use (&$args) {
+            $args = $a;
+
+            return g1_result();
+        },
+    );
+
+    [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, $option => 'USERS,orders,ghosts']);
+
+    expect($code)->toBe(0)->and($args[$index])->toBe(['users', 'Orders', 'ghosts']);
+})->with([
+    'skip' => ['--skip-tables', 5],
+    'only' => ['--only-tables', 6],
+]);
+
+it('resolves tables keys and skip entries that differ only in case to the source table', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  Users:\n    rows:\n      strategy: full\n")."skip:\n  - AUDIT_LOGS\n");
+    $args = null;
+    g1_bind(
+        inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users'), g1_table('audit_logs')]),
+        run: function (array $a) use (&$args) {
+            $args = $a;
+
+            return g1_result();
+        },
+    );
+
+    [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true]);
+
+    expect($code)->toBe(0)
+        ->and($args[0]->tables[0]->tableName)->toBe('users')
+        ->and($args[0]->skipTables)->toBe(['audit_logs'])
+        ->and($args[5])->toBe(['audit_logs']);
+});
+
+it('rejects a table name that matches several source tables case-insensitively', function (array $params, string $yaml): void {
+    Storage::disk('local')->put('t.yaml', $yaml);
+    g1_bind(
+        inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users'), g1_table('Users'), g1_table('orders')]),
+        run: fn (array $a): never => throw new RuntimeException('must not run'),
+    );
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, ...$params]);
+
+    expect($code)->toBe(4)
+        ->and($out)->toContain('Table name "USERS" is ambiguous: it matches users, Users. Use the exact name.');
+})->with([
+    '--skip-tables' => [['--skip-tables' => 'USERS'], g1_yaml("  orders:\n    rows:\n      strategy: full\n")],
+    '--only-tables' => [['--only-tables' => 'USERS'], g1_yaml("  orders:\n    rows:\n      strategy: full\n")],
+    'tables key' => [[], g1_yaml("  USERS:\n    rows:\n      strategy: full\n")],
+    'dry-run tables key' => [['--dry-run' => true], g1_yaml("  USERS:\n    rows:\n      strategy: full\n")],
+]);
+
+it('counts a dry-run table whose key differs only in case from the source table', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  Users:\n    rows:\n      strategy: full\n"));
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users')]));
+    g1_db(['SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => 12]]], 3);
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '12', 'full', '—'));
+});
+
 // ─── Option overrides ─────────────────────────────────────────────────────────
 
 it('applies a single CLI override on top of the YAML options', function (string $flag, bool $yamlValue, string $field): void {

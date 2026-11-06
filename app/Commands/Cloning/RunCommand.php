@@ -41,6 +41,7 @@ use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingService;
 use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\TableNameResolver;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\CloningProgressDisplay;
@@ -227,9 +228,9 @@ class RunCommand extends Command
             );
         }
 
-        // Merge YAML-level skipTables with CLI --skip-tables (additive, deduplicated)
-        // Done here so both the dry-run and full-run paths see the merged list.
-        $skipTables = array_values(array_unique(array_merge($skipTables, $config->skipTables)));
+        // Merge YAML-level skip entries with CLI --skip-tables (additive). The list
+        // is deduplicated once the names are resolved against the source schema.
+        $skipTables = array_merge($skipTables, $config->skipTables);
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
@@ -358,6 +359,20 @@ class RunCommand extends Command
             $this->error(sprintf('Failed to inspect source schema: %s', $throwable->getMessage()));
 
             return ExitCode::ConnectionError->value;
+        }
+
+        // Table names in the YAML and the flags resolve to source tables like
+        // the database does: exact match first, then a unique case-insensitive one.
+        $tableNameResolver = new TableNameResolver($sourceSchema);
+
+        try {
+            $config = $tableNameResolver->resolveConfig($config);
+            $skipTables = $tableNameResolver->resolveAll($skipTables);
+            $onlyTables = $tableNameResolver->resolveAll($onlyTables);
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            $this->error($invalidArgumentException->getMessage());
+
+            return ExitCode::ValidationError->value;
         }
 
         // ─── Phase 5b: Key Mapping Generation ─────────────────────────────────
@@ -814,6 +829,14 @@ class RunCommand extends Command
             return ExitCode::ConnectionError->value;
         }
 
+        try {
+            $config = new TableNameResolver($schema)->resolveConfig($config);
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            $this->error($invalidArgumentException->getMessage());
+
+            return ExitCode::ValidationError->value;
+        }
+
         $schemaDiff = null;
 
         try {
@@ -1176,7 +1199,7 @@ class RunCommand extends Command
             return [];
         }
 
-        $names = array_values(array_filter(
+        $names = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
             array_map(trim(...), explode(',', (string) $value)),
             static fn (string $name): bool => $name !== '',
         ));
