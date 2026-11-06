@@ -322,25 +322,53 @@ The run executes fully. Regardless of outcome, the process exits with `0`. Error
 
 ### 10.1 Run options DTO
 
+`RunOptionsData::fromOptions()` parses the `cloning:run` flags once, at the start of `handle()`, before any file is read. It throws `InvalidArgumentException` (→ `ValidationError (4)`) when `--skip-tables` and `--only-tables` are combined, when a flag is combined with its `--no-` form, or when a table name list is empty or holds a pattern. `applyTo()` returns the cloning config with the override flags applied on top of `options:`.
+
 ```php
 // app/Data/Cloning/RunOptionsData.php
 final readonly class RunOptionsData
 {
-    /**
-     * @param list<string> $skipTables
-     * @param list<string> $onlyTables
-     */
     public function __construct(
         public string $yamlPath,
-        public string $targetConnectionName,
-        public bool $allowFailure,
-        public bool $dryRun,
-        public bool $skipSchema,
-        public array $skipTables,
-        public array $onlyTables,
+        public ?string $targetConnectionName = null,
+        public bool $allowFailure = false,
+        public bool $dryRun = false,
+        public bool $ci = false,
+        public bool $skipSchema = false,
+        public bool $breakOnFailure = false,
+        public bool $noMemoryLimit = false,
+        public bool $fileBased = false,
+        public array $skipTables = [],     // list<string>
+        public array $onlyTables = [],     // list<string>
+        public array $auditChannels = [],  // list<string>
+        // null = flag not passed, the cloning.yaml value applies
+        public ?bool $enforceColumnTypes = null,
+        public ?bool $dropUnknownTables = null,
+        public ?bool $dropExtraColumns = null,
+        public ?bool $recreateTables = null,
+        public ?bool $disableForeignKeyChecks = null,
+        public ?bool $remapKeys = null,
+        public ?string $remapKeysDisabledBy = null, // e.g. "--no-remap-keys"
     ) {}
+
+    public static function fromOptions(string $yamlPath, array $options): self;
+
+    public function applyTo(CloningConfigData $config): CloningConfigData;
 }
 ```
+
+### 10.1a Run observer
+
+`CloningRunOrchestrator::run()` reports progress to a `App\Contracts\CloningRunObserver`: `started(int $tableCount)`, `tableStarted()`, `tableProgress()` (live `StatsTableTransferData`), `tableFinished()` (status, rows, skipped rows) and `finished()`. The orchestrator calls `finished()` when the run ends, also on an exception. `RunCommand` picks one observer per output mode:
+
+| Mode | Observer |
+|------|----------|
+| `--ci` | `NullCloningRunObserver` |
+| default | `DotRunObserver` (`.` `F` `E` `?` `S`, wraps at 70) |
+| `-v` without live bars | `StepRunObserver` |
+| `-v` on a terminal with sections | `ProgressRunObserver` |
+
+`DryRunRenderer` prints the `--dry-run` report and `RunSummaryRenderer` the end-of-run summary.
 
 ### 10.2 Run result DTO
 

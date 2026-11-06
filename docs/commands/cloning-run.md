@@ -43,7 +43,7 @@ clonio cloning:run <file> [options]
 | `--no-disable-fk-checks` | Override: set `disable_foreign_key_checks: false` for this run |
 | `--break-on-failure` | Abort the run immediately on the first table failure (schema or data) |
 
-`--skip-tables` and `--only-tables` are mutually exclusive. Verbosity flags `-v` / `-vv` / `-vvv` are also supported (see [Output Modes](#output-modes)).
+`--skip-tables` and `--only-tables` are mutually exclusive, and so are a flag and its `--no-` form (e.g. `--recreate-tables --no-recreate-tables`): both are a `ValidationError (4)`. Verbosity flags `-v` / `-vv` / `-vvv` are also supported (see [Output Modes](#output-modes)).
 
 ### `--break-on-failure`
 
@@ -362,7 +362,7 @@ options:
 
 Both bypass all key mapping generation and PK/FK rewriting even when the YAML has `strategy: remapping` columns defined, so primary and foreign key values are copied from the source unchanged. Outside `--ci`, the run prints a notice when this happens. `--skip-remapping-keys` is kept as an alias of `--no-remap-keys`.
 
-When the YAML sets `remap_keys: false`, `--remap-keys` re-enables remapping for a single run. If both `--remap-keys` and `--no-remap-keys` are passed, `--no-remap-keys` wins.
+When the YAML sets `remap_keys: false`, `--remap-keys` re-enables remapping for a single run. Passing `--remap-keys` together with `--no-remap-keys` (or `--skip-remapping-keys`) is a `ValidationError (4)`.
 
 ### Memory management for large databases
 
