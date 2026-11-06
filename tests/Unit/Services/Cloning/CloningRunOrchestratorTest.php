@@ -21,6 +21,7 @@ use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\DependencyResolver;
 use App\Services\Cloning\SchemaReplicator;
 use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\SourceRowEstimator;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
 use Illuminate\Support\Facades\DB;
@@ -1230,9 +1231,7 @@ it('caps the row total at the row strategy limit', function (int $estimate, ?int
         columns: [],
     );
 
-    // Called directly: a whole transfer would also run the 'first' chunk query.
-    $estimate = (fn (): array => $this->estimateSourceRows('source_conn', $table, makeOrchestratorConnection('source')))
-        ->call(makeOrchestrator());
+    $estimate = (new SourceRowEstimator)->estimate('source_conn', $table, DatabaseConnectionType::Mysql);
 
     expect($estimate)->toBe([$expected, true]);
 })->with([
@@ -1368,8 +1367,7 @@ it('bounds the SQLite count by the row limit of a first or last table', function
         columns: [],
     );
 
-    $estimate = (fn (): array => $this->estimateSourceRows('source_conn', $table, makeOrchestratorConnection('source', DatabaseConnectionType::Sqlite)))
-        ->call(makeOrchestrator());
+    $estimate = (new SourceRowEstimator)->estimate('source_conn', $table, DatabaseConnectionType::Sqlite);
 
     expect($estimate)->toBe([100, false]);
 })->with(['first', 'last']);
@@ -1437,8 +1435,7 @@ it('counts a SQLite table in full when its strategy copies every row', function 
         columns: [],
     );
 
-    $estimate = (fn (): array => $this->estimateSourceRows('source_conn', $table, makeOrchestratorConnection('source', DatabaseConnectionType::Sqlite)))
-        ->call(makeOrchestrator());
+    $estimate = (new SourceRowEstimator)->estimate('source_conn', $table, DatabaseConnectionType::Sqlite);
 
     expect($estimate)->toBe([500, false]);
 });

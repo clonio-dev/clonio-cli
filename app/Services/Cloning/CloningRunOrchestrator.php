@@ -38,6 +38,7 @@ class CloningRunOrchestrator
         private readonly SchemaReplicator $replicator,
         private readonly DependencyResolver $resolver,
         private readonly SchemaInspector $inspector,
+        private readonly SourceRowEstimator $estimator = new SourceRowEstimator,
     ) {}
 
     /**
@@ -424,8 +425,9 @@ class CloningRunOrchestrator
                 $reportProgress();
 
                 $t0 = microtime(true);
-                [$expectedRows, $isEstimate] = $this->estimateSourceRows($sourceConn, $tableConfig, $source);
-                $stats->setTotalRows($expectedRows, $isEstimate);
+                [$expectedRows, $isEstimate] = $this->estimator->estimate($sourceConn, $tableConfig, $source->type);
+                // Unknown stays 0 and is not marked as an estimate.
+                $stats->setTotalRows($expectedRows ?? 0, $expectedRows !== null && $isEstimate); // @pest-mutate-ignore: DecrementInteger
                 $stats->recordEstimatingRows(microtime(true) - $t0);
             }
 
@@ -673,65 +675,6 @@ class CloningRunOrchestrator
         }
 
         return $snapshot === [] ? null : $snapshot;
-    }
-
-    /**
-     * Best-effort expected row total of the source table, respecting the row
-     * strategy limit. Server databases answer from catalog statistics, so a
-     * large production table is never scanned; the figure is then an estimate
-     * that can be off in either direction. SQLite keeps no such statistics and
-     * counts. Returns 0 (unknown) on failure so progress stays optional.
-     *
-     * @return array{int, bool} [rows, isEstimate]
-     */
-    private function estimateSourceRows(string $sourceConn, TableCloningConfigData $config, ConnectionData $source): array
-    {
-        [$sql, $bindings, $isEstimate] = match ($source->type) {
-            DatabaseConnectionType::Mysql, DatabaseConnectionType::MariaDB => [
-                'SELECT TABLE_ROWS AS c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
-                [$config->tableName],
-                true,
-            ],
-            DatabaseConnectionType::PostgreSQL => [
-                'SELECT c.reltuples::bigint AS c FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname = ?',
-                [$config->tableName],
-                true,
-            ],
-            DatabaseConnectionType::SqlServer => [
-                'SELECT SUM(p.rows) AS c FROM sys.partitions p WHERE p.object_id = OBJECT_ID(?) AND p.index_id IN (0, 1)',
-                [$config->tableName],
-                true,
-            ],
-            // Bounded by the row limit, so a 'first' / 'last' table is not counted in full.
-            default => [
-                $config->rows->strategy !== 'full' && $config->rows->limit !== null
-                    ? sprintf('SELECT COUNT(*) AS c FROM (SELECT 1 FROM %s LIMIT %d)', $this->quoteTable($config->tableName, $source->type), $config->rows->limit)
-                    : sprintf('SELECT COUNT(*) AS c FROM %s', $this->quoteTable($config->tableName, $source->type)),
-                [],
-                false,
-            ],
-        };
-
-        try {
-            $result = DB::connection($sourceConn)->selectOne($sql, $bindings);
-        } catch (Throwable $throwable) {
-            Log::warning('source_row_estimate_failed', ['table' => $config->tableName, 'error' => $throwable->getMessage()]);
-            $result = null;
-            $isEstimate = false;
-        }
-
-        $row = is_object($result) ? get_object_vars($result) : $result;
-        $value = is_array($row) ? ($row['c'] ?? null) : null;
-        // Unreadable means unknown (0). PostgreSQL reports -1 for a table that was
-        // never analyzed; setTotalRows() clamps that to 0 as well.
-        $count = is_numeric($value) ? (int) $value : 0; // @pest-mutate-ignore: DecrementInteger
-
-        // Mirrors buildChunkQuery(): only 'first' / 'last' honour the row limit.
-        if ($config->rows->strategy !== 'full' && $config->rows->limit !== null) {
-            $count = min($config->rows->limit, $count);
-        }
-
-        return [$count, $isEstimate];
     }
 
     /**
