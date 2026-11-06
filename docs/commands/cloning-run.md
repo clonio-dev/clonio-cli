@@ -482,7 +482,7 @@ Prints the run summary. Tables not found in the source are always listed, regard
 
 ### `--skip-tables` and `--only-tables`
 
-Both flags accept a comma-separated list of exact table names. Glob patterns and regex are not supported. Spaces around commas are trimmed.
+Both flags accept a comma-separated list of table names. Glob patterns and regex are not supported. Spaces around commas are trimmed. Names resolve like [`tables:` keys](../cloning-yaml.md#table-names): an exact match wins, then a unique match that differs only in case, so `--skip-tables=Users` skips the source table `users`.
 
 ```bash
 # Skip two tables
@@ -636,7 +636,7 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `1` | Run failed — one or more tables had unrecoverable transfer errors |
 | `2` | Config error — `clonio.json` missing, or `APP_KEY` not set |
 | `3` | Connection error — source or target unreachable |
-| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, or CI without `--target` |
+| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |
 
 ## Audit & Process Logs

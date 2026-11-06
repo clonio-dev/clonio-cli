@@ -87,7 +87,7 @@ The schema-control options together determine how closely the target schema is k
 
 ## Tables
 
-Each key under `tables` is the exact table name in the source database.
+Each key under `tables` is a table name in the source database.
 
 ```yaml
 tables:
@@ -107,6 +107,17 @@ tables:
       limit: 100
       sort_by: created_at
 ```
+
+### Table names
+
+Table names under `tables`, in `skip:` and in the `--skip-tables` / `--only-tables` flags resolve to source tables like this:
+
+1. A name that matches a source table exactly means that table.
+2. Otherwise, a name that matches exactly one source table when case is ignored means that table. `Users` resolves to `users`.
+3. A name that matches several source tables when case is ignored (the source has both `users` and `Users`) stops the run with exit code `4`. Use the exact name.
+4. A name that matches no source table is kept as written. A `tables` entry is then reported as `not_found`.
+
+Two `tables` keys that resolve to the same table (`users` and `Users` with only `users` in the source) also stop the run with exit code `4`.
 
 ### `rows`
 
