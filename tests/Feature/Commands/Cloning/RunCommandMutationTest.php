@@ -437,6 +437,38 @@ it('resolves tables keys and skip entries that differ only in case to the source
         ->and($args[5])->toBe(['audit_logs']);
 });
 
+// Issue #246: key_remapping references resolve like tables: keys.
+it('resolves key_remapping tables that differ only in case to the source table', function (string $yaml): void {
+    Storage::disk('local')->put('t.yaml', $yaml);
+    $captured = null;
+    g1_bind_remap(captured: $captured);
+    $args = null;
+    g1_bind(run: function (array $a) use (&$args) {
+        $args = $a;
+
+        return g1_result();
+    });
+
+    [$code] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true]);
+
+    expect($code)->toBe(0)
+        ->and($captured[0]->getTable('users'))->not->toBeNull()
+        ->and($args[0]->keyRemapping->getTable('users'))->not->toBeNull();
+})->with([
+    'inline remapping column' => [g1_yaml("  Users:\n    rows:\n      strategy: full\n    columns:\n      id:\n        strategy: remapping\n        arguments:\n          - use: random_integer\n          - foreign_keys: []\n")],
+    'key_remapping section' => [g1_yaml("  users:\n    rows:\n      strategy: full\n")."key_remapping:\n  tables:\n    - table: Users\n      primary_key: id\n      strategy: new_uuid\n"],
+]);
+
+it('rejects key_remapping entries that differ only in case', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n")
+        ."key_remapping:\n  tables:\n    - table: users\n      primary_key: id\n      strategy: new_uuid\n    - table: Users\n      primary_key: id\n      strategy: random_integer\n");
+    g1_bind(run: fn (array $a): never => throw new RuntimeException('must not run'));
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true]);
+
+    expect($code)->toBe(4)->and($out)->toContain('Two key_remapping entries refer to table "users". Keep one entry.');
+});
+
 it('rejects a table name that matches several source tables case-insensitively', function (array $params, string $yaml): void {
     Storage::disk('local')->put('t.yaml', $yaml);
     g1_bind(

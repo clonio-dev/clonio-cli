@@ -5,10 +5,13 @@ declare(strict_types=1);
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingForeignKeyData;
+use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
 use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
+use App\Enums\KeyRemappingStrategy;
 use App\Services\Cloning\TableNameResolver;
 
 // Issue #241: table names from the YAML and the flags resolve like the
@@ -60,7 +63,7 @@ it('resolves tables keys and skip entries of a config, keeping everything else',
     expect($resolved->version)->toBe('1')
         ->and($resolved->connectionName)->toBe('prod')
         ->and($resolved->options)->toBe($options)
-        ->and($resolved->keyRemapping)->toBe($remapping)
+        ->and($resolved->keyRemapping)->toEqual($remapping)
         ->and($resolved->tables)->toHaveCount(2)
         ->and($resolved->tables[0]->tableName)->toBe('users')
         ->and($resolved->tables[0]->rows)->toBe($config->tables[0]->rows)
@@ -74,3 +77,61 @@ it('rejects two tables keys that resolve to the same table', function (): void {
 
     tnrResolver('users')->resolveConfig($config);
 })->throws(InvalidArgumentException::class, 'Two tables: entries refer to table "users". Keep one entry.');
+
+// Issue #246: key_remapping references resolve like tables: keys, against the
+// resolved config, so the remapping finds its table under the resolved name.
+
+function tnrRemapConfig(array $tables, array $remaps): CloningConfigData
+{
+    return new CloningConfigData('1', 'prod', new CloningOptionsData(100, false, false, false, true, 'en_US'), $tables, $remaps === [] ? null : new KeyRemappingConfigData($remaps));
+}
+
+function tnrRemap(string $table, array $foreignKeys = []): KeyRemappingTableData
+{
+    return new KeyRemappingTableData($table, 'id', KeyRemappingStrategy::NewUuid, $foreignKeys);
+}
+
+it('resolves key_remapping tables and foreign key tables', function (): void {
+    $config = tnrRemapConfig([tnrTable('USERS'), tnrTable('orders')], [
+        tnrRemap('Users', [new KeyRemappingForeignKeyData('ORDERS', 'user_id', true), new KeyRemappingForeignKeyData('ghosts', 'user_id')]),
+    ]);
+
+    $remapping = tnrResolver('users', 'orders')->resolveConfig($config)->keyRemapping;
+
+    expect($remapping)->toEqual(new KeyRemappingConfigData([
+        new KeyRemappingTableData('users', 'id', KeyRemappingStrategy::NewUuid, [
+            new KeyRemappingForeignKeyData('orders', 'user_id', true),
+            new KeyRemappingForeignKeyData('ghosts', 'user_id'),
+        ]),
+    ]))->and($remapping?->getTable('users'))->not->toBeNull();
+});
+
+it('keeps a config without key_remapping without one', function (): void {
+    expect(tnrResolver('users')->resolveConfig(tnrRemapConfig([tnrTable('users')], []))->keyRemapping)->toBeNull();
+});
+
+it('keeps several remapping entries written the same way for one table', function (): void {
+    // Inline remapping makes one entry per remapping column of a table.
+    $config = tnrRemapConfig([tnrTable('users')], [tnrRemap('users'), tnrRemap('users')]);
+
+    expect(tnrResolver('users')->resolveConfig($config)->keyRemapping?->tables)->toHaveCount(2);
+});
+
+it('rejects two key_remapping entries that differ only in case', function (): void {
+    $config = tnrRemapConfig([tnrTable('users')], [tnrRemap('users'), tnrRemap('Users')]);
+
+    tnrResolver('users')->resolveConfig($config);
+})->throws(InvalidArgumentException::class, 'Two key_remapping entries refer to table "users". Keep one entry.');
+
+it('rejects a key_remapping entry that resolves to a table without tables: entry', function (): void {
+    // Both casings exist in the source, so "users" stays "users" while only "Users" is configured.
+    $config = tnrRemapConfig([tnrTable('Users')], [tnrRemap('users')]);
+
+    tnrResolver('Users', 'users')->resolveConfig($config);
+})->throws(InvalidArgumentException::class, 'key_remapping refers to table "users", which has no tables: entry.');
+
+it('rejects an ambiguous key_remapping foreign key table', function (): void {
+    $config = tnrRemapConfig([tnrTable('users')], [tnrRemap('users', [new KeyRemappingForeignKeyData('orders', 'user_id')])]);
+
+    tnrResolver('users', 'Orders', 'ORDERS')->resolveConfig($config);
+})->throws(InvalidArgumentException::class, 'Table name "orders" is ambiguous');

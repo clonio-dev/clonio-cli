@@ -420,6 +420,18 @@ it('returns error when table is not in the tables section', function (): void {
     expect(implode(' ', $errors))->toContain("not defined in the 'tables' section");
 });
 
+it('accepts a key_remapping table written with different casing than its tables: key', function (string $table, int|string $key): void {
+    // Issue #246: the exact table is resolved against the source schema later.
+    $config = makeValidConfig();
+    $config['tables'][$key] = ['rows' => ['strategy' => 'full']];
+    $config['key_remapping'] = ['tables' => [['table' => $table, 'primary_key' => 'id', 'strategy' => 'new_uuid']]];
+
+    expect((new CloningYamlValidator)->validate($config))->toBe([]);
+})->with([
+    'name' => ['Accounts', 'accounts'],
+    'numeric key' => ['7', 7],
+]);
+
 it('returns error for duplicate table in key_remapping', function (): void {
     $validator = new CloningYamlValidator;
     $config = makeValidConfig();

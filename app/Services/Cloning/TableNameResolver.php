@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
+use App\Data\Cloning\KeyRemappingConfigData;
+use App\Data\Cloning\KeyRemappingForeignKeyData;
+use App\Data\Cloning\KeyRemappingTableData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
@@ -62,9 +65,12 @@ final readonly class TableNameResolver
     }
 
     /**
-     * Returns the config with every `tables:` key and `skip:` entry resolved.
+     * Returns the config with every `tables:` key, `skip:` entry and
+     * `key_remapping` reference resolved.
      *
-     * @throws InvalidArgumentException when a name is ambiguous, or two `tables:` keys resolve to the same table
+     * @throws InvalidArgumentException when a name is ambiguous, two `tables:` keys or two
+     *                                  `key_remapping` entries resolve to the same table, or a
+     *                                  `key_remapping` entry names a table without a `tables:` entry
      */
     public function resolveConfig(CloningConfigData $config): CloningConfigData
     {
@@ -90,8 +96,60 @@ final readonly class TableNameResolver
             connectionName: $config->connectionName,
             options: $config->options,
             tables: $resolved,
-            keyRemapping: $config->keyRemapping,
+            keyRemapping: $this->resolveKeyRemapping($config->keyRemapping, $resolved),
             skipTables: $this->resolveAll($config->skipTables),
         );
+    }
+
+    /**
+     * @param  list<TableCloningConfigData>  $tables  the resolved `tables:` entries
+     *
+     * @throws InvalidArgumentException
+     */
+    private function resolveKeyRemapping(?KeyRemappingConfigData $keyRemapping, array $tables): ?KeyRemappingConfigData
+    {
+        if (! $keyRemapping instanceof KeyRemappingConfigData) {
+            return null;
+        }
+
+        $configured = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $tables);
+        /** @var array<string, string> $writtenAs resolved name => name as written */
+        $writtenAs = [];
+        $resolved = [];
+
+        foreach ($keyRemapping->tables as $entry) {
+            $name = $this->resolve($entry->table);
+
+            if (($writtenAs[$name] ?? $entry->table) !== $entry->table) {
+                throw new InvalidArgumentException(sprintf(
+                    'Two key_remapping entries refer to table "%s". Keep one entry.',
+                    $name,
+                ));
+            }
+
+            if (! in_array($name, $configured, true)) {
+                throw new InvalidArgumentException(sprintf(
+                    'key_remapping refers to table "%s", which has no tables: entry.',
+                    $name,
+                ));
+            }
+
+            $writtenAs[$name] = $entry->table;
+            $resolved[] = new KeyRemappingTableData(
+                table: $name,
+                primaryKey: $entry->primaryKey,
+                strategy: $entry->strategy,
+                foreignKeys: array_map(
+                    fn (KeyRemappingForeignKeyData $fk): KeyRemappingForeignKeyData => new KeyRemappingForeignKeyData(
+                        table: $this->resolve($fk->table),
+                        column: $fk->column,
+                        selfReferential: $fk->selfReferential,
+                    ),
+                    $entry->foreignKeys,
+                ),
+            );
+        }
+
+        return new KeyRemappingConfigData(tables: $resolved);
     }
 }
