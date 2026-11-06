@@ -111,3 +111,4 @@ In tests, isolate filesystem operations with `Storage::fake('local')` (no temp d
 - Use markdown for documentation and specs
 - Specifications can be found in the `specs/` directory
 - Documentation is in the `docs/` directory
+- **The current code is the source of truth.** Docs and specs only add to it. A new spec starts from the code as it is and describes the target state. Older specs may be outdated: when a spec and the code disagree, trust the code.
