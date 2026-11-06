@@ -4,6 +4,10 @@ All notable changes to `clonio-cli` will be documented in this file.
 
 ## v1.7.0 - 2026-11-06
 
+### Behaviour change
+
+`cloning:run` now stops with exit code 4 (validation error) before copying any rows when key remapping would rewrite a foreign key column twice or wrongly: a column listed under more than one remapped table without `type_column`, the same `type_value` used twice for one column, or a `type_column` that does not exist in the table. Before, such configs ran and silently rewrote values against the wrong key map. The inline `foreign_keys` of `remapping` columns are now validated like the `key_remapping:` section. To fix a polymorphic relation (e.g. `addressable_type` + `addressable_id`), add `type_column` and `type_value` to each foreign key entry.
+
 ### What's Changed
 
 * docs(changelog): note flag negation behaviour change in v1.6.0 by @rokde in https://github.com/clonio-dev/clonio-cli/pull/267
