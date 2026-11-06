@@ -762,3 +762,24 @@ it('lists the remapped primary key even when every other column is kept', functi
     expect($yaml)->toContain("    columns:\n      # Primary Key — remapped\n      id:\n        strategy: remapping\n        arguments:\n          - use: random_integer\n          - foreign_keys: []\n\n")
         ->not->toContain('no PII detected');
 });
+
+it('writes type_column and type_value for a polymorphic foreign key', function (): void {
+    $table = new TableDumpData(name: 'users', columns: [], rowStrategy: 'full', rowLimit: null, sortBy: null);
+    $result = new DumpResultData(
+        connectionName: 'prod',
+        tables: [$table],
+        totalColumns: 0,
+        piiColumnsDetected: 0,
+        outputPath: 'prod.cloning.yaml',
+        keyRemapping: new KeyRemappingConfigData(tables: [
+            new KeyRemappingTableData('users', 'id', KeyRemappingStrategy::NewUuid, [
+                new KeyRemappingForeignKeyData('addresses', 'addressable_id', typeColumn: 'addressable_type', typeValue: 'App\Models\User'),
+                new KeyRemappingForeignKeyData('notes', 'notable_id', typeColumn: 'notable_type', typeValue: '1'),
+            ]),
+        ]),
+    );
+
+    expect((new CloningYamlWriter)->write($result))->toContain(
+        '- foreign_keys: [{table: addresses, column: addressable_id, self_referential: false, type_column: addressable_type, type_value: "App\\\\Models\\\\User"}, {table: notes, column: notable_id, self_referential: false, type_column: notable_type, type_value: "1"}]'
+    );
+});

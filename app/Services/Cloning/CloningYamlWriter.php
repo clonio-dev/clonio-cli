@@ -81,10 +81,13 @@ class CloningYamlWriter
                     if ($krTable->foreignKeys !== []) {
                         $fkYaml = array_map(
                             fn (KeyRemappingForeignKeyData $fk): string => sprintf(
-                                '{table: %s, column: %s, self_referential: %s}',
+                                '{table: %s, column: %s, self_referential: %s%s}',
                                 $this->encodeYamlScalar($fk->table),
                                 $this->encodeYamlScalar($fk->column),
-                                $fk->selfReferential ? 'true' : 'false'
+                                $fk->selfReferential ? 'true' : 'false',
+                                $fk->isPolymorphic()
+                                    ? sprintf(', type_column: %s, type_value: %s', $this->encodeYamlScalar($fk->typeColumn), $this->encodeYamlScalar($fk->typeValue))
+                                    : '',
                             ),
                             $krTable->foreignKeys
                         );
@@ -251,9 +254,9 @@ class CloningYamlWriter
             return true;
         }
 
-        // Looks like a number
+        // Looks like a number. The parse round-trip below catches these too.
         if (is_numeric($value)) {
-            return true;
+            return true; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         // Leading indicator characters (sequence, mapping, directive, reserved)

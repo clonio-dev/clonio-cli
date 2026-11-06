@@ -439,8 +439,6 @@ id:
 | Key | Required | Values | Description |
 |-----|:--------:|--------|-------------|
 | `use` | yes | `random_integer` \| `new_uuid` | Strategy for generating new PK values. `random_integer` needs an integer column; use `new_uuid` for UUID or text keys. `cloning:run` rejects a mismatch with exit code `4`. |
-| `min` | `random_integer` only | integer ≥ 1 | Lower bound, inclusive. Default: `100000`. |
-| `max` | `random_integer` only | integer | Upper bound, inclusive. Default: `9999999`. |
 | `foreign_keys` | yes | list | FK columns on other (or the same) table that reference this column. Use `[]` when there are none. |
 
 Each `foreign_keys` entry:
@@ -450,6 +448,39 @@ Each `foreign_keys` entry:
 | `table` | yes | Table that holds the FK column. |
 | `column` | yes | Name of the FK column. |
 | `self_referential` | no | `true` when the FK points back to the same table (e.g. `employees.manager_id → employees.id`). Rows are inserted with `null` first, then updated in a second pass. Default: `false`. |
+| `type_column` | with `type_value` | For a polymorphic relation: the column that holds the type (e.g. `addressable_type`). Only rows whose type column equals `type_value` are rewritten. |
+| `type_value` | with `type_column` | The type value of this table, as stored in `type_column`: the model class (`App\Models\User`) or its morph alias (`user`). |
+
+#### Polymorphic relations
+
+A polymorphic column such as `addresses.addressable_id` points at a different table per row, chosen by `addresses.addressable_type`. List it under each remapped table it can point at, with that table's type value:
+
+```yaml
+users:
+  columns:
+    id:
+      strategy: remapping
+      arguments:
+        - use: random_integer
+        - foreign_keys:
+            - table: addresses
+              column: addressable_id
+              type_column: addressable_type
+              type_value: App\Models\User   # or the morph alias, e.g. user
+companies:
+  columns:
+    id:
+      strategy: remapping
+      arguments:
+        - use: random_integer
+        - foreign_keys:
+            - table: addresses
+              column: addressable_id
+              type_column: addressable_type
+              type_value: App\Models\Company
+```
+
+Rows with a type that no entry names keep their source value. `cloning:run` exits with code `4` when the same FK column is listed under more than one remapped table without `type_column` (it would be rewritten twice), when two entries share a `type_value`, or when `type_column` does not exist in the source table.
 
 See [cloning-run.md — Key Remapping](commands/cloning-run.md#key-remapping) for a full worked example and the legacy `key_remapping:` top-level section format.
 

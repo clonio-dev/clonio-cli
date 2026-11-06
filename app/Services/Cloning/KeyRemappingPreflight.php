@@ -30,6 +30,7 @@ final readonly class KeyRemappingPreflight
     public function problems(CloningConfigData $config, DatabaseSchemaData $sourceSchema): array
     {
         $problems = [];
+        $entries = [];
 
         foreach ($config->tables as $table) {
             $entry = $config->keyRemapping?->getTable($table->tableName);
@@ -38,10 +39,100 @@ final readonly class KeyRemappingPreflight
                 continue;
             }
 
+            $entries[] = $entry;
             $problem = $this->problem($entry, $sourceSchema);
 
             if ($problem !== null) {
                 $problems[] = $problem;
+            }
+
+            array_push($problems, ...$this->typeColumnProblems($entry, $sourceSchema));
+        }
+
+        return [...$problems, ...$this->foreignKeyConflicts($entries)];
+    }
+
+    /**
+     * A polymorphic foreign key needs its type column in the source table.
+     *
+     * @return list<string>
+     */
+    private function typeColumnProblems(KeyRemappingTableData $entry, DatabaseSchemaData $sourceSchema): array
+    {
+        $problems = [];
+
+        foreach ($entry->foreignKeys as $fk) {
+            $tableSchema = $sourceSchema->getTable($fk->table);
+
+            if ($fk->typeColumn === null || ! $tableSchema instanceof TableSchemaData) {
+                continue;
+            }
+
+            $typeColumn = $fk->typeColumn;
+
+            if (! array_any($tableSchema->columns, static fn (ColumnSchemaData $c): bool => $c->name === $typeColumn)) {
+                $problems[] = sprintf(
+                    'Cannot remap %s.%s for %s: type column "%s" does not exist in the source table.',
+                    $fk->table,
+                    $fk->column,
+                    $entry->table,
+                    $fk->typeColumn,
+                );
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * A foreign key column listed under more than one remapped table would be
+     * rewritten once per table. That only works for a polymorphic column, with
+     * a distinct type value per table.
+     *
+     * @param  list<KeyRemappingTableData>  $entries
+     * @return list<string>
+     */
+    private function foreignKeyConflicts(array $entries): array
+    {
+        /** @var array<string, list<array{owner: string, type: ?string}>> $byColumn */
+        $byColumn = [];
+
+        foreach ($entries as $entry) {
+            foreach ($entry->foreignKeys as $fk) {
+                $byColumn[$fk->table.'.'.$fk->column][] = [
+                    'owner' => $entry->table,
+                    'type' => $fk->typeColumn === null ? null : $fk->typeValue,
+                ];
+            }
+        }
+
+        $problems = [];
+
+        foreach ($byColumn as $column => $uses) {
+            if (count($uses) < 2) {
+                continue;
+            }
+
+            $owners = implode(', ', array_unique(array_column($uses, 'owner')));
+
+            if (in_array(null, array_column($uses, 'type'), true)) {
+                $problems[] = sprintf(
+                    'Cannot remap %s: it is listed under %s. Set type_column and type_value on each entry for a polymorphic relation.',
+                    $column,
+                    $owners,
+                );
+
+                continue;
+            }
+
+            $types = array_column($uses, 'type');
+
+            if (count(array_unique($types)) !== count($types)) {
+                $problems[] = sprintf(
+                    'Cannot remap %s: the same type_value is listed more than once (under %s).',
+                    $column,
+                    $owners,
+                );
             }
         }
 

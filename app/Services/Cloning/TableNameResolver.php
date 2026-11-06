@@ -262,6 +262,8 @@ final readonly class TableNameResolver
                         table: $this->resolve($fk->table),
                         column: $fk->column,
                         selfReferential: $fk->selfReferential,
+                        typeColumn: $fk->typeColumn,
+                        typeValue: $fk->typeValue,
                     ),
                     $entry->foreignKeys,
                 ),

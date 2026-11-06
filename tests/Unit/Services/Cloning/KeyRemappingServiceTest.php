@@ -594,3 +594,43 @@ it('applyToRow continues with later foreign keys after skipping non-matching one
 
     expect($result)->toBe(['id' => 1, 'user_id' => 'uuid-10', 'approver_id' => 'uuid-20']);
 });
+
+// Issue #161: a polymorphic foreign key only rewrites rows of its own type.
+
+it('applyToRow remaps a polymorphic foreign key only for rows of its type', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['1' => 'user-uuid-1']);
+    $store->storeTable('companies', ['1' => 'company-uuid-1']);
+
+    $service = makeKeyRemappingService($store);
+    $config = new KeyRemappingConfigData([
+        makeKeyRemappingTable('users', 'id', [new KeyRemappingForeignKeyData('addresses', 'addressable_id', typeColumn: 'addressable_type', typeValue: 'App\Models\User')]),
+        makeKeyRemappingTable('companies', 'id', [new KeyRemappingForeignKeyData('addresses', 'addressable_id', typeColumn: 'addressable_type', typeValue: 'company')]),
+    ]);
+
+    $user = ['id' => 1, 'addressable_type' => 'App\Models\User', 'addressable_id' => 1];
+    $company = ['id' => 2, 'addressable_type' => 'company', 'addressable_id' => 1];
+    $other = ['id' => 3, 'addressable_type' => 'team', 'addressable_id' => 1];
+    $noType = ['id' => 4, 'addressable_id' => 1];
+
+    expect($service->applyToRow($user, 'addresses', $config)['addressable_id'])->toBe('user-uuid-1')
+        ->and($service->applyToRow($company, 'addresses', $config)['addressable_id'])->toBe('company-uuid-1')
+        ->and($service->applyToRow($other, 'addresses', $config)['addressable_id'])->toBe(1)
+        ->and($service->applyToRow($noType, 'addresses', $config)['addressable_id'])->toBe(1);
+});
+
+it('applyToRow keeps checking foreign keys after one that does not apply to the row', function (): void {
+    $store = new InMemoryKeyRemappingStore;
+    $store->storeTable('users', ['1' => 'user-uuid-1']);
+
+    $config = new KeyRemappingConfigData([
+        makeKeyRemappingTable('users', 'id', [
+            new KeyRemappingForeignKeyData('addresses', 'addressable_id', typeColumn: 'addressable_type', typeValue: 'user'),
+            new KeyRemappingForeignKeyData('addresses', 'created_by'),
+        ]),
+    ]);
+    $row = ['id' => 9, 'addressable_type' => 'company', 'addressable_id' => 1, 'created_by' => 1];
+
+    expect(makeKeyRemappingService($store)->applyToRow($row, 'addresses', $config))
+        ->toBe(['id' => 9, 'addressable_type' => 'company', 'addressable_id' => 1, 'created_by' => 'user-uuid-1']);
+});

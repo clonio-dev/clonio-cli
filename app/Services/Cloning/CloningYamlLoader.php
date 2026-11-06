@@ -216,11 +216,7 @@ class CloningYamlLoader
                     }
 
                     /** @var array<string, mixed> $fkEntry */
-                    $fks[] = new KeyRemappingForeignKeyData(
-                        table: is_string($fkEntry['table'] ?? null) ? $fkEntry['table'] : '',
-                        column: is_string($fkEntry['column'] ?? null) ? $fkEntry['column'] : '',
-                        selfReferential: (bool) ($fkEntry['self_referential'] ?? false),
-                    );
+                    $fks[] = $this->mapForeignKey($fkEntry);
                 }
             }
 
@@ -322,11 +318,7 @@ class CloningYamlLoader
                                             }
 
                                             /** @var array<string, mixed> $fkEntry */
-                                            $remappingForeignKeys[] = new KeyRemappingForeignKeyData(
-                                                table: is_string($fkEntry['table'] ?? null) ? $fkEntry['table'] : '',
-                                                column: is_string($fkEntry['column'] ?? null) ? $fkEntry['column'] : '',
-                                                selfReferential: (bool) ($fkEntry['self_referential'] ?? false),
-                                            );
+                                            $remappingForeignKeys[] = $this->mapForeignKey($fkEntry);
                                         }
                                     }
 
@@ -353,6 +345,23 @@ class CloningYamlLoader
             template: $template,
             remappingUse: $remappingUse,
             remappingForeignKeys: $remappingForeignKeys,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function mapForeignKey(array $entry): KeyRemappingForeignKeyData
+    {
+        $typeColumn = $entry['type_column'] ?? null;
+        $typeValue = $entry['type_value'] ?? null;
+
+        return new KeyRemappingForeignKeyData(
+            table: is_string($entry['table'] ?? null) ? $entry['table'] : '',
+            column: is_string($entry['column'] ?? null) ? $entry['column'] : '',
+            selfReferential: (bool) ($entry['self_referential'] ?? false),
+            typeColumn: is_string($typeColumn) && $typeColumn !== '' ? $typeColumn : null,
+            typeValue: is_scalar($typeValue) ? (string) $typeValue : null,
         );
     }
 }

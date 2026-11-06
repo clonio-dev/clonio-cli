@@ -383,28 +383,61 @@ class CloningYamlValidator
                 }
             }
 
-            $fksRaw = $entry['foreign_keys'] ?? null;
-            if ($fksRaw !== null && ! is_array($fksRaw)) {
-                $errors[] = sprintf("%s: 'foreign_keys' must be a list", $prefix);
-            } elseif (is_array($fksRaw)) {
-                foreach ($fksRaw as $fkIndex => $fk) {
-                    $fkPrefix = sprintf('%s.foreign_keys[%d]', $prefix, $fkIndex);
-                    if (! is_array($fk)) {
-                        $errors[] = sprintf('%s: must be an object', $fkPrefix);
+            $errors = array_merge($errors, $this->validateForeignKeys($prefix, $entry['foreign_keys'] ?? null));
+        }
 
-                        continue;
-                    }
+        return $errors;
+    }
 
-                    /** @var array<string, mixed> $fk */
-                    if (! is_string($fk['table'] ?? null) || $fk['table'] === '') {
-                        $errors[] = sprintf("%s: 'table' is required", $fkPrefix);
-                    } elseif (TablePattern::isPattern($fk['table'])) {
-                        $errors[] = sprintf("%s: table '%s' must be a table name, not a pattern", $fkPrefix, $fk['table']);
-                    }
+    /**
+     * Checks a `foreign_keys` list, from `key_remapping` or from a column's
+     * `remapping` arguments.
+     *
+     * @return list<string>
+     */
+    private function validateForeignKeys(string $prefix, mixed $fksRaw): array
+    {
+        if ($fksRaw === null) {
+            return [];
+        }
 
-                    if (! is_string($fk['column'] ?? null) || $fk['column'] === '') {
-                        $errors[] = sprintf("%s: 'column' is required", $fkPrefix);
-                    }
+        if (! is_array($fksRaw)) {
+            return [sprintf("%s: 'foreign_keys' must be a list", $prefix)];
+        }
+
+        $errors = [];
+
+        foreach ($fksRaw as $fkIndex => $fk) {
+            $fkPrefix = sprintf('%s.foreign_keys[%d]', $prefix, $fkIndex);
+            if (! is_array($fk)) {
+                $errors[] = sprintf('%s: must be an object', $fkPrefix);
+
+                continue;
+            }
+
+            /** @var array<string, mixed> $fk */
+            if (! is_string($fk['table'] ?? null) || $fk['table'] === '') {
+                $errors[] = sprintf("%s: 'table' is required", $fkPrefix);
+            } elseif (TablePattern::isPattern($fk['table'])) {
+                $errors[] = sprintf("%s: table '%s' must be a table name, not a pattern", $fkPrefix, $fk['table']);
+            }
+
+            if (! is_string($fk['column'] ?? null) || $fk['column'] === '') {
+                $errors[] = sprintf("%s: 'column' is required", $fkPrefix);
+            }
+
+            $hasTypeColumn = array_key_exists('type_column', $fk);
+            $hasTypeValue = array_key_exists('type_value', $fk);
+
+            if ($hasTypeColumn !== $hasTypeValue) {
+                $errors[] = sprintf("%s: 'type_column' and 'type_value' must be set together", $fkPrefix);
+            } elseif ($hasTypeColumn) {
+                if (! is_string($fk['type_column']) || $fk['type_column'] === '') {
+                    $errors[] = sprintf("%s: 'type_column' must be a column name", $fkPrefix);
+                }
+
+                if (! is_scalar($fk['type_value']) || is_bool($fk['type_value']) || $fk['type_value'] === '') {
+                    $errors[] = sprintf("%s: 'type_value' must be a string or number", $fkPrefix);
                 }
             }
         }
@@ -533,6 +566,8 @@ class CloningYamlValidator
                     $errors[] = sprintf("%s: 'remapping' requires argument 'use' (one of: %s)", $prefix, implode(', ', $validUseValues));
                     break;
                 }
+
+                $errors = array_merge($errors, $this->validateForeignKeys($prefix, $args['foreign_keys'] ?? null));
 
                 break;
         }
