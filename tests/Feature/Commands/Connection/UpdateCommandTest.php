@@ -1225,6 +1225,6 @@ it('returns a config error when encrypting the new password fails', function ():
         ->expectsQuestion('Username', 'root')
         ->expectsChoice('How should Clonio get the password?', UPDATE_PASSWORD_CHOICES[1], UPDATE_PASSWORD_CHOICES)
         ->expectsQuestion('Password', 'new-secret')
-        ->expectsOutputToContain('Failed to encrypt password. Ensure APP_KEY is set in your environment.')
+        ->expectsOutputToContain('Failed to encrypt password. Ensure CLONIO_KEY (or APP_KEY) is set in your environment.')
         ->assertExitCode(2);
 });

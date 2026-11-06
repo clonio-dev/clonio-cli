@@ -297,7 +297,7 @@ it('fails with exit code 2 when APP_KEY is missing and password is encrypted', f
     $this->app->instance(ConfigService::class, $config);
 
     $this->artisan('connection:test', ['name' => 'staging'])
-        ->expectsOutputToContain('staging: FAILED — Could not decrypt password — check APP_KEY.')
+        ->expectsOutputToContain('staging: FAILED — Could not decrypt password — check CLONIO_KEY (or APP_KEY).')
         ->assertExitCode(ExitCode::ConfigError->value);
 });
 

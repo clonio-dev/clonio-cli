@@ -11,17 +11,25 @@ Clonio reads production data. Where it runs, which credentials it holds and what
 | Stored value | Where the secret lives |
 |---|---|
 | `env:NAME` | In the environment variable `NAME`, read when Clonio needs it. The secret is never written to disk. **Default and recommended.** |
-| `encrypted:<payload>` | In `clonio.json`, encrypted with `APP_KEY`. |
+| `encrypted:<payload>` | In `clonio.json`, encrypted with the Clonio encryption key `CLONIO_KEY`. |
 
-Encryption with `APP_KEY` protects a `clonio.json` that leaks **on its own**, for example when it is committed by mistake. It does **not** protect against someone who can read the project directory: `APP_KEY` usually sits in `.env` next to `clonio.json`, and the two files together reveal every encrypted secret. Any process, backup or container image that holds both files holds the plain-text credentials.
+Encryption protects a `clonio.json` that leaks **on its own**, for example when it is committed by mistake. It does **not** protect against someone who can read the project directory: the key usually sits in `.env` next to `clonio.json`, and the two files together reveal every encrypted secret. Any process, backup or container image that holds both files holds the plain-text credentials.
 
 With `env:` references, `clonio.json` and `.env` contain no credentials at all. The secrets exist only in the environment of the process that runs Clonio, and only for as long as it runs.
 
 `connection:add`, `connection:update`, `audit:add` and `audit:update` ask for an environment variable first. Use the encrypted form only on a single-user machine, for secrets that are worth no more than the machine itself.
 
-### `APP_KEY` also signs audit logs
+### The encryption key: `CLONIO_KEY`
 
-Clonio signs each audit log with an HMAC derived from `APP_KEY`. Anyone who has `APP_KEY` can create an audit log that `cloning:verify-audit` accepts. Treat `APP_KEY` as a secret even when no encrypted values are stored: keep it in your CI secret store, not in a `.env` file on a shared machine.
+Clonio reads its key from `CLONIO_KEY`. Projects set up with earlier versions use `APP_KEY`; Clonio falls back to it when `CLONIO_KEY` is not set. A dedicated variable keeps Clonio from sharing a key with a Laravel application in the same directory, so a leaked application key does not decrypt Clonio's secrets, and the other way round.
+
+[`key:rotate`](commands/key-rotate.md) moves a project to `CLONIO_KEY`, or replaces a key that may have leaked: it generates a new key and re-encrypts every `encrypted:` secret in `clonio.json` with it. If the old key leaked together with a copy of `clonio.json`, rotating the key is not enough: change the database passwords and channel secrets themselves.
+
+### The key also signs audit logs
+
+Clonio signs each audit log with an HMAC derived from the encryption key. Anyone who has the key can create an audit log that `cloning:verify-audit` accepts. Treat `CLONIO_KEY` as a secret even when no encrypted values are stored: keep it in your CI secret store, not in a `.env` file on a shared machine.
+
+After a rotation, logs signed with the old key verify only with the old key. Keep the old key in your secret store for as long as you need to verify them — see [Audit logs signed with the old key](commands/key-rotate.md#audit-logs-signed-with-the-old-key).
 
 ### Anonymization is only as complete as your configuration
 
@@ -56,8 +64,8 @@ test / dev (anonymized)
 Run the transfer that reads production as a single CI step:
 
 - **Ephemeral runner.** Use a runner that is created for the job and destroyed afterwards (hosted runners, or self-hosted runners in ephemeral mode). Nothing from the job survives it.
-- **No Clonio in running environments.** Do not install Clonio, `clonio.json` or a `.env` with `APP_KEY` in the production or acceptance containers. An attacker who gets into a running container must not find credentials for the other environment there.
-- **Secrets from the CI secret store.** Provide the database passwords and `APP_KEY` as CI secrets. `clonio.json` refers to them with `env:` references.
+- **No Clonio in running environments.** Do not install Clonio, `clonio.json` or a `.env` with `CLONIO_KEY` in the production or acceptance containers. An attacker who gets into a running container must not find credentials for the other environment there.
+- **Secrets from the CI secret store.** Provide the database passwords and `CLONIO_KEY` as CI secrets. `clonio.json` refers to them with `env:` references.
 - **Read-only user on a replica.** Read from a replica, not from the primary, with a user that may only `SELECT` (see [Database permissions](#database-permissions)). A leaked credential then cannot change or delete production data — but it can still read all of it. Read-only access limits the damage; it does not make a leaked credential harmless, so keep it out of files and away from every environment except the CI job.
 - **Restricted network access.** Allow the replica to accept connections only from the CI runners.
 - **Production flag.** Mark the source with `--production`, so `cloning:run` never offers it as a target.
@@ -89,7 +97,7 @@ jobs:
       - name: Anonymize production into acceptance
         run: clonio cloning:run production.cloning.yaml --target acceptance --ci
         env:
-          APP_KEY: ${{ secrets.CLONIO_APP_KEY }}
+          CLONIO_KEY: ${{ secrets.CLONIO_KEY }}
           CLONIO_PRODUCTION_PASSWORD: ${{ secrets.CLONIO_PRODUCTION_PASSWORD }}
           CLONIO_ACCEPTANCE_PASSWORD: ${{ secrets.CLONIO_ACCEPTANCE_PASSWORD }}
           CLONIO_AUDIT_SECRET_KEY: ${{ secrets.CLONIO_AUDIT_SECRET_KEY }}
@@ -167,10 +175,10 @@ Never use the target user for a source connection, and never give the source use
 ## Checklist
 
 - [ ] All secrets in `clonio.json` are `env:` references.
-- [ ] `APP_KEY` is a CI secret, not a file on a shared machine.
+- [ ] `CLONIO_KEY` is a CI secret, not a file on a shared machine. Projects still on `APP_KEY` have run `clonio key:rotate`.
 - [ ] Every source connection uses a user with `SELECT` only; production is read from a replica, only from CI runners.
 - [ ] The transfer from production runs as one CI step on an ephemeral runner.
-- [ ] No running container holds Clonio, `clonio.json` or `APP_KEY`.
+- [ ] No running container holds Clonio, `clonio.json` or `CLONIO_KEY`.
 - [ ] Test and dev are fed from acceptance only.
 - [ ] The anonymization configuration covers free-text columns, quasi-identifiers and blobs, and is reviewed when the schema changes.
 - [ ] Audit logs go to a channel outside the runner.

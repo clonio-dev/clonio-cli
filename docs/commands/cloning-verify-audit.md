@@ -1,6 +1,6 @@
 # `cloning:verify-audit` Command
 
-Verify the integrity of a Clonio audit log by re-deriving its HMAC-SHA256 signature and comparing it against the stored `.sig` sidecar file. Any holder of the project's `APP_KEY` can run this command.
+Verify the integrity of a Clonio audit log by re-deriving its HMAC-SHA256 signature and comparing it against the stored `.sig` sidecar file. Any holder of the project's encryption key (`CLONIO_KEY`, or `APP_KEY` as a fallback) can run this command.
 
 ## Usage
 
@@ -26,7 +26,7 @@ Every `cloning:run` produces a signed audit log. The audit log HTML contains an 
 
 `cloning:verify-audit` re-derives the signature from the HTML file and checks it against the `.sig` file using a constant-time comparison. This confirms that the document has not been modified since it was produced.
 
-The command does not connect to any database or network resource. It only reads the two local files and the local `APP_KEY`.
+The command does not connect to any database or network resource. It only reads the two local files and the local encryption key.
 
 ## Example
 
@@ -62,10 +62,10 @@ clonio cloning:verify-audit audit.html --sig=/archive/2026/04/audit.sig
 
 1. Clonio serialises the audit record to a canonical JSON string (UTF-8, no Unicode escaping).
 2. Computes `SHA-256` of the canonical JSON.
-3. Computes `HMAC-SHA256(sha256Hash, APP_KEY)`.
+3. Computes `HMAC-SHA256(sha256Hash, key)` with the encryption key.
 4. Writes the signature to the `.sig` sidecar file in the format `sha256:<signature>`.
 
-Verification reverses steps 1–3 using the same `APP_KEY` and compares both values using `hash_equals()`.
+Verification reverses steps 1–3 using the same key and compares both values using `hash_equals()`.
 
 ## Audit Log File Naming
 
@@ -90,10 +90,11 @@ Both files must be present for verification.
 |:----:|---------|
 | `0` | Signature verified successfully |
 | `1` | Signature does not match — document may have been tampered with |
-| `2` | Config error — `APP_KEY` not set or not readable |
+| `2` | Config error — no encryption key set or not readable |
 | `5` | IO error — audit log file or `.sig` file not found |
 
 ## Related Commands
 
 - `cloning:run` — execute a cloning transfer and produce the audit log
-- `init` — set up `APP_KEY` required for signing and verification
+- `init` — set up `CLONIO_KEY` required for signing and verification
+- `key:rotate` — replace the key; see [Audit logs signed with the old key](key-rotate.md#audit-logs-signed-with-the-old-key)

@@ -1024,6 +1024,6 @@ it('fails when encrypting the new secret fails', function (): void {
     ]);
 
     expect($result->exit)->toBe(2)
-        ->and($result->output)->toContain('Failed to encrypt the secret. Ensure APP_KEY is set in your environment.')
+        ->and($result->output)->toContain('Failed to encrypt the secret. Ensure CLONIO_KEY (or APP_KEY) is set in your environment.')
         ->and($saved)->toBeNull();
 });

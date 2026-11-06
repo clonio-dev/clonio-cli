@@ -48,7 +48,7 @@ final class Secret
         try {
             return Crypt::decryptString(substr($value, strlen(self::ENCRYPTED_PREFIX)));
         } catch (Throwable) {
-            throw new RuntimeException(sprintf('Could not decrypt %s — check APP_KEY.', $label));
+            throw new RuntimeException(sprintf('Could not decrypt %s — check CLONIO_KEY (or APP_KEY).', $label));
         }
     }
 
@@ -70,7 +70,7 @@ final class Secret
         try {
             return self::ENCRYPTED_PREFIX.Crypt::encryptString($input);
         } catch (Throwable $throwable) {
-            throw new SecretEncryptionException('Failed to encrypt the secret. Ensure APP_KEY is set in your environment.', $throwable->getCode(), previous: $throwable);
+            throw new SecretEncryptionException('Failed to encrypt the secret. Ensure CLONIO_KEY (or APP_KEY) is set in your environment.', $throwable->getCode(), previous: $throwable);
         }
     }
 

@@ -30,12 +30,12 @@ describe('resolve', function (): void {
 
     it('fails with the label when the value cannot be decrypted', function (): void {
         expect(fn (): string => Secret::resolve('encrypted:garbage', 'SMTP password'))
-            ->toThrow(RuntimeException::class, 'Could not decrypt SMTP password — check APP_KEY.');
+            ->toThrow(RuntimeException::class, 'Could not decrypt SMTP password — check CLONIO_KEY (or APP_KEY).');
     });
 
     it('uses a generic label by default', function (): void {
         expect(fn (): string => Secret::resolve('encrypted:garbage'))
-            ->toThrow(RuntimeException::class, 'Could not decrypt secret — check APP_KEY.');
+            ->toThrow(RuntimeException::class, 'Could not decrypt secret — check CLONIO_KEY (or APP_KEY).');
     });
 
     it('reads an env reference from the environment', function (): void {
@@ -87,7 +87,7 @@ describe('protect', function (): void {
             Secret::protect('shh');
             $this->fail('Expected an exception.');
         } catch (SecretEncryptionException $secretEncryptionException) {
-            expect($secretEncryptionException->getMessage())->toBe('Failed to encrypt the secret. Ensure APP_KEY is set in your environment.')
+            expect($secretEncryptionException->getMessage())->toBe('Failed to encrypt the secret. Ensure CLONIO_KEY (or APP_KEY) is set in your environment.')
                 ->and($secretEncryptionException->getPrevious()?->getMessage())->toBe('no key');
         }
     });

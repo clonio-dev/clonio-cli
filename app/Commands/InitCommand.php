@@ -7,6 +7,8 @@ namespace App\Commands;
 use App\Enums\ExitCode;
 use App\Services\Art\AsciiArtService;
 use App\Services\Config\ConfigService;
+use App\Services\Config\DotenvFile;
+use App\Services\Secrets\EncryptionKey;
 use Illuminate\Support\Facades\Storage;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
@@ -17,26 +19,32 @@ class InitCommand extends Command
      * @var string
      */
     protected $signature = 'init
-        {--force : Regenerate APP_KEY even if one already exists}';
+        {--force : Generate a new CLONIO_KEY even if a key already exists}';
 
     /**
      * @var string
      */
-    protected $description = 'Bootstrap Clonio in the current directory by ensuring APP_KEY is available';
+    protected $description = 'Bootstrap Clonio in the current directory by ensuring an encryption key (CLONIO_KEY) is available';
 
-    public function handle(AsciiArtService $asciiArtService, ConfigService $config): int
+    public function handle(AsciiArtService $asciiArtService, ConfigService $config, DotenvFile $dotenv): int
     {
         $asciiArtService->clonioLogoWithClaim($this->output, '  ');
-        $this->line('  Checking for APP_KEY ...');
+        $this->line('  Checking for CLONIO_KEY ...');
 
-        $keyInEnv = $this->keyInSystemEnv();
-        $keyInDotenv = $this->keyInDotenvFile();
+        $found = EncryptionKey::locate($dotenv);
 
-        if (($keyInEnv || $keyInDotenv) && ! $this->option('force')) {
-            if ($keyInEnv) {
-                $this->info('  ✓  APP_KEY found in environment — no .env file needed.');
+        if ($found !== null && ! $this->option('force')) {
+            [$name, $fromDotenv] = $found;
+
+            if (! $fromDotenv) {
+                $this->info(sprintf('  ✓  %s found in environment — no .env file needed.', $name));
             } else {
-                $this->info('  ✓  APP_KEY found in .env — ready.');
+                $this->info(sprintf('  ✓  %s found in .env — ready.', $name));
+            }
+
+            if ($name === EncryptionKey::LEGACY_NAME) {
+                $this->line('  ℹ  Clonio uses APP_KEY because CLONIO_KEY is not set. Run `clonio key:rotate`');
+                $this->line('     to move to a dedicated CLONIO_KEY.');
             }
 
             $this->ensureGitignoreEntries();
@@ -45,12 +53,12 @@ class InitCommand extends Command
             return ExitCode::Success->value;
         }
 
-        if (($keyInEnv || $keyInDotenv) && $this->option('force')) {
-            $this->warn('  APP_KEY already exists. --force was passed — regenerating.');
+        if ($found !== null) {
+            $this->warn(sprintf('  %s already exists. --force was passed — regenerating.', $found[0]));
             $this->line('');
-            $this->warn('  ⚠  Warning: regenerating the key will make all existing encrypted');
-            $this->warn('     passwords in clonio.json unreadable. You will need to re-enter');
-            $this->warn('     them via `connection:update`.');
+            $this->warn('  ⚠  Warning: a new key makes all existing encrypted secrets in');
+            $this->warn('     clonio.json unreadable. To keep them, run `clonio key:rotate`');
+            $this->warn('     instead.');
             $this->line(''); // @pest-mutate-ignore: RemoveMethodCall
 
             if (! $this->confirm('  Regenerate key?', false)) {
@@ -66,13 +74,11 @@ class InitCommand extends Command
             $this->line('');
         }
 
-        $this->line('  No APP_KEY found. Generating .env with a new key ...');
+        $this->line('  Writing a new CLONIO_KEY to .env ...');
         $this->line('');
 
-        $newKey = 'base64:'.base64_encode(random_bytes(32));
-
         try {
-            $this->writeDotenv($newKey, $keyInDotenv);
+            $dotenv->set(EncryptionKey::NAME, 'base64:'.base64_encode(random_bytes(32)));
         } catch (RuntimeException $runtimeException) {
             $this->error($runtimeException->getMessage());
             $this->line('');
@@ -81,9 +87,8 @@ class InitCommand extends Command
         }
 
         $cwd = getcwd();
-        $cwdDisplay = is_string($cwd) ? $cwd : '.';
 
-        $this->info(sprintf('  ✓  Created .env with APP_KEY in %s', $cwdDisplay));
+        $this->info(sprintf('  ✓  Wrote CLONIO_KEY to .env in %s', is_string($cwd) ? $cwd : '.'));
         $this->line('');
 
         $this->ensureGitignoreEntries();
@@ -126,67 +131,6 @@ class InitCommand extends Command
         }
 
         $this->line('');
-    }
-
-    private function keyInSystemEnv(): bool
-    {
-        $value = getenv('APP_KEY');
-
-        return is_string($value) && $value !== '';
-    }
-
-    private function keyInDotenvFile(): bool
-    {
-        if (! Storage::exists('.env')) {
-            return false;
-        }
-
-        $content = Storage::get('.env');
-
-        if (! is_string($content)) {
-            return false;
-        }
-
-        return (bool) preg_match('/^APP_KEY\s*=\s*.+$/m', $content);
-    }
-
-    private function writeDotenv(string $newKey, bool $fileHasKey): void
-    {
-        if (! Storage::exists('.env')) {
-            $result = Storage::put('.env', 'APP_KEY='.$newKey."\n");
-
-            if (! $result) {
-                $cwd = getcwd();
-                $path = is_string($cwd) ? $cwd.'/.env' : '.env';
-
-                throw new RuntimeException(sprintf('Cannot write %s: permission denied', $path));
-            }
-
-            chmod(Storage::path('.env'), 0600);
-
-            return;
-        }
-
-        $content = Storage::get('.env');
-
-        if (! is_string($content)) {
-            throw new RuntimeException(sprintf('Cannot read %s: permission denied', Storage::path('.env')));
-        }
-
-        if ($fileHasKey) {
-            $updated = preg_replace('/^APP_KEY\s*=.*$/m', 'APP_KEY='.$newKey, $content);
-            $updated = is_string($updated) ? $updated : $content;
-        } else {
-            $updated = rtrim($content)."\nAPP_KEY=".$newKey."\n";
-        }
-
-        $result = Storage::put('.env', $updated);
-
-        if (! $result) {
-            throw new RuntimeException(sprintf('Cannot write %s: permission denied', Storage::path('.env')));
-        }
-
-        chmod(Storage::path('.env'), 0600);
     }
 
     private function ensureGitignoreEntries(): void

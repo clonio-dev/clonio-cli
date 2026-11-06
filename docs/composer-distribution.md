@@ -64,7 +64,7 @@ php --version
 - name: Clone staging database
   run: vendor/bin/clonio cloning:run production.cloning.yaml --target staging --ci
   env:
-    APP_KEY: ${{ secrets.CLONIO_APP_KEY }}
+    CLONIO_KEY: ${{ secrets.CLONIO_KEY }}
 ```
 
 ### GitLab CI

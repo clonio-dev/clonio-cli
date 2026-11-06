@@ -60,7 +60,7 @@ The audit log is always written, even on early abort.
 
 ## Prerequisites
 
-1. Run `clonio init` to set up `APP_KEY`
+1. Run `clonio init` to set up `CLONIO_KEY`
 2. Add connections with `clonio connection:add`
 3. Generate a configuration file with `clonio cloning:dump`
 4. Review and adjust the generated `.cloning.yaml`
@@ -661,7 +661,7 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `0` | Run completed with not-found tables (non-fatal warning) |
 | `0` | `--allow-failure` was set (regardless of outcome) |
 | `1` | Run failed — one or more tables had unrecoverable transfer errors |
-| `2` | Config error — `clonio.json` missing, or `APP_KEY` not set |
+| `2` | Config error — `clonio.json` missing, or no encryption key (`CLONIO_KEY` / `APP_KEY`) set |
 | `3` | Connection error — source or target unreachable |
 | `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, a table that matches more than one `tables:` entry, an invalid table pattern or a pattern in `--skip-tables` / `--only-tables`, `--only-tables` matching no table, a key remapping that does not fit the source column, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |

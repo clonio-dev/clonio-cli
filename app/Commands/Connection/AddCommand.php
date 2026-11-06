@@ -210,7 +210,7 @@ class AddCommand extends Command
 
             return ExitCode::ValidationError->value;
         } catch (SecretEncryptionException) {
-            $this->error('Failed to encrypt password. Ensure APP_KEY is set in your environment.');
+            $this->error('Failed to encrypt password. Ensure CLONIO_KEY (or APP_KEY) is set in your environment.');
 
             return ExitCode::ConfigError->value;
         }
