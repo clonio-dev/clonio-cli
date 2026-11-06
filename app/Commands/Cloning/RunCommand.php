@@ -58,6 +58,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use InvalidArgumentException;
 use LaravelZero\Framework\Commands\Command;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
@@ -187,21 +188,15 @@ class RunCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
-        /** @var list<string> $skipTables */
-        $skipTables = ($skipTablesOpt !== null && $skipTablesOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $skipTablesOpt)))) // @pest-mutate-ignore: UnwrapArrayValues
-            : [];
+        try {
+            $skipTables = $this->parseNameList('skip-tables');
+            $onlyTables = $this->parseNameList('only-tables');
+            $auditChannels = $this->parseNameList('audit-channel');
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            $this->error($invalidArgumentException->getMessage());
 
-        /** @var list<string> $onlyTables */
-        $onlyTables = ($onlyTablesOpt !== null && $onlyTablesOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $onlyTablesOpt))))
-            : [];
-
-        $auditChannelOpt = $this->option('audit-channel');
-        /** @var list<string> $auditChannels */
-        $auditChannels = ($auditChannelOpt !== null && $auditChannelOpt !== '') // @pest-mutate-ignore: BooleanAndToBooleanOr,EmptyStringToNotEmpty
-            ? array_values(array_filter(array_map(trim(...), explode(',', (string) $auditChannelOpt)))) // @pest-mutate-ignore: UnwrapArrayValues
-            : [];
+            return ExitCode::ValidationError->value;
+        }
 
         // ─── Option overrides ──────────────────────────────────────────────────
         $enforceOverride = $this->option('enforce-column-types') ? true : ($this->option('no-enforce-column-types') ? false : null);
@@ -1162,6 +1157,35 @@ class RunCommand extends Command
     private function getOriginalCommandWithNoMemoryLimit(): string
     {
         return $this->getOriginalCommand(['--no-memory-limit']);
+    }
+
+    /**
+     * Parse a comma-separated name option. A missing or empty option yields no
+     * names; a value that holds no name at all (e.g. ' , ') is rejected, so it
+     * cannot silently turn a filter off. '0' is a valid name.
+     *
+     * @return list<string>
+     *
+     * @throws InvalidArgumentException when the value holds no name
+     */
+    private function parseNameList(string $option): array
+    {
+        $value = $this->option($option);
+
+        if (! is_scalar($value) || $value === '') {
+            return [];
+        }
+
+        $names = array_values(array_filter(
+            array_map(trim(...), explode(',', (string) $value)),
+            static fn (string $name): bool => $name !== '',
+        ));
+
+        if ($names === []) {
+            throw new InvalidArgumentException(sprintf('--%s needs at least one name.', $option));
+        }
+
+        return $names;
     }
 
     /**
