@@ -414,11 +414,11 @@ it('rejects a table name that matches several source tables case-insensitively',
 it('counts a dry-run table whose key differs only in case from the source table', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  Users:\n    rows:\n      strategy: full\n"));
     g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users')]));
-    g1_db(['SELECT COUNT(*) as count FROM `users`' => [(object) ['count' => 12]]], 3);
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 12]]], 3);
 
     [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
 
-    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '12', 'full', '—'));
+    expect($code)->toBe(0)->and($out)->toContain(g1_row('users', '~12', 'full', '—'));
 });
 
 // ─── Option overrides ─────────────────────────────────────────────────────────
