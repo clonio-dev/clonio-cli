@@ -27,6 +27,7 @@ use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
 use App\Services\SqlDump\SqlDumpService;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\CallbackRunObserver;
 
 beforeEach(function (): void {
     app(AuditBuffer::class)->clear();
@@ -181,9 +182,9 @@ function g3_orch_run(
         $source ?? g3_orch_conn('source'),
         $target ?? g3_orch_conn('target'),
         $schema,
-        static function (string $table, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progress): void {
+        new CallbackRunObserver(onTableFinished: static function (string $table, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progress): void {
             $progress[] = [$table, $status, $rows, $skipped, $skippedRows];
-        },
+        }),
         new CloningRunSettingsData(
             skipSchema: $skipSchema,
             skipTables: $skip,

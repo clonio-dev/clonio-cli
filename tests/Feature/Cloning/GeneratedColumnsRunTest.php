@@ -12,6 +12,7 @@ use App\Data\Cloning\TableRowConfigData;
 use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Cloning\CloningRunOrchestrator;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\Schema\SchemaInspector;
 use App\Services\SqlDump\DumpArchiver;
 use App\Services\SqlDump\DumpDialectFactory;
@@ -80,7 +81,7 @@ function runBookings(ConnectionData $source, ConnectionData $target, bool $skipS
         $source,
         $target,
         resolve(SchemaInspector::class)->inspect($source),
-        function (): void {},
+        new NullCloningRunObserver,
         new CloningRunSettingsData(
             skipSchema: $skipSchema,
             dumpSink: $sink,

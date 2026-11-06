@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Cloning;
 
+use App\Contracts\CloningRunObserver;
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\CloningRunSettingsData;
@@ -26,7 +27,6 @@ use App\Enums\DatabaseConnectionType;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Schema\SchemaInspector;
 use App\Services\SqlDump\SqlDumpService;
-use Closure;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -44,15 +44,31 @@ class CloningRunOrchestrator
     ) {}
 
     /**
-     * @param  callable(string, TableRunStatus, int, int, list<SkippedRow>): void  $onProgress
+     * Copies the configured tables and tells the observer about each one. The
+     * observer's finished() is called when the run ends, also on an exception.
      */
     public function run(
         CloningConfigData $config,
         ConnectionData $source,
         ConnectionData $target,
         DatabaseSchemaData $sourceSchema,
-        callable $onProgress,
+        CloningRunObserver $observer,
         CloningRunSettingsData $settings = new CloningRunSettingsData,
+    ): RunResultData {
+        try {
+            return $this->runTables($config, $source, $target, $sourceSchema, $observer, $settings);
+        } finally {
+            $observer->finished();
+        }
+    }
+
+    private function runTables(
+        CloningConfigData $config,
+        ConnectionData $source,
+        ConnectionData $target,
+        DatabaseSchemaData $sourceSchema,
+        CloningRunObserver $observer,
+        CloningRunSettingsData $settings,
     ): RunResultData {
         $start = microtime(true);
         $tableNames = array_map(static fn (TableCloningConfigData $t): string => $t->tableName, $config->tables);
@@ -84,11 +100,7 @@ class CloningRunOrchestrator
 
         $sortedTables = $this->resolver->sort($sourceSchema, $remaining);
 
-        // Announce the number of tables that will be attempted (each emits a
-        // terminal onProgress event) so callers can size an overall progress bar.
-        if ($settings->onStart instanceof Closure) {
-            ($settings->onStart)(count($sortedTables));
-        }
+        $observer->started(count($sortedTables));
 
         // Replicate schema if not skipping
         /** @var array<string, string> $schemaFailures */
@@ -175,7 +187,7 @@ class CloningRunOrchestrator
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, 0.0, $reason);
                 Log::warning('table_skipped_schema_failure', ['table' => $tableName, 'reason' => $reason]);
                 $success = false;
-                ($onProgress)($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+                $observer->tableFinished($tableName, TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
 
                 if ($settings->breakOnFailure) {
                     break;
@@ -188,15 +200,13 @@ class CloningRunOrchestrator
             if (! $sourceSchema->hasTable($tableName)) {
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::NotFound, 0, 0, 0.0, null);
                 Log::warning('table_not_found', ['table' => $tableName]);
-                ($onProgress)($tableName, TableRunStatus::NotFound, 0, 0, []);
+                $observer->tableFinished($tableName, TableRunStatus::NotFound, 0, 0, []);
 
                 continue;
             }
 
             // Past this point a table will enter transferTable() — keep new pre-skip statuses above.
-            if ($settings->onTableStart instanceof Closure) {
-                ($settings->onTableStart)($tableName);
-            }
+            $observer->tableStarted($tableName);
 
             $tableStart = microtime(true);
             $sourceTable = $sourceSchema->getTable($tableName);
@@ -247,7 +257,7 @@ class CloningRunOrchestrator
                 $success = false;
                 Log::error('table_transfer_failed', ['table' => $tableName, 'reason' => $sortError]);
                 $tableResults[] = new TableRunResultData($tableName, TableRunStatus::Failed, 0, 0, microtime(true) - $tableStart, $sortError, $notes);
-                ($onProgress)($tableName, TableRunStatus::Failed, 0, 0, []);
+                $observer->tableFinished($tableName, TableRunStatus::Failed, 0, 0, []);
 
                 if ($settings->breakOnFailure) {
                     break;
@@ -284,7 +294,7 @@ class CloningRunOrchestrator
                     $keyColumns,
                     $sortColumns,
                     $settings->trackRowTotals,
-                    $settings->onTableProgress,
+                    $observer,
                 );
 
             $tableDuration = microtime(true) - $tableStart;
@@ -301,7 +311,7 @@ class CloningRunOrchestrator
             $tableResults[] = new TableRunResultData($tableName, $status, $rows, $skipped, $tableDuration, $reason, $notes);
             $totalRows += $rows;
             $totalSkipped += $skipped;
-            ($onProgress)($tableName, $status, $rows, $skipped, $skippedRows);
+            $observer->tableFinished($tableName, $status, $rows, $skipped, $skippedRows);
 
             if ($failed && $settings->breakOnFailure) {
                 break;
@@ -363,7 +373,6 @@ class CloningRunOrchestrator
      * @param  list<string>|null  $selectColumns  Explicit source columns to copy; null copies all
      * @param  list<string>  $keyColumns  Columns to seek by (keysetColumns()); empty reads with LIMIT/OFFSET
      * @param  list<string>  $sortColumns  Columns 'first' / 'last' order by (sortColumns())
-     * @param  (callable(string, StatsTableTransferData): void)|null  $onTableProgress
      * @return array{int, int, bool, ?string, list<SkippedRow>}
      */
     private function transferTable(
@@ -379,7 +388,7 @@ class CloningRunOrchestrator
         array $keyColumns,
         array $sortColumns,
         bool $trackRowTotals,
-        ?callable $onTableProgress,
+        CloningRunObserver $observer,
     ): array {
         $sourceConn = $this->connector->open($source);
         $targetConn = $this->connector->open($target);
@@ -397,10 +406,8 @@ class CloningRunOrchestrator
         $cursor = null;
 
         $stats = new StatsTableTransferData;
-        $reportProgress = static function () use ($onTableProgress, $tableConfig, $stats): void {
-            if ($onTableProgress !== null) {
-                $onTableProgress($tableConfig->tableName, $stats);
-            }
+        $reportProgress = static function () use ($observer, $tableConfig, $stats): void {
+            $observer->tableProgress($tableConfig->tableName, $stats);
         };
 
         try {

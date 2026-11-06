@@ -5,20 +5,15 @@ declare(strict_types=1);
 namespace App\Commands\Cloning;
 
 use App\Data\Cloning\CloningConfigData;
-use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\CloningRunSettingsData;
 use App\Data\Cloning\ColumnCloningConfigData;
 use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
 use App\Data\Cloning\KeyRemappingConfigData;
-use App\Data\Cloning\StatsTableTransferData;
+use App\Data\Cloning\RunOptionsData;
 use App\Data\Cloning\TableCloningConfigData;
-use App\Data\Cloning\TableRunResultData;
-use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Data\Schema\DatabaseSchemaData;
-use App\Data\Schema\SchemaDiffData;
-use App\Data\SqlDump\DumpResultData;
 use App\Enums\AuditChannelType;
 use App\Enums\DatabaseConnectionType;
 use App\Enums\ExitCode;
@@ -42,12 +37,17 @@ use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingPreflight;
 use App\Services\Cloning\KeyRemappingService;
-use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\Cloning\SourceRowEstimator;
 use App\Services\Cloning\TableNameResolver;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\CloningProgressDisplay;
+use App\Services\Output\Run\DotRunObserver;
+use App\Services\Output\Run\DryRunRenderer;
+use App\Services\Output\Run\ProgressRunObserver;
+use App\Services\Output\Run\RunSummaryRenderer;
+use App\Services\Output\Run\StepRunObserver;
 use App\Services\Output\VerboseStepRenderer;
 use App\Services\Schema\SchemaDiffService;
 use App\Services\Schema\SchemaInspector;
@@ -118,7 +118,17 @@ class RunCommand extends Command
         CloningRunOrchestrator $orchestrator,
         AuditBuffer $auditBuffer,
     ): int {
-        $ci = (bool) $this->option('ci');
+        try {
+            /** @var array<string, mixed> $rawOptions */
+            $rawOptions = $this->options();
+            $options = RunOptionsData::fromOptions((string) $this->argument('file'), $rawOptions);
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            $this->error($invalidArgumentException->getMessage());
+
+            return ExitCode::ValidationError->value;
+        }
+
+        $ci = $options->ci;
         $verbosity = $this->getOutput()->getVerbosity();
         $isVerbose = $verbosity >= OutputInterface::VERBOSITY_VERBOSE;
         $isVeryVerbose = $verbosity >= OutputInterface::VERBOSITY_VERY_VERBOSE;
@@ -142,7 +152,7 @@ class RunCommand extends Command
         $step = new VerboseStepRenderer($this->output, $ci);
 
         // ─── Phase 1: YAML Validation ──────────────────────────────────────────
-        $filePath = (string) $this->argument('file');
+        $filePath = $options->yamlPath;
 
         if (! file_exists($filePath) && ! Storage::disk('local')->exists($filePath)) {
             $this->error(sprintf('File not found: %s', $filePath));
@@ -183,54 +193,10 @@ class RunCommand extends Command
             return ExitCode::ValidationError->value;
         }
 
-        // Validate --skip-tables + --only-tables mutual exclusivity
-        $skipTablesOpt = $this->option('skip-tables');
-        $onlyTablesOpt = $this->option('only-tables');
-
-        if ($skipTablesOpt !== null && $skipTablesOpt !== '' && $onlyTablesOpt !== null && $onlyTablesOpt !== '') {
-            $this->error('--skip-tables and --only-tables are mutually exclusive.');
-
-            return ExitCode::ValidationError->value;
-        }
-
-        try {
-            $skipTables = $this->parseTableNameList('skip-tables');
-            $onlyTables = $this->parseTableNameList('only-tables');
-            $auditChannels = $this->parseNameList('audit-channel');
-        } catch (InvalidArgumentException $invalidArgumentException) {
-            $this->error($invalidArgumentException->getMessage());
-
-            return ExitCode::ValidationError->value;
-        }
-
-        // ─── Option overrides ──────────────────────────────────────────────────
-        $enforceOverride = $this->option('enforce-column-types') ? true : ($this->option('no-enforce-column-types') ? false : null);
-        $dropUnkOverride = $this->option('drop-unknown-tables') ? true : ($this->option('no-drop-unknown-tables') ? false : null);
-        $dropExtOverride = $this->option('drop-extra-columns') ? true : ($this->option('no-drop-extra-columns') ? false : null);
-        $recreateOverride = $this->option('recreate-tables') ? true : ($this->option('no-recreate-tables') ? false : null);
-        $fkChecksOverride = $this->option('no-disable-fk-checks') ? false : ($this->option('disable-fk-checks') ? true : null);
-        $remapKeysOverride = ($this->option('no-remap-keys') || $this->option('skip-remapping-keys')) ? false : ($this->option('remap-keys') ? true : null);
-
-        if ($enforceOverride !== null || $dropUnkOverride !== null || $dropExtOverride !== null || $recreateOverride !== null || $fkChecksOverride !== null || $remapKeysOverride !== null) {
-            $opts = $config->options;
-            $config = new CloningConfigData(
-                version: $config->version,
-                connectionName: $config->connectionName,
-                options: new CloningOptionsData(
-                    chunkSize: $opts->chunkSize,
-                    enforceColumnTypes: $enforceOverride ?? $opts->enforceColumnTypes,
-                    dropUnknownTables: $dropUnkOverride ?? $opts->dropUnknownTables,
-                    dropExtraColumns: $dropExtOverride ?? $opts->dropExtraColumns,
-                    disableForeignKeyChecks: $fkChecksOverride ?? $opts->disableForeignKeyChecks,
-                    fakerLocale: $opts->fakerLocale,
-                    remapKeys: $remapKeysOverride ?? $opts->remapKeys,
-                    recreateTables: $recreateOverride ?? $opts->recreateTables,
-                ),
-                tables: $config->tables,
-                keyRemapping: $config->keyRemapping,
-                skipTables: $config->skipTables,
-            );
-        }
+        $config = $options->applyTo($config);
+        $skipTables = $options->skipTables;
+        $onlyTables = $options->onlyTables;
+        $auditChannels = $options->auditChannels;
 
         // ─── Phase 2: Connection Checks ────────────────────────────────────────
 
@@ -244,8 +210,7 @@ class RunCommand extends Command
         }
 
         // Resolve target connection
-        $targetOption = $this->option('target');
-        $targetName = is_string($targetOption) && $targetOption !== '' ? $targetOption : null;
+        $targetName = $options->targetConnectionName;
 
         if ($targetName === null) {
             if ($ci) {
@@ -345,7 +310,7 @@ class RunCommand extends Command
         }
 
         // ─── Phase 3: Dry-run ──────────────────────────────────────────────────
-        if ((bool) $this->option('dry-run')) { // @pest-mutate-ignore: RemoveBooleanCast
+        if ($options->dryRun) {
             return $this->runDryRun($config, $sourceConnection, $targetConnection, $inspector, $ci);
         }
 
@@ -400,11 +365,7 @@ class RunCommand extends Command
             // key values will be copied from the source unchanged.
             $this->line(sprintf(
                 '  <comment>Key remapping disabled (%s) — primary/foreign key values are copied unchanged.</comment>',
-                match (true) {
-                    (bool) $this->option('no-remap-keys') => '--no-remap-keys',
-                    (bool) $this->option('skip-remapping-keys') => '--skip-remapping-keys',
-                    default => 'options.remap_keys: false',
-                },
+                $options->remapKeysDisabledBy ?? 'options.remap_keys: false',
             ));
         }
 
@@ -413,11 +374,11 @@ class RunCommand extends Command
                 return ExitCode::ValidationError->value;
             }
 
-            if ((bool) $this->option('no-memory-limit')) { // @pest-mutate-ignore: RemoveBooleanCast
+            if ($options->noMemoryLimit) {
                 ini_set('memory_limit', '-1');
             }
 
-            $keyRemappingService = (bool) $this->option('file-based') // @pest-mutate-ignore: RemoveBooleanCast
+            $keyRemappingService = $options->fileBased
                 ? new KeyRemappingService($connector, new EncryptedFileKeyRemappingStore)
                 : resolve(KeyRemappingService::class);
             // Schema-only tables copy no rows, so they need no key mappings.
@@ -455,7 +416,7 @@ class RunCommand extends Command
             }
         }
 
-        $skipSchema = (bool) $this->option('skip-schema');
+        $skipSchema = $options->skipSchema;
 
         if ($isVerbose && ! $ci && ! $targetIsDump) {
             $step->start('Comparing schema');
@@ -488,15 +449,6 @@ class RunCommand extends Command
             }
         }
 
-        /** @var list<string> $notFoundTables */
-        $notFoundTables = [];
-
-        /** @var list<string> $schemaFailureTables */
-        $schemaFailureTables = [];
-
-        $dotColumn = 0;
-        $maxDotColumns = 70;
-
         $progress = null;
         $restoreLogs = null;
 
@@ -510,9 +462,12 @@ class RunCommand extends Command
             }
         }
 
-        // Live stats of the table currently transferring, kept for its terminal
-        // event (the `-vvv` timing summary) and then reset.
-        $currentTimings = null;
+        $observer = match (true) {
+            $progress instanceof CloningProgressDisplay => new ProgressRunObserver($progress, $isDebug),
+            $ci => new NullCloningRunObserver,
+            $isVerbose => new StepRunObserver($step, $this->output, $isDebug),
+            default => new DotRunObserver($this->output),
+        };
 
         $dumpSink = $targetIsDump
             ? new SqlDumpService(new DumpDialectFactory, new DumpArchiver)
@@ -524,113 +479,20 @@ class RunCommand extends Command
                 source: $sourceConnection,
                 target: $targetConnection,
                 sourceSchema: $sourceSchema,
-                onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use ($step, $isVerbose, $isDebug, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns, $progress, &$currentTimings): void {
-                    $timings = $currentTimings;
-                    $currentTimings = null;
-
-                    // Record pre-skip outcomes for the final summary (every mode).
-                    if ($status === TableRunStatus::NotFound) {
-                        $notFoundTables[] = $tableName;
-                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                        $schemaFailureTables[] = $tableName;
-                    }
-
-                    if ($ci) {
-                        return;
-                    }
-
-                    // ── Terminal status ──
-                    // Quiet mode (not verbose): compact one-char dot indicators.
-                    if (! $isVerbose) {
-                        $indicator = match ($status) {
-                            TableRunStatus::Transferred => $skipped > 0 ? 'F' : '.',
-                            TableRunStatus::Failed => 'E',
-                            TableRunStatus::NotFound => '?',
-                            TableRunStatus::SkippedBySchemaFailure => 'S',
-                            default => null,
-                        };
-
-                        if ($indicator !== null) {
-                            $this->output->write($indicator);
-                            $dotColumn++;
-
-                            if ($dotColumn >= $maxDotColumns) {
-                                $this->output->writeln('');
-                                $dotColumn = 0;
-                            }
-                        }
-
-                        return;
-                    }
-
-                    // Verbose. With live bars, scrolling detail goes to the log section (so it
-                    // never corrupts them); otherwise the step renderer finalises the table
-                    // line that onTableStart opened.
-                    $sink = $progress instanceof CloningProgressDisplay ? $progress->log : $this->output;
-                    $rowsSummary = sprintf('(%s rows%s)', number_format($rows), $skipped > 0 ? ', '.$skipped.' skipped' : '');
-
-                    if ($progress instanceof CloningProgressDisplay) {
-                        // Only Transferred/Failed tables ever started a per-table bar
-                        // (via onTableStart); NotFound/SchemaFailure never did.
-                        if ($status === TableRunStatus::Transferred || $status === TableRunStatus::Failed) {
-                            $progress->finishTable($status === TableRunStatus::Transferred, $timings);
-                        }
-
-                        if ($status === TableRunStatus::Transferred) {
-                            $sink->writeln(sprintf('  <info>✓</info>  %s  %s', $tableName, $rowsSummary));
-                        } elseif ($status === TableRunStatus::Failed) {
-                            $sink->writeln(sprintf('  <error>✗</error>  %s  — transfer failed', $tableName));
-                        }
-                    } elseif ($status === TableRunStatus::Transferred) {
-                        $step->success($rowsSummary);
-                    } elseif ($status === TableRunStatus::Failed) {
-                        $step->fail();
-                    }
-
-                    if ($status === TableRunStatus::NotFound) {
-                        $sink->writeln(sprintf('  <comment>?</comment>  %s  — not found in source, skipped', $tableName));
-                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                        $sink->writeln(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
-                    }
-
-                    if ($status === TableRunStatus::Transferred || $status === TableRunStatus::Failed) {
-                        $this->renderSkipGroups($sink, $skippedRows);
-
-                        // `-vvv`: per-table timing summary table.
-                        if ($isDebug && $timings instanceof StatsTableTransferData) {
-                            CloningProgressDisplay::renderTimingSummary($sink, $timings);
-                        }
-                    }
-
-                    $progress?->advanceOverall();
-                },
+                observer: $observer,
                 settings: new CloningRunSettingsData(
                     skipSchema: $skipSchema,
                     skipTables: $skipTables,
                     onlyTables: $onlyTables,
                     keyRemapping: $keyRemappingService,
-                    breakOnFailure: (bool) $this->option('break-on-failure'),
+                    breakOnFailure: $options->breakOnFailure,
                     dumpSink: $dumpSink,
                     trackRowTotals: $progress instanceof CloningProgressDisplay,
-                    onTableStart: match (true) {
-                        $progress instanceof CloningProgressDisplay => $progress->startTable(...),
-                        $isVerbose && ! $ci => fn (string $tableName) => $step->start('  '.$tableName),
-                        default => null,
-                    },
-                    onStart: $progress instanceof CloningProgressDisplay ? $progress->start(...) : null,
-                    onTableProgress: $progress instanceof CloningProgressDisplay || ($isDebug && ! $ci)
-                        ? static function (string $tableName, StatsTableTransferData $stats) use (&$currentTimings, $progress): void {
-                            $currentTimings = $stats;
-                            $progress?->advanceTable($stats);
-                        }
-                    : null,
                 ),
             );
         } finally {
-            // Also on an exception: the bars must not stay open, and logging must
-            // go back to stderr before the error is reported.
-            $progress?->finish();
-
+            // Also on an exception: logging must go back to stderr before the
+            // error is reported. The orchestrator has closed the bars by now.
             if ($restoreLogs instanceof Closure) {
                 $restoreLogs();
             }
@@ -759,75 +621,9 @@ class RunCommand extends Command
         }
 
         // ─── Phase 8: Summary ──────────────────────────────────────────────────
-        if (! $isVerbose && ! $ci && $dotColumn > 0) { // @pest-mutate-ignore: BooleanAndToBooleanOr
-            $this->line('');
-        }
+        new RunSummaryRenderer($this->output)->render($result, $dumpResult, $ci);
 
-        // Derive not-found from result (merging with any collected during progress)
-        $notFoundFromResult = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
-            static fn (TableRunResultData $t): string => $t->tableName,
-            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::NotFound)
-        ));
-        $notFoundTables = array_values(array_unique(array_merge($notFoundTables, $notFoundFromResult))); // @pest-mutate-ignore: UnwrapArrayValues
-
-        // Always show not-found warnings
-        if ($notFoundTables !== []) {
-            $this->line('');
-            $this->line(sprintf(
-                '  <comment>Warning: %d table%s not found in source (%s)</comment>',
-                count($notFoundTables),
-                count($notFoundTables) === 1 ? '' : 's',
-                implode(', ', $notFoundTables),
-            ));
-        }
-
-        // Collect schema failure tables from result (merge with those caught in onProgress)
-        $schemaFailuresFromResult = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
-            static fn (TableRunResultData $t): string => $t->tableName,
-            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::SkippedBySchemaFailure)
-        ));
-        $schemaFailureTables = array_values(array_unique(array_merge($schemaFailureTables, $schemaFailuresFromResult))); // @pest-mutate-ignore: UnwrapArrayValues
-
-        if ($schemaFailureTables !== []) {
-            $this->line('');
-            $this->line(sprintf(
-                '  <error>Error: %d table%s skipped due to schema replication failure (%s)</error>',
-                count($schemaFailureTables),
-                count($schemaFailureTables) === 1 ? '' : 's',
-                implode(', ', $schemaFailureTables),
-            ));
-        }
-
-        foreach ($result->tables as $tableResult) {
-            foreach ($tableResult->notes as $note) {
-                $this->line(sprintf('  <comment>Note: %s: %s</comment>', $tableResult->tableName, $note));
-            }
-        }
-
-        $transferredCount = count(array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::Transferred));
-        $totalCount = count($result->tables);
-        $duration = $this->formatDuration($result->durationSeconds);
-
-        if (! $ci) {
-            $this->line('');
-            $this->line(sprintf('  Tables: %d/%d  Rows: %d  Duration: %s', $transferredCount, $totalCount, $result->totalRows, $duration));
-            $this->line('');
-        }
-
-        if ($dumpResult instanceof DumpResultData) {
-            $this->line(sprintf(
-                '  Dump: %s  (%s%s)',
-                $dumpResult->zipFileName,
-                $this->formatBytes($dumpResult->zipBytes),
-                $dumpResult->encrypted ? ', AES-256' : '',
-            ));
-
-            if (! $ci) {
-                $this->line('');
-            }
-        }
-
-        if (! $result->success && ! (bool) $this->option('allow-failure')) { // @pest-mutate-ignore: RemoveBooleanCast
+        if (! $result->success && ! $options->allowFailure) {
             return ExitCode::GeneralError->value;
         }
 
@@ -966,170 +762,10 @@ class RunCommand extends Command
         );
 
         if (! $ci) {
-            $this->renderDryRunTable($dryRunResult, $config->connectionName, $schemaDiff);
+            new DryRunRenderer($this->output)->render($dryRunResult, $config->connectionName, $schemaDiff);
         }
 
         return ExitCode::Success->value;
-    }
-
-    private function renderSchemaDiff(SchemaDiffData $diff): void
-    {
-        if ($diff->isIdentical()) {
-            $this->line('  Schema diff: target matches source');
-            $this->line('');
-
-            return;
-        }
-
-        $this->line('  Schema diff: source → target');
-        $this->line('');
-
-        if ($diff->missingTables !== []) {
-            $this->line(sprintf('  Missing tables (%d):   %s', count($diff->missingTables), implode(', ', $diff->missingTables)));
-        }
-
-        if ($diff->extraTables !== []) {
-            $this->line(sprintf('  Extra tables (%d):     %s', count($diff->extraTables), implode(', ', $diff->extraTables)));
-        }
-
-        foreach ($diff->modifiedTables as $tableDiff) {
-            $parts = [];
-
-            if ($tableDiff->missingColumns !== []) {
-                $parts[] = sprintf('+%d col%s (%s)', count($tableDiff->missingColumns), count($tableDiff->missingColumns) === 1 ? '' : 's', implode(', ', $tableDiff->missingColumns));
-            }
-
-            if ($tableDiff->extraColumns !== []) {
-                $parts[] = sprintf('-%d col%s (%s)', count($tableDiff->extraColumns), count($tableDiff->extraColumns) === 1 ? '' : 's', implode(', ', $tableDiff->extraColumns));
-            }
-
-            foreach ($tableDiff->modifiedColumns as $colDiff) {
-                $parts[] = sprintf('~%s (%s → %s%s)', $colDiff->name, $colDiff->sourceType, $colDiff->targetType, $colDiff->sourceNullable !== $colDiff->targetNullable ? ', nullable changed' : '');
-            }
-
-            $this->line(sprintf('  Modified table:        %s: %s', $tableDiff->tableName, implode(', ', $parts)));
-        }
-
-        $this->line('');
-    }
-
-    private function renderDryRunTable(DryRunResultData $result, string $sourceName, ?SchemaDiffData $schemaDiff = null): void
-    {
-        $this->line('');
-        $this->line(sprintf('  Dry-run: %s', $sourceName));
-        $this->line('');
-
-        if ($schemaDiff instanceof SchemaDiffData) {
-            $this->renderSchemaDiff($schemaDiff);
-        }
-
-        $tableWidth = 24;
-        $rowsWidth = 14;
-        $strategyWidth = 10;
-
-        $header = sprintf(
-            '  %-'.$tableWidth.'s %-'.$rowsWidth.'s %-'.$strategyWidth.'s %s',
-            'Table',
-            'Rows (est.)',
-            'Strategy',
-            'Transformations'
-        );
-
-        $separator = '  '.str_repeat('─', $tableWidth + $rowsWidth + $strategyWidth + 20);
-
-        $this->line($header);
-        $this->line($separator);
-
-        foreach ($result->tables as $table) {
-            $rowsLabel = $table->exists
-                ? ($table->estimatedRows !== null ? ($table->estimated ? '~' : '').number_format($table->estimatedRows) : '?')
-                : 'NOT FOUND';
-
-            $strategyLabel = $table->exists
-                ? (in_array($table->rowStrategy, ['first', 'last'], true) ? $table->rowStrategy.' '.number_format((int) $table->rowLimit) : $table->rowStrategy) // @pest-mutate-ignore: RemoveIntegerCast
-                : ('—');
-
-            $transformLabel = $table->transformedColumns !== []
-                ? implode(', ', $table->transformedColumns)
-                : '—';
-
-            $this->line(sprintf(
-                '  %-'.$tableWidth.'s %-'.$rowsWidth.'s %-'.$strategyWidth.'s %s',
-                $table->tableName,
-                $rowsLabel,
-                $strategyLabel,
-                $transformLabel,
-            ));
-        }
-
-        $this->line($separator);
-
-        $notFoundMsg = $result->notFoundCount > 0
-            ? sprintf(', %d not found, will be skipped', $result->notFoundCount)
-            : '';
-
-        $this->line(sprintf(
-            '  %-'.$tableWidth.'s %-'.$rowsWidth.'s', // @pest-mutate-ignore: ConcatRemoveRight
-            'Total',
-            (array_any($result->tables, static fn (DryRunTableData $t): bool => $t->estimated) ? '~' : '').number_format($result->totalEstimatedRows).' rows across '.count($result->tables).' tables'.$notFoundMsg,
-        ));
-
-        $this->line('');
-        $this->line('  No data will be transferred. Run without --dry-run to execute.');
-        $this->line('');
-    }
-
-    private function formatDuration(float $seconds): string
-    {
-        if ($seconds < 60) {
-            return sprintf('%.0fs', $seconds);
-        }
-
-        $minutes = (int) ($seconds / 60); // @pest-mutate-ignore: RemoveIntegerCast
-        $remaining = $seconds % 60;
-
-        return sprintf('%dm %ds', $minutes, $remaining);
-    }
-
-    private function formatBytes(int $bytes): string
-    {
-        if ($bytes < 1024) {
-            return $bytes.' B';
-        }
-
-        $units = ['KB', 'MB', 'GB'];
-        $value = $bytes / 1024;
-        $unit = 0;
-
-        while ($value >= 1024 && $unit < count($units) - 1) {
-            $value /= 1024;
-            $unit++;
-        }
-
-        return sprintf('%.1f %s', $value, $units[$unit]);
-    }
-
-    /**
-     * Aggregate skipped rows by SQL error message, sorted by descending count.
-     *
-     * @param  list<SkippedRow>  $rows
-     * @return list<array{count: int, message: string}>
-     */
-    private function aggregateSkipReasons(array $rows): array
-    {
-        $byMessage = [];
-        foreach ($rows as $row) {
-            $byMessage[$row->sqlError] = ($byMessage[$row->sqlError] ?? 0) + 1;
-        }
-
-        arsort($byMessage);
-
-        $result = [];
-        foreach ($byMessage as $message => $count) {
-            $result[] = ['count' => $count, 'message' => (string) $message]; // @pest-mutate-ignore: RemoveStringCast
-        }
-
-        return $result;
     }
 
     /**
@@ -1190,85 +826,11 @@ class RunCommand extends Command
     }
 
     /**
-     * @param  list<SkippedRow>  $skippedRows
-     */
-    private function renderSkipGroups(OutputInterface $sink, array $skippedRows): void
-    {
-        if ($skippedRows === []) {
-            return;
-        }
-
-        $groups = $this->aggregateSkipReasons($skippedRows);
-        $shown = array_slice($groups, 0, 10);
-        foreach ($shown as $group) {
-            $sink->writeln(sprintf('     └ %d× %s', $group['count'], $group['message']));
-        }
-
-        $rest = count($groups) - count($shown);
-        if ($rest > 0) {
-            $sink->writeln(sprintf('     └ … and %d more error types', $rest));
-        }
-    }
-
-    /**
-     * Parses a table name flag. Patterns work only in cloning.yaml: a comma
-     * inside a pattern would split it.
-     *
-     * @return list<string>
-     *
-     * @throws InvalidArgumentException when the value holds no name or a pattern
-     */
-    private function parseTableNameList(string $option): array
-    {
-        $names = $this->parseNameList($option);
-        $pattern = array_find($names, static fn (string $name): bool => str_starts_with($name, '/'));
-
-        if ($pattern !== null) {
-            throw new InvalidArgumentException(sprintf(
-                '--%s takes table names, not patterns ("%s"). Write table patterns in cloning.yaml.',
-                $option,
-                $pattern,
-            ));
-        }
-
-        return $names;
-    }
-
-    /**
      * Reconstruct the original command line, adding --no-memory-limit if not already present.
      */
     private function getOriginalCommandWithNoMemoryLimit(): string
     {
         return $this->getOriginalCommand(['--no-memory-limit']);
-    }
-
-    /**
-     * Parse a comma-separated name option. A missing or empty option yields no
-     * names; a value that holds no name at all (e.g. ' , ') is rejected, so it
-     * cannot silently turn a filter off. '0' is a valid name.
-     *
-     * @return list<string>
-     *
-     * @throws InvalidArgumentException when the value holds no name
-     */
-    private function parseNameList(string $option): array
-    {
-        $value = $this->option($option);
-
-        if (! is_scalar($value) || $value === '') {
-            return [];
-        }
-
-        $names = array_values(array_filter( // @pest-mutate-ignore: UnwrapArrayValues
-            array_map(trim(...), explode(',', (string) $value)),
-            static fn (string $name): bool => $name !== '',
-        ));
-
-        if ($names === []) {
-            throw new InvalidArgumentException(sprintf('--%s needs at least one name.', $option));
-        }
-
-        return $names;
     }
 
     /**
@@ -1329,14 +891,6 @@ class RunCommand extends Command
     }
 
     /**
-     * Handle KeyRemappingExhaustedException with a friendly recovery flow.
-     *
-     * CI mode: print prose with hint, exit GeneralError.
-     * Interactive: prompt to switch the offending column to `keep` strategy via cloning:column:edit.
-     *   On accept: invoke editor in-process, exit Success with re-run hint.
-     *   On decline: exit Success without changes.
-     */
-    /**
      * Prints every key remapping entry that cannot work for the source schema.
      *
      * @return bool true when there is at least one problem
@@ -1352,6 +906,14 @@ class RunCommand extends Command
         return $problems !== [];
     }
 
+    /**
+     * Handle KeyRemappingExhaustedException with a friendly recovery flow.
+     *
+     * CI mode: print prose with hint, exit GeneralError.
+     * Interactive: prompt to switch the offending column to `keep` strategy via cloning:column:edit.
+     *   On accept: invoke editor in-process, exit Success with re-run hint.
+     *   On decline: exit Success without changes.
+     */
     private function handleKeyRemappingExhausted(KeyRemappingExhaustedException $exhausted, string $filePath, bool $ci): int
     {
         $columnTypeLabel = sprintf('%s (%s, ceiling %d)', strtoupper($exhausted->columnType), $exhausted->unsigned ? 'unsigned' : 'signed', $exhausted->typeMax);

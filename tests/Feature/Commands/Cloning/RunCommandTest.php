@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\CloningRunObserver;
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\CloningRunSettingsData;
@@ -1200,14 +1201,12 @@ it('renders skip groups under the table line in verbose mode', function (): void
             ConnectionData $source,
             ConnectionData $target,
             DatabaseSchemaData $sourceSchema,
-            callable $onProgress,
+            CloningRunObserver $observer,
             CloningRunSettingsData $settings,
         ) use ($skippedRows): RunResultData {
-            if ($settings->onTableStart !== null) {
-                ($settings->onTableStart)('orders');
-            }
-
-            $onProgress('orders', TableRunStatus::Transferred, 5, 3, $skippedRows);
+            $observer->tableStarted('orders');
+            $observer->tableFinished('orders', TableRunStatus::Transferred, 5, 3, $skippedRows);
+            $observer->finished();
 
             return new RunResultData(
                 success: true,
@@ -1273,14 +1272,12 @@ it('renders skip groups under a fully failed table line in verbose mode', functi
             ConnectionData $source,
             ConnectionData $target,
             DatabaseSchemaData $sourceSchema,
-            callable $onProgress,
+            CloningRunObserver $observer,
             CloningRunSettingsData $settings,
         ) use ($skippedRows): RunResultData {
-            if ($settings->onTableStart !== null) {
-                ($settings->onTableStart)('invoice_lines');
-            }
-
-            $onProgress('invoice_lines', TableRunStatus::Failed, 0, 2, $skippedRows);
+            $observer->tableStarted('invoice_lines');
+            $observer->tableFinished('invoice_lines', TableRunStatus::Failed, 0, 2, $skippedRows);
+            $observer->finished();
 
             return new RunResultData(
                 success: false,
@@ -1835,11 +1832,12 @@ it('reports schema-replication failures and not-found tables collected during a 
         ConnectionData $source,
         ConnectionData $target,
         DatabaseSchemaData $sourceSchema,
-        callable $onProgress,
+        CloningRunObserver $observer,
     ) use ($result): RunResultData {
-        // CI branch of onProgress collects not-found + schema-failure names.
-        $onProgress('gone', TableRunStatus::NotFound, 0, 0, []);
-        $onProgress('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        // The summary collects not-found + schema-failure names from the result.
+        $observer->tableFinished('gone', TableRunStatus::NotFound, 0, 0, []);
+        $observer->tableFinished('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        $observer->finished();
 
         return $result;
     });
@@ -2237,7 +2235,24 @@ it('resolves remap_keys from config and CLI flags', function (bool $configValue,
     'config false, --remap-keys re-enables' => [false, ['--remap-keys' => true], true],
     'config false survives other overrides' => [false, ['--enforce-column-types' => true], false],
     'config true, --remap-keys' => [true, ['--remap-keys' => true], true],
-    'config true, both flags: --no-remap-keys wins' => [true, ['--remap-keys' => true, '--no-remap-keys' => true], false],
+]);
+
+it('rejects a flag combined with its negation', function (array $flags, string $message): void {
+    Storage::fake('local');
+    Storage::disk('local')->put('test.cloning.yaml', makeRemappingYamlWithRemapKeys(true));
+
+    $this->artisan('cloning:run', [
+        'file' => 'test.cloning.yaml',
+        '--target' => 'staging',
+        '--ci' => true,
+        ...$flags,
+    ])
+        ->expectsOutputToContain($message)
+        ->assertExitCode(ExitCode::ValidationError->value);
+})->with([
+    'remap keys' => [['--remap-keys' => true, '--no-remap-keys' => true], '--remap-keys and --no-remap-keys are mutually exclusive.'],
+    'remap keys alias' => [['--remap-keys' => true, '--skip-remapping-keys' => true], '--remap-keys and --skip-remapping-keys are mutually exclusive.'],
+    'fk checks' => [['--disable-fk-checks' => true, '--no-disable-fk-checks' => true], '--disable-fk-checks and --no-disable-fk-checks are mutually exclusive.'],
 ]);
 
 it('prints a notice when configured key remapping is disabled', function (array $flags, string $source): void {
