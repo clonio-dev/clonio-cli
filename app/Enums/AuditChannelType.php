@@ -68,13 +68,4 @@ enum AuditChannelType: string
             default => false,
         };
     }
-
-    /** Does this type have secrets that need encryption? */
-    public function hasSecrets(): bool
-    {
-        return match ($this) {
-            self::Local, self::Stdout, self::Stderr, self::Stack => false,
-            default => true,
-        };
-    }
 }

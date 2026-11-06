@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\ColumnCloningConfigData;
-use App\Data\Cloning\DumpOptionsData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRowConfigData;
 use App\Enums\ClearMode;
@@ -100,20 +99,4 @@ it('CloningConfigData getTable returns the correct table', function (): void {
 
     expect($config->getTable('users'))->toBe($table);
     expect($config->getTable('orders'))->toBeNull();
-});
-
-it('DumpOptionsData stores all fields correctly', function (): void {
-    $opts = new DumpOptionsData(
-        connectionName: 'prod',
-        outputPath: 'prod.cloning.yaml',
-        force: true,
-        onlyPii: false,
-        fakerLocale: 'en_US',
-    );
-
-    expect($opts->connectionName)->toBe('prod');
-    expect($opts->outputPath)->toBe('prod.cloning.yaml');
-    expect($opts->force)->toBeTrue();
-    expect($opts->onlyPii)->toBeFalse();
-    expect($opts->fakerLocale)->toBe('en_US');
 });
