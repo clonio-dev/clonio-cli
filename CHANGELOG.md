@@ -4,6 +4,19 @@ All notable changes to `clonio-cli` will be documented in this file.
 
 ## v1.9.0 - 2026-11-06
 
+### Security
+
+This release hardens how Clonio stores and protects secrets, following a responsible disclosure by James King ([@Jamesking56](https://github.com/Jamesking56)) ([#273](https://github.com/clonio-dev/clonio-cli/issues/273), [#274](https://github.com/clonio-dev/clonio-cli/issues/274), [#275](https://github.com/clonio-dev/clonio-cli/issues/275), [#276](https://github.com/clonio-dev/clonio-cli/issues/276)). Thank you, James.
+
+### Behaviour change
+
+* **`env:NAME` secret references are the default.** `connection:add`, `connection:update`, `audit:add` and `audit:update` now ask for an environment variable first (e.g. `CLONIO_PROD_PASSWORD`) and store only the reference. Entering the value directly is still possible and stores it encrypted, as before.
+* **`CLONIO_KEY` replaces `APP_KEY`.** Clonio reads its key from `CLONIO_KEY` and falls back to `APP_KEY`, so existing projects keep working. `init` now writes `CLONIO_KEY=` instead of `APP_KEY=`. The new `key:rotate` command moves a project to a fresh `CLONIO_KEY` and re-encrypts all `encrypted:` values in `clonio.json`. Audit logs signed before a rotation verify only with the old key: `CLONIO_KEY='<old key>' clonio cloning:verify-audit …`.
+* **Warnings on stderr before each command.** Clonio warns when `clonio.json` or `.env` is accessible to group or others (looser than `0600`; skipped on Windows) and when the key still comes from `APP_KEY`. Fix with `chmod 600 <file>` and `clonio key:rotate`. There is no opt-out.
+* **Schema inspection.** PostgreSQL sources inspected with a non-owner user now report their primary and foreign keys (previously none). SQL Server foreign keys now reference the correct table and column (previously their own table). Composite foreign keys on both are reported once per column pair.
+
+See [`docs/security.md`](docs/security.md) for the full picture.
+
 ### What's Changed
 
 * feat(secrets): env:NAME secret references as default, catalog-based key inspection by @rokde in https://github.com/clonio-dev/clonio-cli/pull/272
