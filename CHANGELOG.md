@@ -4,6 +4,10 @@ All notable changes to `clonio-cli` will be documented in this file.
 
 ## v1.6.0 - 2026-11-06
 
+### Behaviour change
+
+`cloning:run` now rejects a flag combined with its own negation, e.g. `--remap-keys --no-remap-keys` or `--recreate-tables --no-recreate-tables`, with exit code 4 (validation error). Before, the `--no-` form silently won for `--remap-keys`. Pass only one of the two.
+
 ### What's Changed
 
 * refactor(cloning): split RunCommand into options DTO, run observer and renderers by @rokde in https://github.com/clonio-dev/clonio-cli/pull/264
