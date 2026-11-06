@@ -52,7 +52,7 @@ A summary table is displayed before writing. The operation can be cancelled at t
 | Code | Constant | Meaning |
 |---|---|---|
 | `0` | `Success` | Connection added successfully, or save was cancelled by the user |
-| `2` | `ConfigError` | Password encryption failed — `APP_KEY` is missing or invalid |
+| `2` | `ConfigError` | Password encryption failed — `CLONIO_KEY` (or `APP_KEY`) is missing or invalid |
 | `4` | `ValidationError` | Invalid `env:` reference, invalid connection name, duplicate name, out-of-range port, unknown driver, invalid ssl mode or certificate options, certificate file not found |
 | `5` | `IoError` | Could not write to `clonio.json` |
 
@@ -65,15 +65,15 @@ A stored password has one of two forms:
 | Stored value | Meaning |
 |---|---|
 | `env:CLONIO_PROD_PASSWORD` | Clonio reads the password from the environment variable `CLONIO_PROD_PASSWORD` each time it connects. The password is never written to disk. **This is the default.** |
-| `encrypted:<payload>` | The password is encrypted with `APP_KEY` (Laravel `Crypt`) and stored in `clonio.json`. |
+| `encrypted:<payload>` | The password is encrypted with `CLONIO_KEY` (Laravel `Crypt`) and stored in `clonio.json`. |
 
-Environment references are the recommended form. An encrypted password is only as safe as `APP_KEY`, and `APP_KEY` usually sits in the `.env` file next to `clonio.json`: anyone who can read both files can decrypt the password. See [Security and deployment](../security.md).
+Environment references are the recommended form. An encrypted password is only as safe as the key, and the key usually sits in the `.env` file next to `clonio.json`: anyone who can read both files can decrypt the password. See [Security and deployment](../security.md).
 
 - Variable names must match `[A-Za-z_][A-Za-z0-9_]*`. At the prompt, a leading `$` or `env:` is removed.
 - If the variable is not set yet, Clonio warns but still saves the reference. `connection:test` and `cloning:run` fail with `environment variable … is not set` until you set it.
 - Without interaction and without `--password`, a network connection stores `env:CLONIO_<NAME>_PASSWORD`.
 - `--password=env:NAME` stores the reference without a warning. Any other `--password` value is encrypted and Clonio warns that it may end up in your shell history.
-- Encrypting requires `APP_KEY` (`.env` or exported). If the key is absent, the command exits with code `2`.
+- Encrypting requires `CLONIO_KEY`, or `APP_KEY` as a fallback (`.env` or exported). If the key is absent, the command exits with code `2`.
 
 ```bash
 export CLONIO_PROD_PASSWORD='…'   # e.g. from your CI secret store

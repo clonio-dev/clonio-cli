@@ -14,6 +14,8 @@ beforeEach(function (): void {
 afterEach(function (): void {
     // Restore APP_KEY in process env in case a test cleared it
     putenv('APP_KEY=base64:ROzyPViGEkER6n3g0OHblde5CygEIcuDlAFbca99xvM=');
+    putenv('CLONIO_KEY');
+    unset($_ENV['CLONIO_KEY'], $_SERVER['CLONIO_KEY']);
 });
 
 it('reports success when APP_KEY is in system environment', function (): void {
@@ -34,36 +36,36 @@ it('reports success when APP_KEY is only in .env file', function (): void {
         ->assertExitCode(0);
 });
 
-it('creates .env with APP_KEY when none exists', function (): void {
+it('creates .env with CLONIO_KEY when no key exists', function (): void {
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
 
     $this->artisan('init')
-        ->expectsOutputToContain('Generating .env with a new key')
-        ->expectsOutputToContain('Created .env with APP_KEY')
+        ->expectsOutputToContain('Writing a new CLONIO_KEY to .env')
+        ->expectsOutputToContain('Wrote CLONIO_KEY to .env')
         ->assertExitCode(0);
 
     Storage::assertExists('.env');
 
     $content = Storage::get('.env');
-    expect($content)->toBeString()->toContain('APP_KEY=base64:');
+    expect($content)->toBeString()->toContain('CLONIO_KEY=base64:')->not->toContain('APP_KEY');
 });
 
-it('appends APP_KEY to existing .env that has no key', function (): void {
+it('appends CLONIO_KEY to existing .env that has no key', function (): void {
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
 
     Storage::put('.env', "DB_HOST=localhost\nDB_PORT=5432\n");
 
     $this->artisan('init')
-        ->expectsOutputToContain('Created .env with APP_KEY')
+        ->expectsOutputToContain('Wrote CLONIO_KEY to .env')
         ->assertExitCode(0);
 
     $content = Storage::get('.env');
     expect($content)
         ->toBeString()
         ->toContain('DB_HOST=localhost')
-        ->toContain('APP_KEY=base64:');
+        ->toContain('CLONIO_KEY=base64:');
 });
 
 it('auto-appends .env and clonio.json to .gitignore when both are missing', function (): void {
@@ -139,19 +141,15 @@ it('cancels force regeneration when user declines', function (): void {
     expect($content)->toBeString()->toContain('APP_KEY=base64:existingkey');
 });
 
-it('replaces APP_KEY in .env when force is confirmed', function (): void {
+it('writes CLONIO_KEY next to APP_KEY in .env when force is confirmed', function (): void {
     Storage::put('.env', "APP_KEY=base64:oldkey\n");
 
     $this->artisan('init', ['--force' => true])
         ->expectsConfirmation('  Regenerate key?', 'yes')
-        ->expectsOutputToContain('Created .env with APP_KEY')
+        ->expectsOutputToContain('Wrote CLONIO_KEY to .env')
         ->assertExitCode(0);
 
-    $content = Storage::get('.env');
-    expect($content)
-        ->toBeString()
-        ->toContain('APP_KEY=base64:')
-        ->not->toContain('APP_KEY=base64:oldkey');
+    expect(Storage::get('.env'))->toMatch('/^APP_KEY=base64:oldkey\nCLONIO_KEY=base64:[A-Za-z0-9+\/]{43}=\n$/');
 });
 
 it('displays hint about created audit channels on fresh init', function (): void {
@@ -244,7 +242,7 @@ it('returns an IO error when a new .env cannot be written', function (): void {
     Storage::shouldReceive('exists')->with('.env')->andReturn(false);
     Storage::shouldReceive('put')
         ->once()
-        ->with('.env', Mockery::on(fn (string $content): bool => preg_match('/^APP_KEY=base64:.+\n$/', $content) === 1))
+        ->with('.env', Mockery::on(fn (string $content): bool => preg_match('/^CLONIO_KEY=base64:.+\n$/', $content) === 1))
         ->andReturn(false);
 
     $this->artisan('init')
@@ -265,7 +263,7 @@ it('returns an IO error when an existing .env cannot be overwritten', function (
     Storage::shouldReceive('path')->with('.env')->andReturn('/tmp/clonio-readonly.env');
     Storage::shouldReceive('put')
         ->once()
-        ->with('.env', Mockery::on(fn (string $content): bool => str_starts_with($content, "DB_HOST=localhost\nAPP_KEY=base64:")
+        ->with('.env', Mockery::on(fn (string $content): bool => str_starts_with($content, "DB_HOST=localhost\nCLONIO_KEY=base64:")
             && str_ends_with($content, "\n")
             && substr_count($content, "\n") === 2))
         ->andReturn(false);
@@ -345,13 +343,19 @@ function g9_initLogo(): string
         ."  👻  Clone your production database to dev and test environments –\n"
         ."     with automatic anonymization, schema versioning, and full audit trails.\n"
         ."\n"
-        ."  Checking for APP_KEY ...\n";
+        ."  Checking for CLONIO_KEY ...\n";
 }
 
 function g9_forgetAppKey(): void
 {
     putenv('APP_KEY');
     unset($_ENV['APP_KEY'], $_SERVER['APP_KEY']);
+}
+
+function g9_legacyHint(): string
+{
+    return "  ℹ  Clonio uses APP_KEY because CLONIO_KEY is not set. Run `clonio key:rotate`\n"
+        ."     to move to a dedicated CLONIO_KEY.\n";
 }
 
 function g9_initTail(): string
@@ -366,9 +370,9 @@ function g9_forceWarning(): string
 {
     return "  APP_KEY already exists. --force was passed — regenerating.\n"
         ."\n"
-        ."  ⚠  Warning: regenerating the key will make all existing encrypted\n"
-        ."     passwords in clonio.json unreadable. You will need to re-enter\n"
-        ."     them via `connection:update`.\n"
+        ."  ⚠  Warning: a new key makes all existing encrypted secrets in\n"
+        ."     clonio.json unreadable. To keep them, run `clonio key:rotate`\n"
+        ."     instead.\n"
         ."\n"
         ."   Regenerate key? (yes/no) [no]:\n"
         ." > \n";
@@ -378,9 +382,9 @@ function g9_assertFreshDotenvKey(): string
 {
     $content = (string) Storage::get('.env');
 
-    expect($content)->toMatch('/^APP_KEY=base64:[A-Za-z0-9+\/]{43}=\n$/');
+    expect($content)->toMatch('/^CLONIO_KEY=base64:[A-Za-z0-9+\/]{43}=\n$/');
 
-    $key = substr($content, strlen('APP_KEY='), -1);
+    $key = substr($content, strlen('CLONIO_KEY='), -1);
     expect(strlen((string) base64_decode(substr($key, strlen('base64:')), true)))->toBe(32)
         ->and(fileperms(Storage::path('.env')) & 0777)->toBe(0600);
 
@@ -394,6 +398,7 @@ it('prints the exact transcript and writes nothing when APP_KEY is in the enviro
         ->and($display)->toBe(
             g9_initLogo()
             ."  ✓  APP_KEY found in environment — no .env file needed.\n"
+            .g9_legacyHint()
             .g9_initTail()
         );
 
@@ -426,9 +431,9 @@ it('prints the exact transcript when an environment key is regenerated with --fo
             g9_initLogo()
             .g9_forceWarning()
             ."\n"
-            ."  No APP_KEY found. Generating .env with a new key ...\n"
+            ."  Writing a new CLONIO_KEY to .env ...\n"
             ."\n"
-            .sprintf("  ✓  Created .env with APP_KEY in %s\n", getcwd())
+            .sprintf("  ✓  Wrote CLONIO_KEY to .env in %s\n", getcwd())
             ."\n"
             .g9_initTail()
         );
@@ -444,9 +449,9 @@ it('does not warn about an existing key when --force is passed without any key',
     expect($exit)->toBe(ExitCode::Success->value)
         ->and($display)->toBe(
             g9_initLogo()
-            ."  No APP_KEY found. Generating .env with a new key ...\n"
+            ."  Writing a new CLONIO_KEY to .env ...\n"
             ."\n"
-            .sprintf("  ✓  Created .env with APP_KEY in %s\n", getcwd())
+            .sprintf("  ✓  Wrote CLONIO_KEY to .env in %s\n", getcwd())
             ."\n"
             .g9_initTail()
         );
@@ -461,7 +466,7 @@ it('treats an empty APP_KEY environment variable as missing', function (): void 
     [$exit, $display] = g9_runInit();
 
     expect($exit)->toBe(ExitCode::Success->value)
-        ->and($display)->toContain('  No APP_KEY found. Generating .env with a new key ...')
+        ->and($display)->toContain('  Writing a new CLONIO_KEY to .env ...')
         ->and($display)->not->toContain('APP_KEY found in environment');
 
     g9_assertFreshDotenvKey();
@@ -477,13 +482,13 @@ it('appends the key after trimming trailing blank lines of an existing .env', fu
     expect($exit)->toBe(ExitCode::Success->value);
 
     $content = (string) Storage::get('.env');
-    expect($content)->toMatch('/^DB_HOST=localhost\nAPP_KEY=base64:[A-Za-z0-9+\/]{43}=\n$/')
+    expect($content)->toMatch('/^DB_HOST=localhost\nCLONIO_KEY=base64:[A-Za-z0-9+\/]{43}=\n$/')
         ->and(fileperms(Storage::path('.env')) & 0777)->toBe(0600);
 });
 
 it('replaces an existing key in place and restricts the .env permissions', function (): void {
     g9_forgetAppKey();
-    Storage::put('.env', "DB_HOST=localhost\nAPP_KEY=base64:oldkey\nDB_PORT=5432\n");
+    Storage::put('.env', "DB_HOST=localhost\nCLONIO_KEY=base64:oldkey\nDB_PORT=5432\n");
     chmod(Storage::path('.env'), 0644);
 
     [$exit] = g9_runInit(['--force' => true], ['yes']);
@@ -491,7 +496,7 @@ it('replaces an existing key in place and restricts the .env permissions', funct
     expect($exit)->toBe(ExitCode::Success->value);
 
     $content = (string) Storage::get('.env');
-    expect($content)->toMatch('/^DB_HOST=localhost\nAPP_KEY=base64:[A-Za-z0-9+\/]{43}=\nDB_PORT=5432\n$/')
+    expect($content)->toMatch('/^DB_HOST=localhost\nCLONIO_KEY=base64:[A-Za-z0-9+\/]{43}=\nDB_PORT=5432\n$/')
         ->and(fileperms(Storage::path('.env')) & 0777)->toBe(0600);
 });
 
@@ -505,6 +510,7 @@ it('writes the exact .gitignore entries after trimming trailing blank lines', fu
         ->and($display)->toBe(
             g9_initLogo()
             ."  ✓  APP_KEY found in environment — no .env file needed.\n"
+            .g9_legacyHint()
             ."  ✓  Added to .gitignore: .env\n"
             ."  ✓  Added to .gitignore: clonio.json\n"
             ."  ✓  Created clonio.json with default audit channels: local, stdout, stderr\n"
@@ -530,16 +536,70 @@ it('reports the exact .env path when a new .env cannot be written', function ():
     Storage::shouldReceive('exists')->with('.env')->andReturn(false);
     Storage::shouldReceive('put')
         ->once()
-        ->with('.env', Mockery::on(fn (string $content): bool => preg_match('/^APP_KEY=base64:.+\n$/', $content) === 1))
+        ->with('.env', Mockery::on(fn (string $content): bool => preg_match('/^CLONIO_KEY=base64:.+\n$/', $content) === 1))
         ->andReturn(false);
 
     [$exit, $display] = g9_runInit();
 
     expect($exit)->toBe(ExitCode::IoError->value)
         ->and($display)->toEndWith(
-            "  No APP_KEY found. Generating .env with a new key ...\n"
+            "  Writing a new CLONIO_KEY to .env ...\n"
             ."\n"
             .sprintf("Cannot write %s/.env: permission denied\n", getcwd())
             ."\n"
         );
+});
+
+it('finds CLONIO_KEY in the environment and prefers it over APP_KEY', function (): void {
+    putenv('CLONIO_KEY=base64:clonio');
+
+    [$exit, $display] = g9_runInit();
+
+    expect($exit)->toBe(ExitCode::Success->value)
+        ->and($display)->toBe(
+            g9_initLogo()
+            ."  ✓  CLONIO_KEY found in environment — no .env file needed.\n"
+            .g9_initTail()
+        );
+
+    Storage::assertMissing('.env');
+});
+
+it('finds CLONIO_KEY in .env and prefers it over APP_KEY in .env', function (): void {
+    g9_forgetAppKey();
+    Storage::put('.env', "APP_KEY=base64:app\nCLONIO_KEY=base64:clonio\n");
+
+    [$exit, $display] = g9_runInit();
+
+    expect($exit)->toBe(ExitCode::Success->value)
+        ->and($display)->toBe(
+            g9_initLogo()
+            ."  ✓  CLONIO_KEY found in .env — ready.\n"
+            .g9_initTail()
+        );
+});
+
+it('suggests key:rotate when only APP_KEY is in .env', function (): void {
+    g9_forgetAppKey();
+    Storage::put('.env', "APP_KEY=base64:app\n");
+
+    [$exit, $display] = g9_runInit();
+
+    expect($exit)->toBe(ExitCode::Success->value)
+        ->and($display)->toBe(
+            g9_initLogo()
+            ."  ✓  APP_KEY found in .env — ready.\n"
+            .g9_legacyHint()
+            .g9_initTail()
+        );
+});
+
+it('ignores an empty CLONIO_KEY line in .env', function (): void {
+    g9_forgetAppKey();
+    Storage::put('.env', "CLONIO_KEY=\nDB_HOST=localhost\n");
+
+    [$exit] = g9_runInit();
+
+    expect($exit)->toBe(ExitCode::Success->value)
+        ->and(Storage::get('.env'))->toMatch('/^CLONIO_KEY=base64:[A-Za-z0-9+\/]{43}=\nDB_HOST=localhost\n$/');
 });

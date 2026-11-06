@@ -40,7 +40,7 @@ The generated file is meant to be reviewed, adjusted, and committed to your repo
 
 ## Prerequisites
 
-1. Run `clonio init` in your working directory to create a `.env` file with `APP_KEY`
+1. Run `clonio init` in your working directory to create a `.env` file with `CLONIO_KEY`
 2. Add a connection with `clonio connection:add`
 3. (Optional) Customise PII detection with `clonio matchers:init`
 

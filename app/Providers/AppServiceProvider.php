@@ -5,9 +5,9 @@ namespace App\Providers;
 use App\Logging\AuditBuffer;
 use App\Services\Config\ConfigService;
 use App\Services\Runtime\PackagedRuntimeDetector;
+use App\Services\Secrets\EncryptionKey;
 use Composer\InstalledVersions;
 use Dotenv\Dotenv;
-use Illuminate\Support\Env;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -32,9 +32,9 @@ class AppServiceProvider extends ServiceProvider
         if (is_string($cwd)) {
             Dotenv::createImmutable($cwd)->safeLoad();
 
-            $key = Env::get('APP_KEY');
+            $key = EncryptionKey::value();
 
-            if (is_string($key) && $key !== '') {
+            if ($key !== null) {
                 config(['app.key' => $key]);
             }
 

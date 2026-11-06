@@ -331,11 +331,11 @@ Secrets (S3 secret keys, SMTP passwords, webhook URLs, ntfy tokens) are stored i
 | Stored value | Meaning |
 |---|---|
 | `env:NAME` | Read from the environment variable `NAME` at delivery time; never written to disk. **This is the default.** |
-| `encrypted:<payload>` | Encrypted with `APP_KEY` (Laravel `Crypt`) and stored in `clonio.json`. |
+| `encrypted:<payload>` | Encrypted with `CLONIO_KEY` (Laravel `Crypt`) and stored in `clonio.json`. |
 
 For each secret, Clonio first asks how to get it. The default is an environment variable named `CLONIO_AUDIT_<CHANNEL>_<FIELD>`, e.g. `CLONIO_AUDIT_S3_BACKUP_SECRET_KEY`. Clonio warns if the variable is not set yet; delivery fails until it is. Without interaction, required secrets default to that reference; the optional ntfy token defaults to none.
 
-Encrypting requires `APP_KEY` (`.env` or exported). An encrypted secret is only as safe as `APP_KEY` — see [Security and deployment](../security.md).
+Encrypting requires `CLONIO_KEY`, or `APP_KEY` as a fallback (`.env` or exported). An encrypted secret is only as safe as that key — see [Security and deployment](../security.md).
 
 `--s3-secret-key=env:NAME` (and the other secret flags) stores the reference without a warning. Any other flag value is encrypted, and Clonio warns that it may end up in shell history.
 

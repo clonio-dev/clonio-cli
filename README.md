@@ -85,6 +85,7 @@ Store secrets as `env:NAME` references (the default), run transfers from product
 | Command | Description |
 |---------|-------------|
 | [`init`](docs/commands/init.md) | Bootstrap Clonio in the current directory |
+| [`key:rotate`](docs/commands/key-rotate.md) | Replace the encryption key and re-encrypt stored secrets |
 | [`update`](docs/commands/update.md) | Update to the latest release |
 | [`connection:add`](docs/commands/connection-add.md) | Add a new database connection |
 | [`connection:update`](docs/commands/connection-update.md) | Update an existing database connection |
