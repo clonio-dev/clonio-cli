@@ -652,6 +652,8 @@ jobs:
     uses: ./.github/workflows/update-changelog.yml
     with:
       tag: ${{ github.ref_name }}
+    secrets:
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   notify-packagist:
     name: Notify Packagist
