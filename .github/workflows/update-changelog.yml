@@ -8,9 +8,14 @@ name: "Update Changelog"
 # workflow directly (workflow_call). The `release` trigger only covers releases
 # published by hand; workflow_dispatch allows backfilling a single tag.
 #
-# main is protected (PR + signed commits), so the change is committed through
-# the contents API (GitHub signs those commits) on a `changelog/<tag>` branch
-# and proposed as a pull request.
+# main is protected (PR, required checks, signed commits). The change is
+# committed through the contents API, so GitHub signs it:
+#
+# - With the release GitHub App configured (variable RELEASE_APP_CLIENT_ID,
+#   secret RELEASE_APP_PRIVATE_KEY, app listed as ruleset bypass actor), the
+#   commit goes straight to main. No pull request, nothing to merge by hand.
+# - Without it, the commit goes to a `changelog/<tag>` branch and is proposed
+#   as a pull request.
 
 on:
   release:
@@ -21,6 +26,9 @@ on:
         description: Release tag, e.g. v1.2.0
         required: true
         type: string
+    secrets:
+      RELEASE_APP_PRIVATE_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -49,6 +57,15 @@ jobs:
       BRANCH: changelog/${{ inputs.tag || github.event.release.tag_name }}
 
     steps:
+      - name: Create release app token
+        id: app-token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,8 +106,27 @@ jobs:
           release-notes: ${{ steps.notes.outputs.body }}
           release-date: ${{ steps.notes.outputs.date }}
 
+      - name: Commit CHANGELOG to main
+        if: steps.guard.outputs.skip == 'false' && steps.app-token.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md unchanged, nothing to commit."
+            exit 0
+          fi
+
+          # The sha guards against a concurrent change to main: the API rejects a stale sha.
+          FILE_SHA=$(gh api "repos/${REPO}/contents/CHANGELOG.md?ref=main" --jq .sha)
+          gh api -X PUT "repos/${REPO}/contents/CHANGELOG.md" \
+            -f message="docs(changelog): update CHANGELOG for ${TAG}" \
+            -f content="$(base64 -w0 CHANGELOG.md)" \
+            -f branch=main \
+            -f sha="$FILE_SHA" > /dev/null
+          echo "CHANGELOG.md for ${TAG} committed to main." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Commit CHANGELOG to branch and open pull request
-        if: steps.guard.outputs.skip == 'false'
+        if: steps.guard.outputs.skip == 'false' && steps.app-token.outputs.token == ''
         run: |
           if git diff --quiet -- CHANGELOG.md; then
             echo "CHANGELOG.md unchanged, nothing to commit."
