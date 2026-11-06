@@ -20,6 +20,7 @@ use App\Enums\DatabaseConnectionType;
 use App\Logging\AuditBuffer;
 use App\Services\Cloning\CloningRunOrchestrator;
 use App\Services\Cloning\DependencyResolver;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\Cloning\SchemaReplicator;
 use App\Services\Cloning\SkippedRow;
 use App\Services\Cloning\SourceRowEstimator;
@@ -29,6 +30,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\LogRecord;
+use Tests\Support\CallbackRunObserver;
 
 /** Target inspector stub: reports an empty target so no generated columns are found there. */
 function fakeTargetInspector(): SchemaInspector
@@ -134,7 +136,7 @@ it('calls TRUNCATE TABLE for mysql when clear is truncate', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($truncateCalled)->toBeTrue();
     expect($result->success)->toBeTrue();
@@ -167,7 +169,7 @@ it('calls DELETE instead of TRUNCATE on sqlite when clear is truncate', function
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($truncateCalled)->toBeFalse();
     expect($deleteCalled)->toBeTrue();
@@ -201,7 +203,7 @@ it('calls DELETE when clear is delete', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($truncateCalled)->toBeFalse();
     expect($deleteCalled)->toBeTrue();
@@ -234,7 +236,7 @@ it('does not clear table when clear is false', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($clearCalled)->toBeFalse();
 });
@@ -266,7 +268,7 @@ it('disables and re-enables FK checks on mysql when disableForeignKeyChecks is t
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($fkDisabled)->toBeTrue();
     expect($fkEnabled)->toBeTrue();
@@ -283,7 +285,7 @@ it('marks table as skipped when in skip-tables list', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true, skipTables: ['users']));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true, skipTables: ['users']));
 
     expect($result->tables)->toHaveCount(1);
     expect($result->tables[0]->status->value)->toBe('skipped_by_flag');
@@ -300,7 +302,7 @@ it('marks table as not-found when missing from schema', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($result->tables)->toHaveCount(1);
     expect($result->tables[0]->status->value)->toBe('not_found');
@@ -322,7 +324,7 @@ it('transfers rows and counts correctly', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($result->totalRows)->toBe(2);
     expect($result->success)->toBeTrue();
@@ -345,7 +347,7 @@ it('marks run as failed when all rows are skipped during insert', function (): v
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($result->tables[0]->rowsSkipped)->toBe(2);
     expect($result->tables[0]->rowsTransferred)->toBe(0);
@@ -366,7 +368,7 @@ it('reports table failure when SELECT throws', function (): void {
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestrator();
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     expect($result->success)->toBeFalse();
     expect($result->failureReason)->not->toBeNull();
@@ -398,7 +400,7 @@ it('marks table as skipped_by_schema_failure when schema could not be created', 
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestratorWithSchemaFailures(['users' => 'syntax error']);
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver);
 
     expect($result->tables)->toHaveCount(1);
     expect($result->tables[0]->status->value)->toBe('skipped_by_schema_failure');
@@ -458,7 +460,7 @@ it('continues with other tables after a schema failure', function (): void {
 
     // orders fails schema; users succeeds
     $orchestrator = makeOrchestratorWithSchemaFailures(['orders' => 'syntax error']);
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null);
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver);
 
     $statusByTable = [];
     foreach ($result->tables as $tableResult) {
@@ -519,7 +521,7 @@ it('aborts after first schema failure when breakOnFailure is true', function ():
     DB::shouldReceive('purge')->andReturnNull();
 
     $orchestrator = makeOrchestratorWithSchemaFailures(['orders' => 'syntax error']);
-    $result = $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(breakOnFailure: true));
+    $result = $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(breakOnFailure: true));
 
     $tableNames = array_map(static fn (TableRunResultData $t): string => $t->tableName, $result->tables);
     expect($tableNames)->toContain('orders');
@@ -585,7 +587,7 @@ it('captures per-row skip details when bulk insert fails and row-by-row fallback
         fakeTargetInspector(),
     );
 
-    $orchestratorWithLog->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $orchestratorWithLog->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     $skipEvents = array_values(array_filter(
         app(AuditBuffer::class)->records(),
@@ -652,7 +654,7 @@ it('falls back to null pk snapshot when source schema has no primary key column'
         fakeTargetInspector(),
     );
 
-    $orchestrator->run($config, $source, $target, $schema, static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null, new CloningRunSettingsData(skipSchema: true));
+    $orchestrator->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     $skipEvents = array_values(array_filter(
         app(AuditBuffer::class)->records(),
@@ -663,7 +665,7 @@ it('falls back to null pk snapshot when source schema has no primary key column'
     expect($skipEvents[0]['pk'])->toBeNull();
 });
 
-it('fires onTableStart exactly once before onProgress for transferred tables', function (): void {
+it('fires tableStarted exactly once before tableFinished for transferred tables', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -682,14 +684,16 @@ it('fires onTableStart exactly once before onProgress for transferred tables', f
         $source,
         $target,
         $schema,
-        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$events): void {
-            $events[] = ['progress', $tbl];
-        },
-        new CloningRunSettingsData(
-            skipSchema: true,
-            onTableStart: static function (string $tbl) use (&$events): void {
+        new CallbackRunObserver(
+            onTableFinished: static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$events): void {
+                $events[] = ['progress', $tbl];
+            },
+            onTableStarted: static function (string $tbl) use (&$events): void {
                 $events[] = ['start', $tbl];
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
         ),
     );
 
@@ -699,7 +703,7 @@ it('fires onTableStart exactly once before onProgress for transferred tables', f
     ]);
 });
 
-it('fires onStart exactly once with the planned table count before the transfer loop', function (): void {
+it('fires started exactly once with the planned table count before the transfer loop', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -718,25 +722,27 @@ it('fires onStart exactly once with the planned table count before the transfer 
         $source,
         $target,
         $schema,
-        static function (string $tbl, TableRunStatus $status) use (&$events): void {
-            $events[] = ['progress', $tbl];
-        },
-        new CloningRunSettingsData(
-            skipSchema: true,
-            onStart: static function (int $total) use (&$events): void {
+        new CallbackRunObserver(
+            onTableFinished: static function (string $tbl, TableRunStatus $status) use (&$events): void {
+                $events[] = ['progress', $tbl];
+            },
+            onStarted: static function (int $total) use (&$events): void {
                 $events[] = ['start', $total];
             },
         ),
+        new CloningRunSettingsData(
+            skipSchema: true,
+        ),
     );
 
-    // onStart fires first (before any progress), exactly once, with the number
+    // started fires first (before any progress), exactly once, with the number
     // of tables that will be attempted.
     expect($events[0])->toBe(['start', 1]);
     expect(array_values(array_filter($events, static fn (array $e): bool => $e[0] === 'start')))
         ->toBe([['start', 1]]);
 });
 
-it('announces the one-shot phases via onTableProgress before the row loop', function (): void {
+it('announces the one-shot phases via tableProgress before the row loop', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -759,15 +765,16 @@ it('announces the one-shot phases via onTableProgress before the row loop', func
         $source,
         $target,
         $schema,
-        static function (): void {},
-        new CloningRunSettingsData(
-            skipSchema: true,
-            trackRowTotals: true,
+        new CallbackRunObserver(
             onTableProgress: static function (string $tbl, StatsTableTransferData $s) use (&$phases, &$stats): void {
                 // Read the phase at emit time (the stats object is mutated in place).
                 $phases[] = $s->status;
                 $stats = $s;
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
+            trackRowTotals: true,
         ),
     );
 
@@ -821,20 +828,21 @@ it('skips the row estimate for schema-only tables', function (): void {
         makeOrchestratorConnection('source'),
         makeOrchestratorConnection('target'),
         makeOrchestratorSchema(),
-        static function (): void {},
-        new CloningRunSettingsData(
-            skipSchema: true,
-            trackRowTotals: true,
+        new CallbackRunObserver(
             onTableProgress: static function () use (&$events): void {
                 $events++;
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
+            trackRowTotals: true,
         ),
     );
 
     expect($events)->toBe(0);
 });
 
-it('does not fire onTableStart for tables skipped by --skip flag', function (): void {
+it('does not fire tableStarted for tables skipped by --skip flag', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -851,20 +859,21 @@ it('does not fire onTableStart for tables skipped by --skip flag', function (): 
         $source,
         $target,
         $schema,
-        static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null,
+        new CallbackRunObserver(
+            onTableStarted: static function (string $tbl) use (&$startCalls): void {
+                $startCalls[] = $tbl;
+            },
+        ),
         new CloningRunSettingsData(
             skipSchema: true,
             skipTables: ['users'],
-            onTableStart: static function (string $tbl) use (&$startCalls): void {
-                $startCalls[] = $tbl;
-            },
         ),
     );
 
     expect($startCalls)->toBe([]);
 });
 
-it('does not fire onTableStart for tables not found in source schema', function (): void {
+it('does not fire tableStarted for tables not found in source schema', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = new DatabaseSchemaData(databaseName: 'testdb', tables: []);
@@ -881,19 +890,20 @@ it('does not fire onTableStart for tables not found in source schema', function 
         $source,
         $target,
         $schema,
-        static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null,
-        new CloningRunSettingsData(
-            skipSchema: true,
-            onTableStart: static function (string $tbl) use (&$startCalls): void {
+        new CallbackRunObserver(
+            onTableStarted: static function (string $tbl) use (&$startCalls): void {
                 $startCalls[] = $tbl;
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
         ),
     );
 
     expect($startCalls)->toBe([]);
 });
 
-it('does not fire onTableStart for tables excluded by cascade dependency', function (): void {
+it('does not fire tableStarted for tables excluded by cascade dependency', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -926,19 +936,20 @@ it('does not fire onTableStart for tables excluded by cascade dependency', funct
         $source,
         $target,
         $schema,
-        static fn (string $t, TableRunStatus $status, int $rows, int $skipped, array $skippedRows): null => null,
-        new CloningRunSettingsData(
-            skipSchema: true,
-            onTableStart: static function (string $tbl) use (&$startCalls): void {
+        new CallbackRunObserver(
+            onTableStarted: static function (string $tbl) use (&$startCalls): void {
                 $startCalls[] = $tbl;
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
         ),
     );
 
     expect($startCalls)->toBe([]);
 });
 
-it('passes skipped rows list to onProgress for transferred tables with row failures', function (): void {
+it('passes skipped rows list to tableFinished for transferred tables with row failures', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -971,9 +982,9 @@ it('passes skipped rows list to onProgress for transferred tables with row failu
         $source,
         $target,
         $schema,
-        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
+        new CallbackRunObserver(onTableFinished: static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
             $progressArgs = compact('tbl', 'rows', 'skipped', 'skippedRows');
-        },
+        }),
         new CloningRunSettingsData(
             skipSchema: true,
         ),
@@ -1043,9 +1054,9 @@ it('preserves captured skip rows when a later chunk fetch throws', function (): 
         $source,
         $target,
         $schema,
-        static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
+        new CallbackRunObserver(onTableFinished: static function (string $tbl, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use (&$progressArgs): void {
             $progressArgs = compact('tbl', 'rows', 'skipped', 'skippedRows');
-        },
+        }),
         new CloningRunSettingsData(
             skipSchema: true,
         ),
@@ -1056,7 +1067,7 @@ it('preserves captured skip rows when a later chunk fetch throws', function (): 
     expect($progressArgs['skippedRows'][0]->sqlError)->toBe('SQLSTATE[23000]: row failure on chunk 1');
 });
 
-it('reports per-table timings and throughput through onTableProgress', function (): void {
+it('reports per-table timings and throughput through tableProgress', function (): void {
     $source = makeOrchestratorConnection('source');
     $target = makeOrchestratorConnection('target');
     $schema = makeOrchestratorSchema();
@@ -1100,21 +1111,23 @@ it('reports per-table timings and throughput through onTableProgress', function 
         $source,
         $target,
         $schema,
-        static function (string $tbl, TableRunStatus $status) use (&$terminal): void {
-            $terminal[] = $status;
-        },
-        new CloningRunSettingsData(
-            skipSchema: true,
-            trackRowTotals: true,
+        new CallbackRunObserver(
+            onTableFinished: static function (string $tbl, TableRunStatus $status) use (&$terminal): void {
+                $terminal[] = $status;
+            },
             onTableProgress: static function (string $tbl, StatsTableTransferData $stats) use (&$events, &$rowsAtEvent): void {
                 $events[] = $stats;
                 $rowsAtEvent[] = $stats->rowsProcessed;
             },
         ),
+        new CloningRunSettingsData(
+            skipSchema: true,
+            trackRowTotals: true,
+        ),
     );
 
     // One event for the row estimate, one as the loop starts and one per chunk
-    // (2 chunks), then the terminal Transferred event on onProgress.
+    // (2 chunks), then the terminal Transferred event on tableFinished.
     expect($events)->toHaveCount(4);
     expect($terminal)->toBe([TableRunStatus::Transferred]);
 
@@ -1180,13 +1193,14 @@ function runTrackingRowTotals(DatabaseConnectionType $sourceType, ?int $limit = 
         makeOrchestratorConnection('source', $sourceType),
         makeOrchestratorConnection('target'),
         makeOrchestratorSchema(),
-        static function (): void {},
-        new CloningRunSettingsData(
-            skipSchema: true,
-            trackRowTotals: true,
+        new CallbackRunObserver(
             onTableProgress: static function (string $tbl, StatsTableTransferData $s) use (&$stats): void {
                 $stats = $s;
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
+            trackRowTotals: true,
         ),
     );
 
@@ -1318,7 +1332,7 @@ it('keeps the rows already inserted when logging a skipped row throws mid-chunk'
             makeOrchestratorConnection('source'),
             makeOrchestratorConnection('target'),
             makeOrchestratorSchema(),
-            static function (): void {},
+            new NullCloningRunObserver,
             new CloningRunSettingsData(
                 skipSchema: true,
             ),
@@ -1345,13 +1359,14 @@ it('closes both connections when reporting the row estimate throws', function ()
         makeOrchestratorConnection('source'),
         makeOrchestratorConnection('target'),
         makeOrchestratorSchema(),
-        static function (): void {},
-        new CloningRunSettingsData(
-            skipSchema: true,
-            trackRowTotals: true,
+        new CallbackRunObserver(
             onTableProgress: static function (): void {
                 throw new RuntimeException('display broke');
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
+            trackRowTotals: true,
         ),
     );
 
@@ -1414,12 +1429,13 @@ it('counts skipped rows per chunk in the table stats', function (): void {
         makeOrchestratorConnection('source'),
         makeOrchestratorConnection('target'),
         makeOrchestratorSchema(),
-        static function (): void {},
-        new CloningRunSettingsData(
-            skipSchema: true,
+        new CallbackRunObserver(
             onTableProgress: static function (string $tbl, StatsTableTransferData $s) use (&$stats): void {
                 $stats = $s;
             },
+        ),
+        new CloningRunSettingsData(
+            skipSchema: true,
         ),
     );
 
@@ -1482,7 +1498,7 @@ it('uses keyset (seek) pagination instead of OFFSET when a primary key exists', 
     DB::shouldReceive('insert')->andReturnTrue();
     DB::shouldReceive('purge')->andReturnNull();
 
-    makeOrchestrator()->run($config, $source, $target, $schema, static function (): void {}, new CloningRunSettingsData(skipSchema: true));
+    makeOrchestrator()->run($config, $source, $target, $schema, new NullCloningRunObserver, new CloningRunSettingsData(skipSchema: true));
 
     // Two chunks: full window (2), then the trailing short window (1) which ends the loop.
     expect($queries)->toHaveCount(2);
@@ -1497,4 +1513,57 @@ it('uses keyset (seek) pagination instead of OFFSET when a primary key exists', 
     expect($queries[1]['sql'])->toContain('WHERE (`id` > ?)')->toContain('ORDER BY')
         ->not->toContain('OFFSET');
     expect($queries[1]['bindings'])->toBe([2]);
+});
+
+it('tells the observer the run finished, after the last table', function (): void {
+    DB::shouldReceive('connection')->andReturnSelf();
+    DB::shouldReceive('select')->andReturn([(object) ['id' => 1]], []);
+    DB::shouldReceive('table')->andReturnSelf();
+    DB::shouldReceive('insert')->andReturnTrue();
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $events = [];
+    makeOrchestrator()->run(
+        makeOrchestratorConfig(),
+        makeOrchestratorConnection('source'),
+        makeOrchestratorConnection('target'),
+        makeOrchestratorSchema(),
+        new CallbackRunObserver(
+            onTableFinished: static function (string $tbl) use (&$events): void {
+                $events[] = 'table '.$tbl;
+            },
+            onFinished: static function () use (&$events): void {
+                $events[] = 'finished';
+            },
+        ),
+        new CloningRunSettingsData(skipSchema: true),
+    );
+
+    expect($events)->toBe(['table users', 'finished']);
+});
+
+it('tells the observer the run finished when the run throws', function (): void {
+    DB::shouldReceive('purge')->andReturnNull();
+
+    $finished = 0;
+
+    expect(function () use (&$finished): void {
+        makeOrchestrator()->run(
+            makeOrchestratorConfig(),
+            makeOrchestratorConnection('source'),
+            makeOrchestratorConnection('target'),
+            makeOrchestratorSchema(),
+            new CallbackRunObserver(
+                onStarted: static function (): void {
+                    throw new RuntimeException('display broke');
+                },
+                onFinished: static function () use (&$finished): void {
+                    $finished++;
+                },
+            ),
+            new CloningRunSettingsData(skipSchema: true),
+        );
+    })->toThrow(RuntimeException::class);
+
+    expect($finished)->toBe(1);
 });

@@ -13,6 +13,7 @@ use App\Data\Schema\DatabaseSchemaData;
 use App\Data\Schema\TableSchemaData;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Cloning\CloningRunOrchestrator;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\SqlDump\DumpArchiver;
 use App\Services\SqlDump\DumpDialectFactory;
 use App\Services\SqlDump\SqlDumpService;
@@ -52,7 +53,7 @@ function runDumpPipeline(DatabaseConnectionType $dialect): array
         $source,
         $dump,
         $schema,
-        function (): void {},
+        new NullCloningRunObserver,
         new CloningRunSettingsData(
             dumpSink: $sink,
         ),
@@ -126,7 +127,7 @@ it('reads source rows in chunks smaller than the table size', function (): void 
         $source,
         $dump,
         $schema,
-        function (): void {},
+        new NullCloningRunObserver,
         new CloningRunSettingsData(
             dumpSink: $sink,
         ),

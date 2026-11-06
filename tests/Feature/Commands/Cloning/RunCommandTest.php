@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\CloningRunObserver;
 use App\Data\Cloning\CloningConfigData;
 use App\Data\Cloning\CloningOptionsData;
 use App\Data\Cloning\CloningRunSettingsData;
@@ -1200,14 +1201,12 @@ it('renders skip groups under the table line in verbose mode', function (): void
             ConnectionData $source,
             ConnectionData $target,
             DatabaseSchemaData $sourceSchema,
-            callable $onProgress,
+            CloningRunObserver $observer,
             CloningRunSettingsData $settings,
         ) use ($skippedRows): RunResultData {
-            if ($settings->onTableStart !== null) {
-                ($settings->onTableStart)('orders');
-            }
-
-            $onProgress('orders', TableRunStatus::Transferred, 5, 3, $skippedRows);
+            $observer->tableStarted('orders');
+            $observer->tableFinished('orders', TableRunStatus::Transferred, 5, 3, $skippedRows);
+            $observer->finished();
 
             return new RunResultData(
                 success: true,
@@ -1273,14 +1272,12 @@ it('renders skip groups under a fully failed table line in verbose mode', functi
             ConnectionData $source,
             ConnectionData $target,
             DatabaseSchemaData $sourceSchema,
-            callable $onProgress,
+            CloningRunObserver $observer,
             CloningRunSettingsData $settings,
         ) use ($skippedRows): RunResultData {
-            if ($settings->onTableStart !== null) {
-                ($settings->onTableStart)('invoice_lines');
-            }
-
-            $onProgress('invoice_lines', TableRunStatus::Failed, 0, 2, $skippedRows);
+            $observer->tableStarted('invoice_lines');
+            $observer->tableFinished('invoice_lines', TableRunStatus::Failed, 0, 2, $skippedRows);
+            $observer->finished();
 
             return new RunResultData(
                 success: false,
@@ -1835,11 +1832,12 @@ it('reports schema-replication failures and not-found tables collected during a 
         ConnectionData $source,
         ConnectionData $target,
         DatabaseSchemaData $sourceSchema,
-        callable $onProgress,
+        CloningRunObserver $observer,
     ) use ($result): RunResultData {
-        // CI branch of onProgress collects not-found + schema-failure names.
-        $onProgress('gone', TableRunStatus::NotFound, 0, 0, []);
-        $onProgress('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        // The summary collects not-found + schema-failure names from the result.
+        $observer->tableFinished('gone', TableRunStatus::NotFound, 0, 0, []);
+        $observer->tableFinished('broken', TableRunStatus::SkippedBySchemaFailure, 0, 0, []);
+        $observer->finished();
 
         return $result;
     });

@@ -13,6 +13,7 @@ use App\Data\Cloning\TableRunStatus;
 use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Cloning\CloningRunOrchestrator;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\Schema\SchemaInspector;
 
 // Issue #239: --only-tables must never copy a table the YAML skips, and a
@@ -64,7 +65,7 @@ function skipRunRun(string $auditStrategy, array $skipTables, array $onlyTables,
         $source,
         skipRunConnection('target', $targetPath),
         resolve(SchemaInspector::class)->inspect($source),
-        function (): void {},
+        new NullCloningRunObserver,
         new CloningRunSettingsData(
             skipTables: $skipTables,
             onlyTables: $onlyTables,

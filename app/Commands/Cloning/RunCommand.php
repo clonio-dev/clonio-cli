@@ -11,7 +11,7 @@ use App\Data\Cloning\DryRunResultData;
 use App\Data\Cloning\DryRunTableData;
 use App\Data\Cloning\KeyRemappingConfigData;
 use App\Data\Cloning\RunOptionsData;
-use App\Data\Cloning\StatsTableTransferData;
+use App\Data\Cloning\RunResultData;
 use App\Data\Cloning\TableCloningConfigData;
 use App\Data\Cloning\TableRunResultData;
 use App\Data\Cloning\TableRunStatus;
@@ -42,12 +42,15 @@ use App\Services\Cloning\CloningYamlValidator;
 use App\Services\Cloning\EncryptedFileKeyRemappingStore;
 use App\Services\Cloning\KeyRemappingPreflight;
 use App\Services\Cloning\KeyRemappingService;
-use App\Services\Cloning\SkippedRow;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\Cloning\SourceRowEstimator;
 use App\Services\Cloning\TableNameResolver;
 use App\Services\Config\ConfigService;
 use App\Services\Database\DatabaseConnectionService;
 use App\Services\Output\CloningProgressDisplay;
+use App\Services\Output\Run\DotRunObserver;
+use App\Services\Output\Run\ProgressRunObserver;
+use App\Services\Output\Run\StepRunObserver;
 use App\Services\Output\VerboseStepRenderer;
 use App\Services\Schema\SchemaDiffService;
 use App\Services\Schema\SchemaInspector;
@@ -449,15 +452,6 @@ class RunCommand extends Command
             }
         }
 
-        /** @var list<string> $notFoundTables */
-        $notFoundTables = [];
-
-        /** @var list<string> $schemaFailureTables */
-        $schemaFailureTables = [];
-
-        $dotColumn = 0;
-        $maxDotColumns = 70;
-
         $progress = null;
         $restoreLogs = null;
 
@@ -471,9 +465,12 @@ class RunCommand extends Command
             }
         }
 
-        // Live stats of the table currently transferring, kept for its terminal
-        // event (the `-vvv` timing summary) and then reset.
-        $currentTimings = null;
+        $observer = match (true) {
+            $progress instanceof CloningProgressDisplay => new ProgressRunObserver($progress, $isDebug),
+            $ci => new NullCloningRunObserver,
+            $isVerbose => new StepRunObserver($step, $this->output, $isDebug),
+            default => new DotRunObserver($this->output),
+        };
 
         $dumpSink = $targetIsDump
             ? new SqlDumpService(new DumpDialectFactory, new DumpArchiver)
@@ -485,86 +482,7 @@ class RunCommand extends Command
                 source: $sourceConnection,
                 target: $targetConnection,
                 sourceSchema: $sourceSchema,
-                onProgress: function (string $tableName, TableRunStatus $status, int $rows, int $skipped, array $skippedRows) use ($step, $isVerbose, $isDebug, $ci, &$notFoundTables, &$schemaFailureTables, &$dotColumn, $maxDotColumns, $progress, &$currentTimings): void {
-                    $timings = $currentTimings;
-                    $currentTimings = null;
-
-                    // Record pre-skip outcomes for the final summary (every mode).
-                    if ($status === TableRunStatus::NotFound) {
-                        $notFoundTables[] = $tableName;
-                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                        $schemaFailureTables[] = $tableName;
-                    }
-
-                    if ($ci) {
-                        return;
-                    }
-
-                    // ── Terminal status ──
-                    // Quiet mode (not verbose): compact one-char dot indicators.
-                    if (! $isVerbose) {
-                        $indicator = match ($status) {
-                            TableRunStatus::Transferred => $skipped > 0 ? 'F' : '.',
-                            TableRunStatus::Failed => 'E',
-                            TableRunStatus::NotFound => '?',
-                            TableRunStatus::SkippedBySchemaFailure => 'S',
-                            default => null,
-                        };
-
-                        if ($indicator !== null) {
-                            $this->output->write($indicator);
-                            $dotColumn++;
-
-                            if ($dotColumn >= $maxDotColumns) {
-                                $this->output->writeln('');
-                                $dotColumn = 0;
-                            }
-                        }
-
-                        return;
-                    }
-
-                    // Verbose. With live bars, scrolling detail goes to the log section (so it
-                    // never corrupts them); otherwise the step renderer finalises the table
-                    // line that onTableStart opened.
-                    $sink = $progress instanceof CloningProgressDisplay ? $progress->log : $this->output;
-                    $rowsSummary = sprintf('(%s rows%s)', number_format($rows), $skipped > 0 ? ', '.$skipped.' skipped' : '');
-
-                    if ($progress instanceof CloningProgressDisplay) {
-                        // Only Transferred/Failed tables ever started a per-table bar
-                        // (via onTableStart); NotFound/SchemaFailure never did.
-                        if ($status === TableRunStatus::Transferred || $status === TableRunStatus::Failed) {
-                            $progress->finishTable($status === TableRunStatus::Transferred, $timings);
-                        }
-
-                        if ($status === TableRunStatus::Transferred) {
-                            $sink->writeln(sprintf('  <info>✓</info>  %s  %s', $tableName, $rowsSummary));
-                        } elseif ($status === TableRunStatus::Failed) {
-                            $sink->writeln(sprintf('  <error>✗</error>  %s  — transfer failed', $tableName));
-                        }
-                    } elseif ($status === TableRunStatus::Transferred) {
-                        $step->success($rowsSummary);
-                    } elseif ($status === TableRunStatus::Failed) {
-                        $step->fail();
-                    }
-
-                    if ($status === TableRunStatus::NotFound) {
-                        $sink->writeln(sprintf('  <comment>?</comment>  %s  — not found in source, skipped', $tableName));
-                    } elseif ($status === TableRunStatus::SkippedBySchemaFailure) {
-                        $sink->writeln(sprintf('  <error>S</error>  %s  — schema replication failed, skipped', $tableName));
-                    }
-
-                    if ($status === TableRunStatus::Transferred || $status === TableRunStatus::Failed) {
-                        $this->renderSkipGroups($sink, $skippedRows);
-
-                        // `-vvv`: per-table timing summary table.
-                        if ($isDebug && $timings instanceof StatsTableTransferData) {
-                            CloningProgressDisplay::renderTimingSummary($sink, $timings);
-                        }
-                    }
-
-                    $progress?->advanceOverall();
-                },
+                observer: $observer,
                 settings: new CloningRunSettingsData(
                     skipSchema: $skipSchema,
                     skipTables: $skipTables,
@@ -573,25 +491,11 @@ class RunCommand extends Command
                     breakOnFailure: $options->breakOnFailure,
                     dumpSink: $dumpSink,
                     trackRowTotals: $progress instanceof CloningProgressDisplay,
-                    onTableStart: match (true) {
-                        $progress instanceof CloningProgressDisplay => $progress->startTable(...),
-                        $isVerbose && ! $ci => fn (string $tableName) => $step->start('  '.$tableName),
-                        default => null,
-                    },
-                    onStart: $progress instanceof CloningProgressDisplay ? $progress->start(...) : null,
-                    onTableProgress: $progress instanceof CloningProgressDisplay || ($isDebug && ! $ci)
-                        ? static function (string $tableName, StatsTableTransferData $stats) use (&$currentTimings, $progress): void {
-                            $currentTimings = $stats;
-                            $progress?->advanceTable($stats);
-                        }
-                    : null,
                 ),
             );
         } finally {
-            // Also on an exception: the bars must not stay open, and logging must
-            // go back to stderr before the error is reported.
-            $progress?->finish();
-
+            // Also on an exception: logging must go back to stderr before the
+            // error is reported. The orchestrator has closed the bars by now.
             if ($restoreLogs instanceof Closure) {
                 $restoreLogs();
             }
@@ -720,16 +624,8 @@ class RunCommand extends Command
         }
 
         // ─── Phase 8: Summary ──────────────────────────────────────────────────
-        if (! $isVerbose && ! $ci && $dotColumn > 0) { // @pest-mutate-ignore: BooleanAndToBooleanOr
-            $this->line('');
-        }
-
-        // Derive not-found from result (merging with any collected during progress)
-        $notFoundFromResult = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
-            static fn (TableRunResultData $t): string => $t->tableName,
-            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::NotFound)
-        ));
-        $notFoundTables = array_values(array_unique(array_merge($notFoundTables, $notFoundFromResult))); // @pest-mutate-ignore: UnwrapArrayValues
+        $notFoundTables = $this->tablesWithStatus($result, TableRunStatus::NotFound);
+        $schemaFailureTables = $this->tablesWithStatus($result, TableRunStatus::SkippedBySchemaFailure);
 
         // Always show not-found warnings
         if ($notFoundTables !== []) {
@@ -741,13 +637,6 @@ class RunCommand extends Command
                 implode(', ', $notFoundTables),
             ));
         }
-
-        // Collect schema failure tables from result (merge with those caught in onProgress)
-        $schemaFailuresFromResult = array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
-            static fn (TableRunResultData $t): string => $t->tableName,
-            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === TableRunStatus::SkippedBySchemaFailure)
-        ));
-        $schemaFailureTables = array_values(array_unique(array_merge($schemaFailureTables, $schemaFailuresFromResult))); // @pest-mutate-ignore: UnwrapArrayValues
 
         if ($schemaFailureTables !== []) {
             $this->line('');
@@ -793,6 +682,17 @@ class RunCommand extends Command
         }
 
         return ExitCode::Success->value;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tablesWithStatus(RunResultData $result, TableRunStatus $status): array
+    {
+        return array_values(array_map( // @pest-mutate-ignore: UnwrapArrayValues
+            static fn (TableRunResultData $t): string => $t->tableName,
+            array_filter($result->tables, static fn (TableRunResultData $t): bool => $t->status === $status),
+        ));
     }
 
     /**
@@ -1071,29 +971,6 @@ class RunCommand extends Command
     }
 
     /**
-     * Aggregate skipped rows by SQL error message, sorted by descending count.
-     *
-     * @param  list<SkippedRow>  $rows
-     * @return list<array{count: int, message: string}>
-     */
-    private function aggregateSkipReasons(array $rows): array
-    {
-        $byMessage = [];
-        foreach ($rows as $row) {
-            $byMessage[$row->sqlError] = ($byMessage[$row->sqlError] ?? 0) + 1;
-        }
-
-        arsort($byMessage);
-
-        $result = [];
-        foreach ($byMessage as $message => $count) {
-            $result[] = ['count' => $count, 'message' => (string) $message]; // @pest-mutate-ignore: RemoveStringCast
-        }
-
-        return $result;
-    }
-
-    /**
      * While live bars own the terminal, a raw stderr write would corrupt them:
      * silence the stderr log handlers and show the same records in `$section`
      * instead, at the level stderr had. Returns the callback that restores both.
@@ -1148,27 +1025,6 @@ class RunCommand extends Command
                 $handler->setLevel($level);
             }
         };
-    }
-
-    /**
-     * @param  list<SkippedRow>  $skippedRows
-     */
-    private function renderSkipGroups(OutputInterface $sink, array $skippedRows): void
-    {
-        if ($skippedRows === []) {
-            return;
-        }
-
-        $groups = $this->aggregateSkipReasons($skippedRows);
-        $shown = array_slice($groups, 0, 10);
-        foreach ($shown as $group) {
-            $sink->writeln(sprintf('     └ %d× %s', $group['count'], $group['message']));
-        }
-
-        $rest = count($groups) - count($shown);
-        if ($rest > 0) {
-            $sink->writeln(sprintf('     └ … and %d more error types', $rest));
-        }
     }
 
     /**

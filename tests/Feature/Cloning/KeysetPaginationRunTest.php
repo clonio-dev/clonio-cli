@@ -10,6 +10,7 @@ use App\Data\Cloning\TableRowConfigData;
 use App\Data\ConnectionData;
 use App\Enums\DatabaseConnectionType;
 use App\Services\Cloning\CloningRunOrchestrator;
+use App\Services\Cloning\NullCloningRunObserver;
 use App\Services\Schema\SchemaInspector;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Event;
@@ -85,7 +86,7 @@ function runKeyset(string $sourcePath, string $targetPath, string $table, TableR
         $source,
         keysetConnection('target', $targetPath),
         resolve(SchemaInspector::class)->inspect($source),
-        function (): void {},
+        new NullCloningRunObserver,
     );
 
     return [$result, $queries];
