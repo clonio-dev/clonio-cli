@@ -2,6 +2,17 @@
 
 All notable changes to `clonio-cli` will be documented in this file.
 
+## v1.9.0 - 2026-11-06
+
+### What's Changed
+
+* feat(secrets): env:NAME secret references as default, catalog-based key inspection by @rokde in https://github.com/clonio-dev/clonio-cli/pull/272
+* docs(claude): treat the current code as the source of truth by @rokde in https://github.com/clonio-dev/clonio-cli/pull/278
+* feat(secrets): add CLONIO_KEY and key:rotate by @rokde in https://github.com/clonio-dev/clonio-cli/pull/277
+* feat(security): warn when clonio.json or .env are accessible to others, or the key is APP_KEY by @rokde in https://github.com/clonio-dev/clonio-cli/pull/279
+
+**Full Changelog**: https://github.com/clonio-dev/clonio-cli/compare/v1.8.0...v1.9.0
+
 ## v1.8.0 - 2026-11-06
 
 ### What's Changed
