@@ -459,6 +459,37 @@ it('resolves key_remapping tables that differ only in case to the source table',
     'key_remapping section' => [g1_yaml("  users:\n    rows:\n      strategy: full\n")."key_remapping:\n  tables:\n    - table: Users\n      primary_key: id\n      strategy: new_uuid\n"],
 ]);
 
+// Issue #254: a remapping that cannot work is a validation error, not a crash.
+it('rejects a key remapping that does not fit the source column before generating mappings', function (array $params): void {
+    Storage::disk('local')->put('t.yaml', g1_remap_yaml());
+    $remapping = Mockery::mock(KeyRemappingService::class);
+    $remapping->shouldNotReceive('generateMappings');
+    app()->instance(KeyRemappingService::class, $remapping);
+    g1_bind(
+        inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users', ['id' => ['varchar']])]),
+        run: fn (array $a): never => throw new RuntimeException('must not run'),
+    );
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--ci' => true, ...$params]);
+
+    expect($code)->toBe(4)->and($out)->toContain(
+        'Cannot remap users.id: random_integer needs an integer column, but "id" is varchar. Use new_uuid for UUID or text keys.',
+    );
+})->with([
+    'run' => [[]],
+    'dry run' => [['--dry-run' => true]],
+]);
+
+it('does not check key remapping in a dry run when remapping is disabled', function (): void {
+    Storage::disk('local')->put('t.yaml', g1_remap_yaml("  remap_keys: false\n"));
+    g1_bind(inspect: fn (ConnectionData $c): DatabaseSchemaData => g1_schema([g1_table('users', ['id' => ['varchar']])]));
+    g1_db([[G1_MYSQL_ESTIMATE, ['users'], (object) ['c' => 3]]], 3);
+
+    [$code, $out] = g1_call(['file' => 't.yaml', '--target' => 'staging', '--dry-run' => true]);
+
+    expect($code)->toBe(0)->and($out)->not->toContain('Cannot remap');
+});
+
 it('rejects key_remapping entries that differ only in case', function (): void {
     Storage::disk('local')->put('t.yaml', g1_yaml("  users:\n    rows:\n      strategy: full\n")
         ."key_remapping:\n  tables:\n    - table: users\n      primary_key: id\n      strategy: new_uuid\n    - table: Users\n      primary_key: id\n      strategy: random_integer\n");

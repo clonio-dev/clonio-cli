@@ -387,6 +387,19 @@ clonio cloning:run prod.cloning.yaml --target staging --file-based
 
 The original top-level `key_remapping:` section is still parsed. Existing YAML files do not need to be updated. When both formats are present in the same file, the inline column format takes priority.
 
+### Checking remapping before the run
+
+Before Phase 5b writes anything, Clonio checks every remapping entry against the source schema. The run stops with exit code `4` when:
+
+- the table or the column does not exist in the source
+- `random_integer` is used on a column that is not an integer type, for example a `varchar` or `uuid` key. Use `new_uuid` for UUID or text keys.
+
+```
+Cannot remap users.id: random_integer needs an integer column, but "id" is varchar. Use new_uuid for UUID or text keys.
+```
+
+`--dry-run` runs the same check, unless remapping is disabled.
+
 ### Recovering from "key remapping exhausted"
 
 When the column type cannot host the source row count (for example a `TINYINT` primary key that already holds 250 rows but the source has 300), the run aborts in Phase 5b with a *key remapping exhausted* error.
@@ -648,7 +661,7 @@ Progress bars are suppressed when `--ci` is active regardless of verbosity level
 | `1` | Run failed — one or more tables had unrecoverable transfer errors |
 | `2` | Config error — `clonio.json` missing, or `APP_KEY` not set |
 | `3` | Connection error — source or target unreachable |
-| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, `--only-tables` matching no table, or CI without `--target` |
+| `4` | Validation error — YAML invalid, `--skip-tables` + `--only-tables` combined, an ambiguous table name, `--only-tables` matching no table, a key remapping that does not fit the source column, or CI without `--target` |
 | `5` | IO error — YAML file not found or not readable |
 
 ## Audit & Process Logs
