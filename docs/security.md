@@ -31,6 +31,17 @@ Clonio signs each audit log with an HMAC derived from the encryption key. Anyone
 
 After a rotation, logs signed with the old key verify only with the old key. Keep the old key in your secret store for as long as you need to verify them — see [Audit logs signed with the old key](commands/key-rotate.md#audit-logs-signed-with-the-old-key).
 
+### Warnings before each command
+
+Before a command runs, Clonio checks the working directory and prints a warning on stderr (stdout stays clean for pipes and scripts):
+
+| Warning | Cause | Fix |
+|---|---|---|
+| `clonio.json is accessible to other users (mode 0644)` | `clonio.json` or `.env` can be read, written or executed by group or others — anything looser than `0600`. Other users on the machine can then read the secrets or the key. | `chmod 600 clonio.json .env` |
+| `Clonio reads its key from APP_KEY` | `CLONIO_KEY` is not set, so Clonio falls back to `APP_KEY`. | `clonio key:rotate` |
+
+The file check is skipped on Windows, which has no POSIX permissions. Clonio writes both files with `0600` itself; the warning appears when a file was created or copied by other means, for example by a checkout, a container mount or an editor. `list`, `help`, `about` and `update` skip both checks; `init` and `key:rotate` skip the `APP_KEY` hint, since they deal with the key themselves. The warnings cannot be turned off: fix the cause instead.
+
 ### Anonymization is only as complete as your configuration
 
 Clonio transforms exactly the columns your `.cloning.yaml` names. Everything else is copied unchanged. Typical gaps:
@@ -182,4 +193,4 @@ Never use the target user for a source connection, and never give the source use
 - [ ] Test and dev are fed from acceptance only.
 - [ ] The anonymization configuration covers free-text columns, quasi-identifiers and blobs, and is reviewed when the schema changes.
 - [ ] Audit logs go to a channel outside the runner.
-- [ ] Local files that must exist are readable only by their owner: `chmod 600 clonio.json .env`.
+- [ ] Local files that must exist are readable only by their owner: `chmod 600 clonio.json .env`. Clonio prints no [warning](#warnings-before-each-command) before a command.

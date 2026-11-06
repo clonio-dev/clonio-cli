@@ -2,12 +2,15 @@
 
 namespace App\Providers;
 
+use App\Listeners\WarnAboutInsecureSecrets;
 use App\Logging\AuditBuffer;
 use App\Services\Config\ConfigService;
 use App\Services\Runtime\PackagedRuntimeDetector;
 use App\Services\Secrets\EncryptionKey;
 use Composer\InstalledVersions;
 use Dotenv\Dotenv;
+use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -19,7 +22,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Event::listen(CommandStarting::class, WarnAboutInsecureSecrets::class);
     }
 
     /**
