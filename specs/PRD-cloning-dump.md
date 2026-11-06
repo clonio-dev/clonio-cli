@@ -178,18 +178,7 @@ The command MUST NOT pass raw arrays between layers. Use dedicated DTOs with ful
 
 ### 7.1 Input DTO
 
-```php
-// app/Data/Cloning/DumpOptionsData.php
-final readonly class DumpOptionsData
-{
-    public function __construct(
-        public string $connectionName,
-        public string $outputPath,
-        public bool $force,
-        public bool $onlyPii,
-    ) {}
-}
-```
+`cloning:dump` reads its options directly in the command and keeps no input DTO. A `DumpOptionsData` class existed but was never used and has been removed.
 
 ### 7.2 Column dump DTO
 

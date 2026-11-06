@@ -44,18 +44,6 @@ it('defaultDeliversProcessLog returns true only for local and s3', function (): 
         ->and(AuditChannelType::Stack->defaultDeliversProcessLog())->toBeFalse();
 });
 
-it('hasSecrets returns false only for local, stdout, stderr, and stack', function (): void {
-    expect(AuditChannelType::Local->hasSecrets())->toBeFalse()
-        ->and(AuditChannelType::Stdout->hasSecrets())->toBeFalse()
-        ->and(AuditChannelType::Stderr->hasSecrets())->toBeFalse()
-        ->and(AuditChannelType::Stack->hasSecrets())->toBeFalse()
-        ->and(AuditChannelType::S3->hasSecrets())->toBeTrue()
-        ->and(AuditChannelType::Email->hasSecrets())->toBeTrue()
-        ->and(AuditChannelType::MsTeams->hasSecrets())->toBeTrue()
-        ->and(AuditChannelType::Slack->hasSecrets())->toBeTrue()
-        ->and(AuditChannelType::Ntfy->hasSecrets())->toBeTrue();
-});
-
 it('label returns expected string for each case', function (): void {
     expect(AuditChannelType::Local->label())->toBe('Local filesystem')
         ->and(AuditChannelType::S3->label())->toBe('S3-compatible storage')

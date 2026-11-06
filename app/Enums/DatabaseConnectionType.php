@@ -47,12 +47,6 @@ enum DatabaseConnectionType: string
         return $this !== self::Sqlite && $this !== self::Dump;
     }
 
-    /** A virtual output target (SQL file) rather than a live PDO database. */
-    public function isDump(): bool
-    {
-        return $this === self::Dump;
-    }
-
     /** Connection types that can serve as a SQL dump dialect (i.e. real DBMS targets). */
     public function isDialect(): bool
     {

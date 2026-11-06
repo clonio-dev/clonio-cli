@@ -43,10 +43,8 @@ it('requires network config for every driver except SQLite and Dump', function (
     [DatabaseConnectionType::Dump, false],
 ]);
 
-it('identifies the dump pseudo-type', function (): void {
-    expect(DatabaseConnectionType::Dump->isDump())->toBeTrue()
-        ->and(DatabaseConnectionType::Mysql->isDump())->toBeFalse()
-        ->and(DatabaseConnectionType::Dump->isDialect())->toBeFalse()
+it('does not treat the dump pseudo-type as a dialect', function (): void {
+    expect(DatabaseConnectionType::Dump->isDialect())->toBeFalse()
         ->and(DatabaseConnectionType::Sqlite->isDialect())->toBeTrue();
 });
 
