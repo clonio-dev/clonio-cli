@@ -21,7 +21,7 @@
 #
 
 # ── Stage 1: build vendor ────────────────────────────────────────────────────
-FROM php:8.5-cli-alpine@sha256:e899a75c775804e5466dbd9c96b31f8b6c6ae2ddb053a8466223a0c32992ff8e AS build
+FROM php:8.5-cli-alpine@sha256:1ff5b45922ab30f418447c6089dbe2eba5f01e0b2742863d0327ac349305d70f AS build
 
 RUN apk add --no-cache git unzip
 
@@ -65,7 +65,7 @@ RUN set -eux; \
         -delete
 
 # ── Stage 2: base (shared by dev + runtime) ──────────────────────────────────
-FROM php:8.5-cli-alpine@sha256:e899a75c775804e5466dbd9c96b31f8b6c6ae2ddb053a8466223a0c32992ff8e AS base
+FROM php:8.5-cli-alpine@sha256:1ff5b45922ab30f418447c6089dbe2eba5f01e0b2742863d0327ac349305d70f AS base
 
 # ca-certificates — Guzzle-based audit adapters (S3, webhook, ntfy) need a CA bundle.
 # tzdata — correct timestamps in audit logs and cloning dumps when TZ is set.
